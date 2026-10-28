@@ -1,5 +1,5 @@
 import { FIXED_DT, MAX_STEPS_PER_FRAME } from "../config.ts";
-import { createInputState, KeyboardInput } from "../core/input.ts";
+import { createInputState, KeyboardInput, type InputState } from "../core/input.ts";
 import type { Renderer } from "../render/renderer.ts";
 import type { Camera } from "../render/camera.ts";
 import type { World } from "./world.ts";
@@ -10,27 +10,39 @@ import type { World } from "./world.ts";
  *  - La FÍSICA avanza en pasos fijos de FIXED_DT (determinista).
  *  - La CÁMARA y el RENDER se actualizan una vez por frame (son visuales).
  *  - `alpha` interpola el render entre pasos de física para verse suave.
+ *
+ * El loop no decide de modos ni de pantallas: simula un World y lo dibuja. La
+ * capa superior (main) crea/destruye el loop al entrar/salir de una partida y
+ * escucha `onGameOver` para mostrar la pantalla de fin.
  */
 export class GameLoop {
-  private readonly input = new KeyboardInput();
-  private readonly inputState = createInputState();
+  /** Un dispositivo de teclado por combatiente (P1 y P2). */
+  private readonly inputs: KeyboardInput[];
+  private readonly inputStates: InputState[];
 
   private running = false;
   private paused = false;
   private lastTime = 0;
   private accumulator = 0;
   private rafId = 0;
+  private gameOverNotified = false;
 
   constructor(
     private readonly world: World,
     private readonly renderer: Renderer,
     private readonly camera: Camera,
-  ) {}
+    /** Se llama una vez cuando la partida termina (solo versus). */
+    private readonly onGameOver?: (winnerIndex: number) => void,
+  ) {
+    // P1 siempre; P2 solo tiene efecto real si el mundo lo usa (versus).
+    this.inputs = [new KeyboardInput("p1"), new KeyboardInput("p2")];
+    this.inputStates = [createInputState(), createInputState()];
+  }
 
   start(): void {
     if (this.running) return;
     this.running = true;
-    this.input.attach();
+    for (const i of this.inputs) i.attach();
     this.lastTime = performance.now();
     this.accumulator = 0;
     this.rafId = requestAnimationFrame(this.frame);
@@ -38,7 +50,7 @@ export class GameLoop {
 
   stop(): void {
     this.running = false;
-    this.input.detach();
+    for (const i of this.inputs) i.detach();
     cancelAnimationFrame(this.rafId);
   }
 
@@ -51,7 +63,7 @@ export class GameLoop {
   /**
    * Pausa o reanuda la simulación. Pausado: la física no avanza, pero el render
    * y la cámara siguen (para ver la animación del zoom de pausa). La cámara
-   * recibe el aviso para aplicar el zoom extra.
+   * recibe el aviso para aplicar el zoom extra y el reencuadre al jugador.
    */
   setPaused(value: boolean): void {
     this.paused = value;
@@ -76,8 +88,10 @@ export class GameLoop {
 
       let steps = 0;
       while (this.accumulator >= FIXED_DT && steps < MAX_STEPS_PER_FRAME) {
-        this.input.sample(this.inputState);
-        this.world.step(this.inputState, FIXED_DT);
+        for (let i = 0; i < this.inputs.length; i++) {
+          this.inputs[i].sample(this.inputStates[i]);
+        }
+        this.world.step(this.inputStates, FIXED_DT);
         this.accumulator -= FIXED_DT;
         steps++;
       }
@@ -87,19 +101,18 @@ export class GameLoop {
       }
 
       alpha = this.accumulator / FIXED_DT;
+
+      // Notifica fin de partida una sola vez.
+      if (this.world.gameOver && !this.gameOverNotified) {
+        this.gameOverNotified = true;
+        this.onGameOver?.(this.world.winnerIndex);
+      }
     }
 
-    // La cámara sigue al jugador (visual, una vez por frame).
-    this.camera.follow(this.world.player);
+    // La cámara encuadra a todos los combatientes vivos (visual, por frame).
+    this.camera.follow(this.world);
 
-    this.renderer.render(
-      this.world.player,
-      this.world.dummy,
-      this.world.platforms,
-      this.camera,
-      this.world.lives,
-      alpha,
-    );
+    this.renderer.render(this.world, this.camera, alpha);
 
     this.rafId = requestAnimationFrame(this.frame);
   };

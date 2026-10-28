@@ -33,10 +33,10 @@ export const WORLD = {
  * mundo (no de pantalla), así que la cámara no afecta a dónde están.
  */
 export const BLAST_ZONE = {
-  left: -760,
-  right: 760,
-  top: -520,
-  bottom: 760,
+  left: -1100,
+  right: 1100,
+  top: -820,
+  bottom: 1040,
 } as const;
 
 /**
@@ -95,12 +95,29 @@ export const POV = {
   step: 0.05,
 } as const;
 
-/** Reglas de combate básicas (de momento solo vidas y reaparición). */
+/** Reglas de combate básicas: vidas y reaparición. */
 export const RULES = {
   startingLives: 3,
-  /** Punto de reaparición en coordenadas de mundo. */
+  /** Punto de reaparición en coordenadas de mundo (centro de referencia). */
   respawnX: 0,
   respawnY: -120,
+
+  /** Retraso tras morir antes de reaparecer (segundos). */
+  respawnDelay: 1.4,
+
+  /**
+   * Reaparición repartida: en vez de salir siempre en el centro, los puntos de
+   * spawn se reparten en X alrededor del centro para que dos jugadores que
+   * reaparecen a la vez no colisionen. Se elige el más libre.
+   */
+  respawnSpreadX: 260,
+
+  /**
+   * Plataforma temporal de reaparición: aparece bajo el jugador, lo sostiene
+   * quieto en el aire y se destruye en cuanto el jugador se mueve o actúa (o al
+   * agotarse este tiempo de seguridad).
+   */
+  respawnPlatformMaxTime: 4, // s de cortesía antes de desaparecer sola
 } as const;
 
 /** Simulación con timestep fijo. 60 Hz es el estándar para un fighter. */
@@ -182,4 +199,37 @@ export const PLAYER = {
    * empuje de separación no se cancele al mantener la tecla hacia la pared.
    */
   wallJumpLockTime: 0.18, // s
+} as const;
+
+/**
+ * Escudo / esquiva (al estilo Smash).
+ *
+ * Mantener el botón de escudo levanta una burbuja que se ENCOGE con el tiempo.
+ * Mientras aguanta, reduce el daño recibido (y el knockback). Si se agota, el
+ * escudo "se rompe" y queda un pequeño castigo. En el AIRE, pulsar escudo hace
+ * una esquiva/impulso en la dirección apuntada (sirve para cambiar de dirección
+ * en el aire / recuperar).
+ */
+export const SHIELD = {
+  /** Radio de la burbuja a pleno escudo (px). */
+  maxRadius: 42,
+  /** Radio mínimo justo antes de romperse (px). */
+  minRadius: 10,
+  /** Tiempo en segundos de mantener el escudo hasta agotarlo del todo. */
+  drainTime: 2.4,
+  /** Tiempo de recarga completa al soltar (s). */
+  regenTime: 3.2,
+  /** Si el escudo se agota del todo, se bloquea este tiempo (rotura). */
+  breakLockTime: 1.2,
+  /** Fracción de daño que PASA con el escudo lleno (0.25 = absorbe el 75%). */
+  damageTakenFull: 0.25,
+  /** Fracción de knockback que pasa con el escudo lleno. */
+  knockbackTakenFull: 0.35,
+
+  /** Esquiva aérea: impulso (px/s) en la dirección apuntada. */
+  airDodgeSpeed: 720,
+  /** Esquiva aérea: duración de invulnerabilidad/control (s). */
+  airDodgeTime: 0.22,
+  /** Usos de esquiva aérea antes de tocar suelo/pared (como los saltos). */
+  airDodgeMaxUses: 1,
 } as const;

@@ -1,3 +1,5 @@
+import { bindings, type Action, type PlayerSlot } from "./bindings.ts";
+
 /**
  * Estado de intención de un jugador para un paso de simulación.
  *
@@ -22,6 +24,10 @@ export interface InputState {
   heavyHeld: boolean;
   /** El botón de ataque fuerte se acaba de soltar (lanza el cargado). */
   heavyReleased: boolean;
+  /** El botón de escudo/esquiva está mantenido. */
+  shieldHeld: boolean;
+  /** El botón de escudo/esquiva se acaba de pulsar (flanco de subida). */
+  shieldPressed: boolean;
 }
 
 export function createInputState(): InputState {
@@ -33,34 +39,35 @@ export function createInputState(): InputState {
     lightPressed: false,
     heavyHeld: false,
     heavyReleased: false,
+    shieldHeld: false,
+    shieldPressed: false,
   };
 }
 
 /**
- * Lee el teclado y produce InputState. Detecta flancos (pressed/released) para
- * salto, ataque ligero y ataque fuerte.
+ * Lee el teclado y produce InputState a partir de un perfil de teclas
+ * configurable (ver core/bindings.ts). Detecta flancos (pressed/released).
  *
- * Controles:
- *   - Mover: A/D o flechas; agacharse/apuntar: S/↓, apuntar arriba: W/↑.
- *     (ojo: W/↑ también salta; para apuntar arriba sin saltar usa el eje.)
- *   - Salto: Espacio, W, ↑
- *   - Ligero: J
- *   - Fuerte (cargable): K
+ * Nota de diseño: "arriba" ya NO salta. El salto tiene su propia tecla; W/↑
+ * solo sirven para apuntar la dirección del ataque.
+ *
+ * Una instancia por jugador (slot "p1" / "p2"). Varias instancias pueden
+ * compartir el mismo `window`: cada una filtra solo sus propias teclas.
  */
 export class KeyboardInput {
   private pressed = new Set<string>();
   private jumpConsumed = false;
   private lightConsumed = false;
+  private shieldConsumed = false;
   /** Estado del fuerte en el paso anterior, para detectar el "release". */
   private heavyWasHeld = false;
 
-  private readonly left = new Set(["a", "arrowleft"]);
-  private readonly right = new Set(["d", "arrowright"]);
-  private readonly up = new Set(["w", "arrowup"]);
-  private readonly down = new Set(["s", "arrowdown"]);
-  private readonly jump = new Set(["w", "arrowup", " "]);
-  private readonly light = new Set(["j"]);
-  private readonly heavy = new Set(["k"]);
+  constructor(private readonly slot: PlayerSlot = "p1") {}
+
+  /** Teclas asignadas a una acción de este jugador (lectura en vivo). */
+  private keysFor(action: Action): string[] {
+    return bindings[this.slot][action];
+  }
 
   attach(target: Window = window): void {
     target.addEventListener("keydown", this.onKeyDown);
@@ -83,47 +90,43 @@ export class KeyboardInput {
   private onKeyUp = (e: KeyboardEvent): void => {
     const key = e.key.toLowerCase();
     this.pressed.delete(key);
-    if (this.jump.has(key) && !this.anyOf(this.jump)) this.jumpConsumed = false;
-    if (this.light.has(key) && !this.anyOf(this.light)) {
-      this.lightConsumed = false;
-    }
+    if (!this.anyOf("jump")) this.jumpConsumed = false;
+    if (!this.anyOf("light")) this.lightConsumed = false;
+    if (!this.anyOf("shield")) this.shieldConsumed = false;
   };
 
   private onBlur = (): void => {
     this.pressed.clear();
     this.jumpConsumed = false;
     this.lightConsumed = false;
+    this.shieldConsumed = false;
     this.heavyWasHeld = false;
   };
 
   private isGameKey(key: string): boolean {
-    return (
-      this.left.has(key) ||
-      this.right.has(key) ||
-      this.up.has(key) ||
-      this.down.has(key) ||
-      this.jump.has(key) ||
-      this.light.has(key) ||
-      this.heavy.has(key)
-    );
+    const b = bindings[this.slot];
+    for (const action of Object.keys(b) as Action[]) {
+      if (b[action].includes(key)) return true;
+    }
+    return false;
   }
 
-  private anyOf(set: Set<string>): boolean {
-    for (const k of set) if (this.pressed.has(k)) return true;
+  private anyOf(action: Action): boolean {
+    for (const k of this.keysFor(action)) if (this.pressed.has(k)) return true;
     return false;
   }
 
   sample(out: InputState): void {
-    const l = this.anyOf(this.left);
-    const r = this.anyOf(this.right);
-    const u = this.anyOf(this.up);
-    const d = this.anyOf(this.down);
+    const l = this.anyOf("left");
+    const r = this.anyOf("right");
+    const u = this.anyOf("up");
+    const d = this.anyOf("down");
 
     out.moveX = (r ? 1 : 0) - (l ? 1 : 0);
     out.moveY = (d ? 1 : 0) - (u ? 1 : 0);
 
     // Salto (flanco de subida).
-    const jumpHeld = this.anyOf(this.jump);
+    const jumpHeld = this.anyOf("jump");
     out.jumpHeld = jumpHeld;
     if (jumpHeld && !this.jumpConsumed) {
       out.jumpPressed = true;
@@ -133,7 +136,7 @@ export class KeyboardInput {
     }
 
     // Ligero (flanco de subida).
-    const lightHeld = this.anyOf(this.light);
+    const lightHeld = this.anyOf("light");
     if (lightHeld && !this.lightConsumed) {
       out.lightPressed = true;
       this.lightConsumed = true;
@@ -142,9 +145,19 @@ export class KeyboardInput {
     }
 
     // Fuerte: held + detección de release (soltar tras mantener).
-    const heavyHeld = this.anyOf(this.heavy);
+    const heavyHeld = this.anyOf("heavy");
     out.heavyHeld = heavyHeld;
     out.heavyReleased = this.heavyWasHeld && !heavyHeld;
     this.heavyWasHeld = heavyHeld;
+
+    // Escudo / esquiva: held + flanco de subida.
+    const shieldHeld = this.anyOf("shield");
+    out.shieldHeld = shieldHeld;
+    if (shieldHeld && !this.shieldConsumed) {
+      out.shieldPressed = true;
+      this.shieldConsumed = true;
+    } else {
+      out.shieldPressed = false;
+    }
   }
 }

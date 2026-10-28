@@ -1,6 +1,6 @@
 import { CAMERA, VIEW, WORLD } from "../config.ts";
 import { debug } from "../debug/debugState.ts";
-import type { Player } from "../entities/player.ts";
+import type { World } from "../game/world.ts";
 
 /**
  * Cámara 2D de encuadre estilo Smash.
@@ -56,8 +56,8 @@ export class Camera {
    * Coloca la cámara directamente en su objetivo (sin suavizar), útil al
    * iniciar para no ver un "viaje" de la cámara en el primer frame.
    */
-  snapTo(player: Player): void {
-    const box = this.computeTargetBox(player);
+  snapTo(world: World): void {
+    const box = this.computeTargetBox(world);
     this.focus.x = box.cx;
     this.focus.y = box.cy;
     this.zoom = this.zoomForBox(box.halfW, box.halfH);
@@ -67,16 +67,17 @@ export class Camera {
   /**
    * Actualiza la cámara (una vez por frame de render; es puramente visual).
    */
-  follow(player: Player): void {
-    const box = this.computeTargetBox(player);
+  follow(world: World): void {
+    const box = this.computeTargetBox(world);
 
-    // Centro objetivo. Al pausar lo desplazamos hacia el jugador (reencuadre);
-    // al despausar vuelve al centro del encuadre normal de la isla.
+    // Centro objetivo. Al pausar lo desplazamos hacia el jugador principal
+    // (reencuadre); al despausar vuelve al centro del encuadre normal.
     let targetX = box.cx;
     let targetY = box.cy;
     if (this.paused) {
-      const px = player.pos.x + player.width / 2;
-      const py = player.pos.y + player.height / 2;
+      const p = world.player;
+      const px = p.pos.x + p.width / 2;
+      const py = p.pos.y + p.height / 2;
       const t = CAMERA.pauseFocusLerp;
       targetX = box.cx + (px - box.cx) * t;
       targetY = box.cy + (py - box.cy) * t;
@@ -96,9 +97,10 @@ export class Camera {
 
   /**
    * Caja objetivo en mundo: centro (cx, cy) y semiejes (halfW, halfH) que
-   * contienen el encuadre base de la isla y al jugador, con margen.
+   * contienen el encuadre base de la isla y a TODOS los combatientes vivos,
+   * con margen. Así en versus la cámara encuadra a ambos jugadores.
    */
-  private computeTargetBox(player: Player): {
+  private computeTargetBox(world: World): {
     cx: number;
     cy: number;
     halfW: number;
@@ -113,13 +115,17 @@ export class Camera {
     let top = baseCy - CAMERA.baseHalfHeight;
     let bottom = baseCy + CAMERA.baseHalfHeight;
 
-    // Expandimos la caja para incluir al jugador (centro del jugador).
-    const px = player.pos.x + player.width / 2;
-    const py = player.pos.y + player.height / 2;
-    left = Math.min(left, px - CAMERA.margin);
-    right = Math.max(right, px + CAMERA.margin);
-    top = Math.min(top, py - CAMERA.margin);
-    bottom = Math.max(bottom, py + CAMERA.margin);
+    // Expandimos la caja para incluir a cada combatiente vivo (su centro).
+    for (const f of world.fighters) {
+      if (!f.alive || f.isDead) continue;
+      const p = f.player;
+      const px = p.pos.x + p.width / 2;
+      const py = p.pos.y + p.height / 2;
+      left = Math.min(left, px - CAMERA.margin);
+      right = Math.max(right, px + CAMERA.margin);
+      top = Math.min(top, py - CAMERA.margin);
+      bottom = Math.max(bottom, py + CAMERA.margin);
+    }
 
     return {
       cx: (left + right) / 2,

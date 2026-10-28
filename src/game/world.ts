@@ -5,42 +5,136 @@ import { overlaps } from "../physics/aabb.ts";
 import { createInputState, type InputState } from "../core/input.ts";
 import { debug } from "../debug/debugState.ts";
 
+/** Modo de juego. */
+export type GameMode = "training" | "versus";
+
+/** Color identificativo de cada combatiente (para render y HUD). */
+export const FIGHTER_COLORS = ["#7fb2ff", "#c45b7a"] as const;
+export const FIGHTER_LABELS = ["P1", "P2"] as const;
+
 /**
- * El "mundo" contiene todo el estado simulable: jugador(es) y plataformas.
+ * Efecto visual de muerte: una "explosión" en el punto donde el combatiente
+ * cruzó la blast zone. Vive unos frames y lo dibuja el renderer.
+ */
+export interface DeathEffect {
+  x: number;
+  y: number;
+  color: string;
+  /** Tiempo de vida restante (s) y total, para animar [1..0]. */
+  life: number;
+  readonly maxLife: number;
+}
+
+/**
+ * Un combatiente del mundo: su cuerpo (Player), sus vidas, de quién viene el
+ * input y su estado de reaparición (retraso + plataforma temporal).
+ */
+export class Fighter {
+  lives: number;
+  /** >0 = muerto, esperando para reaparecer (s restantes). */
+  respawnTimer = 0;
+  /** Plataforma temporal bajo el jugador tras reaparecer (o null). */
+  respawnPlatform: Platform | null = null;
+  /** Tiempo de vida restante de la plataforma temporal (s). */
+  private respawnPlatformTimer = 0;
+  /** Posición de referencia para detectar el primer movimiento tras reaparecer. */
+  private respawnAnchorX = 0;
+
+  constructor(
+    readonly index: number,
+    readonly player: Player,
+    readonly color: string,
+    readonly label: string,
+    startingLives: number,
+  ) {
+    this.lives = startingLives;
+  }
+
+  get isDead(): boolean {
+    return this.respawnTimer > 0;
+  }
+
+  /** ¿Sigue en juego? false = eliminado (sin vidas). */
+  alive = true;
+
+  /** Arranca la plataforma temporal bajo el jugador recién reaparecido. */
+  armRespawnPlatform(platform: Platform): void {
+    this.respawnPlatform = platform;
+    this.respawnPlatformTimer = RULES.respawnPlatformMaxTime;
+    this.respawnAnchorX = this.player.pos.x;
+  }
+
+  /**
+   * Actualiza la plataforma temporal: se destruye en cuanto el jugador se mueve
+   * (o actúa), o al agotarse su tiempo de cortesía.
+   */
+  updateRespawnPlatform(dt: number): void {
+    if (!this.respawnPlatform) return;
+    this.respawnPlatformTimer -= dt;
+
+    const moved = Math.abs(this.player.pos.x - this.respawnAnchorX) > 2;
+    const acted =
+      this.player.vel.y < -1 || // saltó
+      this.player.attack !== null ||
+      this.player.charging ||
+      this.player.shielding ||
+      this.player.dodging;
+
+    if (moved || acted || this.respawnPlatformTimer <= 0) {
+      this.respawnPlatform = null;
+    }
+  }
+}
+
+/**
+ * El "mundo" contiene todo el estado simulable: combatientes y plataformas.
  * Las coordenadas son de MUNDO (el centro de la isla está en x=0), no de
  * pantalla. La cámara se encarga luego de traducir mundo -> pantalla.
  */
 export class World {
-  readonly player: Player;
-  /**
-   * El dummy es un Player normal (mismo cuerpo, misma física, recibe golpes
-   * igual). No recibe input (se queda "tieso"), así pegarle simula de verdad
-   * golpear a otro jugador. El mundo lo devuelve despacio a su sitio cuando
-   * queda quieto en el suelo, para repetir pruebas.
-   */
-  readonly dummy: Player;
+  readonly mode: GameMode;
+  readonly fighters: Fighter[] = [];
 
-  /** Input neutro permanente para el dummy. */
-  private readonly dummyInput: InputState = createInputState();
-  /** Posición de reposo del dummy. */
-  private readonly dummyHomeX: number;
-
+  /** Plataformas fijas del nivel (isla + flotantes). */
   readonly platforms: Platform[] = [];
 
-  lives: number = RULES.startingLives;
-  gameOver = false;
+  /** Efectos de muerte activos (visuales). */
+  readonly deathEffects: DeathEffect[] = [];
 
-  constructor() {
+  /** ¿Terminó la partida? Y el índice del ganador (o -1). */
+  gameOver = false;
+  winnerIndex = -1;
+
+  /** Input neutro permanente para el dummy en entrenamiento. */
+  private readonly dummyInput: InputState = createInputState();
+
+  constructor(mode: GameMode = "training") {
+    this.mode = mode;
     this.buildIsland();
 
-    this.player = new Player(
-      RULES.respawnX - Player.halfWidth,
-      RULES.respawnY,
+    // Fighter 0: siempre el jugador humano principal.
+    const p1 = new Player(RULES.respawnX - Player.halfWidth, RULES.respawnY);
+    this.fighters.push(
+      new Fighter(0, p1, FIGHTER_COLORS[0], FIGHTER_LABELS[0], RULES.startingLives),
     );
 
-    // Dummy a la derecha del spawn, apoyado sobre la isla.
-    this.dummyHomeX = 220 - Player.halfWidth;
-    this.dummy = new Player(this.dummyHomeX, WORLD.groundY - 100);
+    // Fighter 1: en versus es P2 humano; en entrenamiento es el dummy.
+    const startX = mode === "versus" ? 220 : 220;
+    const p2 = new Player(startX - Player.halfWidth, WORLD.groundY - 100);
+    this.fighters.push(
+      new Fighter(
+        1,
+        p2,
+        FIGHTER_COLORS[1],
+        mode === "versus" ? FIGHTER_LABELS[1] : "DUMMY",
+        mode === "versus" ? RULES.startingLives : Infinity,
+      ),
+    );
+  }
+
+  /** Acceso cómodo al jugador principal (fighter 0). */
+  get player(): Player {
+    return this.fighters[0].player;
   }
 
   /** Construye una isla flotante centrada en x=0. */
@@ -55,89 +149,221 @@ export class World {
     this.platforms.push(new Platform(60, g - 250, 200, 20, true));
   }
 
-  /** Avanza la simulación un paso de tiempo fijo con el input dado. */
-  step(input: InputState, dt: number): void {
-    this.player.fixedUpdate(input, this.platforms, dt);
-    this.updateDummy(dt);
-    this.resolveHits();
-    this.checkBlastZone();
+  /** Plataformas efectivas este paso: las fijas + las temporales de respawn. */
+  private activePlatforms(): Platform[] {
+    const temp = this.fighters
+      .map((f) => f.respawnPlatform)
+      .filter((p): p is Platform => p !== null);
+    return temp.length ? [...this.platforms, ...temp] : this.platforms;
   }
 
   /**
-   * Actualiza el dummy según el modo elegido en dev tools:
-   *  - Fijado (dummyPinned): clavado en su sitio, inmóvil, ignora knockback.
-   *  - Libre: se simula como un jugador (cae, recibe golpes y knockback). Si
-   *    sale por la blast zone, reaparece en su sitio como un jugador normal.
+   * Avanza la simulación un paso de tiempo fijo.
+   * @param inputs intención de cada combatiente (índice = fighter). En
+   *   entrenamiento, el índice 1 se ignora (el dummy usa input neutro).
    */
-  private updateDummy(dt: number): void {
-    if (debug.dummyPinned) {
-      // Clavado: anulamos movimiento y lo mantenemos en su posición de reposo.
-      this.dummy.pos.x = this.dummyHomeX;
-      this.dummy.pos.y = WORLD.groundY - this.dummy.height;
-      this.dummy.prevPos.x = this.dummy.pos.x;
-      this.dummy.prevPos.y = this.dummy.pos.y;
-      this.dummy.vel.x = 0;
-      this.dummy.vel.y = 0;
+  step(inputs: InputState[], dt: number): void {
+    if (this.gameOver) return;
+
+    const platforms = this.activePlatforms();
+
+    for (const f of this.fighters) {
+      this.updateFighter(f, inputs[f.index], dt, platforms);
+    }
+
+    this.resolveHits();
+    this.updateDeathEffects(dt);
+  }
+
+  private updateFighter(
+    f: Fighter,
+    input: InputState | undefined,
+    dt: number,
+    platforms: Platform[],
+  ): void {
+    // Muerto: corre el reloj de reaparición y no se simula el cuerpo.
+    if (f.respawnTimer > 0) {
+      f.respawnTimer -= dt;
+      if (f.respawnTimer <= 0) this.doRespawn(f);
       return;
     }
 
-    // Libre: física normal con input neutro.
-    this.dummy.fixedUpdate(this.dummyInput, this.platforms, dt);
+    // Entrenamiento: el fighter 1 es el dummy.
+    if (this.mode === "training" && f.index === 1) {
+      this.updateDummy(f, dt, platforms);
+    } else {
+      f.player.fixedUpdate(input ?? this.dummyInput, platforms, dt);
+    }
 
-    // Si cae fuera del mapa, reaparece como un jugador.
-    const b = this.dummy.box;
+    f.updateRespawnPlatform(dt);
+    this.checkBlastZone(f);
+  }
+
+  /** Dummy de entrenamiento: fijable o libre. */
+  private updateDummy(f: Fighter, dt: number, platforms: Platform[]): void {
+    const dummy = f.player;
+    if (debug.dummyPinned) {
+      const homeX = 220 - Player.halfWidth;
+      dummy.pos.x = homeX;
+      dummy.pos.y = WORLD.groundY - dummy.height;
+      dummy.prevPos.x = dummy.pos.x;
+      dummy.prevPos.y = dummy.pos.y;
+      dummy.vel.x = 0;
+      dummy.vel.y = 0;
+      return;
+    }
+    dummy.fixedUpdate(this.dummyInput, platforms, dt);
+  }
+
+  /**
+   * Resuelve golpes entre combatientes. Cada ataque activo intenta golpear a
+   * todos los demás (en versus, ambos sentidos). Un ataque solo golpea una vez
+   * a cada objetivo.
+   */
+  private resolveHits(): void {
+    for (const attacker of this.fighters) {
+      const atk = attacker.player.attack;
+      if (!atk || !atk.hitbox) continue;
+
+      for (const target of this.fighters) {
+        if (target === attacker) continue;
+        if (target.respawnTimer > 0) continue; // no golpear a muertos/reapareciendo
+        if (atk.hasHit(target.player)) continue;
+        if (overlaps(atk.hitbox, target.player.box)) {
+          target.player.receiveHit(
+            atk.knockback,
+            atk.def.knockbackUp,
+            atk.damage,
+            atk.attackerFacing,
+          );
+        }
+      }
+    }
+  }
+
+  /** Si un combatiente sale del rectángulo letal, muere. */
+  private checkBlastZone(f: Fighter): void {
+    const b = f.player.box;
     const out =
       b.x + b.w < BLAST_ZONE.left ||
       b.x > BLAST_ZONE.right ||
-      b.y + b.h < BLAST_ZONE.top ||
+      b.y + b.h < BLAST_ZONE.top || // el borde de ARRIBA también mata
       b.y > BLAST_ZONE.bottom;
-    if (out) {
-      this.dummy.respawn(
-        this.dummyHomeX + Player.halfWidth,
-        WORLD.groundY - 120,
-      );
+
+    if (out) this.onFighterDied(f);
+  }
+
+  private onFighterDied(f: Fighter): void {
+    // Efecto de muerte en el punto de salida.
+    this.spawnDeathEffect(f);
+
+    // En ENTRENAMIENTO nadie se elimina: el dummy tiene vidas infinitas y el
+    // jugador recarga vidas al llegar a 0, para poder seguir practicando.
+    if (this.mode === "training") {
+      if (Number.isFinite(f.lives)) {
+        f.lives = Math.max(0, f.lives - 1);
+        if (f.lives <= 0) f.lives = RULES.startingLives;
+      }
+      f.respawnTimer = RULES.respawnDelay;
+      return;
+    }
+
+    // VERSUS: se descuenta vida; a 0 vidas queda fuera de combate.
+    f.lives = Math.max(0, f.lives - 1);
+    if (f.lives <= 0) {
+      f.alive = false;
+      this.checkMatchOver();
+      return;
+    }
+    f.respawnTimer = RULES.respawnDelay;
+  }
+
+  /** Dibuja/registra el efecto de muerte en la posición actual del fighter. */
+  private spawnDeathEffect(f: Fighter): void {
+    const b = f.player.box;
+    // Punto aproximado donde salió: centro del cuerpo recortado a la zona.
+    const x = clamp(b.x + b.w / 2, BLAST_ZONE.left, BLAST_ZONE.right);
+    const y = clamp(b.y + b.h / 2, BLAST_ZONE.top, BLAST_ZONE.bottom);
+    this.deathEffects.push({
+      x,
+      y,
+      color: f.color,
+      life: 0.6,
+      maxLife: 0.6,
+    });
+  }
+
+  private updateDeathEffects(dt: number): void {
+    for (const e of this.deathEffects) e.life -= dt;
+    // Elimina los caducados.
+    for (let i = this.deathEffects.length - 1; i >= 0; i--) {
+      if (this.deathEffects[i].life <= 0) this.deathEffects.splice(i, 1);
     }
   }
 
   /**
-   * Comprueba si la hitbox activa del jugador golpea al dummy. Un mismo ataque
-   * solo golpea una vez (controlado por ActiveAttack).
+   * Reaparece al combatiente: posición repartida (no siempre el centro) para
+   * que dos que reaparecen a la vez no colisionen, quieto en el aire sobre una
+   * plataforma temporal que se destruye al primer movimiento.
    */
-  private resolveHits(): void {
-    const atk = this.player.attack;
-    if (!atk || !atk.hitbox) return;
-    if (atk.hasHit(this.dummy)) return;
+  private doRespawn(f: Fighter): void {
+    const x = this.chooseRespawnX(f);
+    const y = RULES.respawnY;
+    f.player.respawn(x, y);
 
-    if (overlaps(atk.hitbox, this.dummy.box)) {
-      this.dummy.receiveHit(
-        atk.knockback,
-        atk.def.knockbackUp,
-        atk.damage,
-        atk.attackerFacing,
-      );
-    }
+    // Plataforma temporal justo bajo los pies, atravesable (one-way), para
+    // sostenerlo quieto en el aire hasta que se mueva.
+    const pb = f.player.box;
+    const platW = pb.w + 48;
+    const platX = pb.x + pb.w / 2 - platW / 2;
+    const platY = pb.y + pb.h; // justo bajo los pies
+    f.armRespawnPlatform(new Platform(platX, platY, platW, 14, true));
   }
 
-  /** Si el jugador sale del rectángulo letal, pierde vida y reaparece. */
-  private checkBlastZone(): void {
-    const b = this.player.box;
-    const out =
-      b.x + b.w < BLAST_ZONE.left ||
-      b.x > BLAST_ZONE.right ||
-      b.y + b.h < BLAST_ZONE.top ||
-      b.y > BLAST_ZONE.bottom;
+  /**
+   * Elige una X de reaparición repartida alrededor del centro, evitando quedar
+   * encima de otro combatiente que esté vivo o reapareciendo.
+   */
+  private chooseRespawnX(self: Fighter): number {
+    const spread = RULES.respawnSpreadX;
+    const candidates = [
+      RULES.respawnX,
+      RULES.respawnX - spread,
+      RULES.respawnX + spread,
+      RULES.respawnX - spread * 1.6,
+      RULES.respawnX + spread * 1.6,
+    ];
 
-    if (out) {
-      this.onPlayerDied();
+    // Posiciones ocupadas (centros X) de los demás combatientes vivos.
+    const others = this.fighters
+      .filter((o) => o !== self && o.alive)
+      .map((o) => o.player.pos.x + o.player.width / 2);
+
+    let best = candidates[0];
+    let bestDist = -1;
+    for (const c of candidates) {
+      let minDist = Infinity;
+      for (const o of others) minDist = Math.min(minDist, Math.abs(c - o));
+      if (others.length === 0) return c; // nadie más: usa el primero libre
+      if (minDist > bestDist) {
+        bestDist = minDist;
+        best = c;
+      }
     }
+    return best;
   }
 
-  private onPlayerDied(): void {
-    this.lives = Math.max(0, this.lives - 1);
-    if (this.lives === 0) {
-      // De momento, al llegar a 0 reiniciamos vidas para seguir probando.
-      this.lives = RULES.startingLives;
+  /** Comprueba si la partida terminó (solo en versus). */
+  private checkMatchOver(): void {
+    if (this.mode !== "versus") return;
+    const alive = this.fighters.filter((f) => f.alive);
+    if (alive.length <= 1) {
+      this.gameOver = true;
+      this.winnerIndex = alive.length === 1 ? alive[0].index : -1;
     }
-    this.player.respawn(RULES.respawnX, RULES.respawnY);
   }
+}
+
+function clamp(v: number, min: number, max: number): number {
+  return v < min ? min : v > max ? max : v;
 }

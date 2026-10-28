@@ -1,5 +1,14 @@
 import { POV } from "../config.ts";
+import {
+  ACTION_LABELS,
+  bindings,
+  keyLabel,
+  rebind,
+  resetBindings,
+  type PlayerSlot,
+} from "../core/bindings.ts";
 import { debug, type DebugState } from "../debug/debugState.ts";
+import type { GameMode } from "../game/world.ts";
 
 /**
  * Menú de pausa con navegación tipo "stack" horizontal.
@@ -62,28 +71,36 @@ const DUMMY_TOGGLES: ToggleDef[] = [
   },
 ];
 
-const CONTROLS: Array<[string, string]> = [
-  ["Mover", "A / D  ·  ← / →"],
-  ["Saltar / doble salto", "Espacio · W · ↑"],
-  ["Apuntar ataque", "W/↑ arriba · S/↓ abajo"],
-  ["Ataque ligero", "J"],
-  ["Ataque fuerte (cargar)", "K (mantener)"],
-  ["Pausa", "Esc"],
-];
-
 export interface PauseMenuCallbacks {
   onOpen: () => void;
   onClose: () => void;
+  /** Volver al menú principal (abandonar la partida). */
+  onQuitToMenu: () => void;
+  /** Modo actual, para mostrar/ocultar el apartado de Dummy. */
+  mode: GameMode;
 }
 
-type PageId = "root" | "options" | "dev" | "dummy" | "controls";
+type PageId =
+  | "root"
+  | "options"
+  | "keys"
+  | "keysP1"
+  | "keysP2"
+  | "dev"
+  | "dummy"
+  | "controls"
+  | "quit";
 
 const PAGE_TITLE: Record<PageId, string> = {
   root: "Pausa",
   options: "Opciones",
+  keys: "Controles (teclas)",
+  keysP1: "Teclas · P1",
+  keysP2: "Teclas · P2",
   dev: "Dev tools",
   dummy: "Dummy",
   controls: "Controles",
+  quit: "Salir de la partida",
 };
 
 export class PauseMenu {
@@ -95,6 +112,8 @@ export class PauseMenu {
   private nav: PageId[] = ["root"];
   /** ¿Hay una animación de transición en curso? */
   private animating = false;
+  /** Mientras capturamos una tecla para reasignar, Esc no navega. */
+  private capturing = false;
 
   constructor(private readonly cb: PauseMenuCallbacks) {
     this.root = document.createElement("div");
@@ -128,8 +147,17 @@ export class PauseMenu {
     return this.open;
   }
 
+  /** Elimina el menú del DOM y desengancha sus listeners (al salir de partida). */
+  destroy(): void {
+    window.removeEventListener("keydown", this.onKey);
+    this.root.remove();
+  }
+
   private onKey = (e: KeyboardEvent): void => {
     if (e.key !== "Escape") return;
+    // Si estamos capturando una tecla para reasignar, Esc cancela la captura
+    // (lo gestiona el propio capturador), no navega el menú.
+    if (this.capturing) return;
     e.preventDefault();
     if (this.animating) return;
     // Esc retrocede un nivel; en la raíz, cierra el menú.
@@ -251,6 +279,15 @@ export class PauseMenu {
       case "options":
         this.fillOptions(body);
         break;
+      case "keys":
+        this.fillKeys(body);
+        break;
+      case "keysP1":
+        this.fillKeyBindings(body, "p1");
+        break;
+      case "keysP2":
+        this.fillKeyBindings(body, "p2");
+        break;
       case "dev":
         this.fillToggles(body, DEV_TOGGLES);
         break;
@@ -259,6 +296,9 @@ export class PauseMenu {
         break;
       case "controls":
         this.fillControls(body);
+        break;
+      case "quit":
+        this.fillQuit(body);
         break;
       case "root":
       default:
@@ -272,13 +312,113 @@ export class PauseMenu {
     el.appendChild(this.menuButton("Reanudar", () => this.setOpen(false)));
     el.appendChild(this.menuButton("Opciones", () => this.goTo("options")));
     el.appendChild(this.menuButton("Dev tools", () => this.goTo("dev")));
-    el.appendChild(this.menuButton("Dummy", () => this.goTo("dummy")));
+    // El Dummy solo tiene sentido en entrenamiento.
+    if (this.cb.mode === "training") {
+      el.appendChild(this.menuButton("Dummy", () => this.goTo("dummy")));
+    }
     el.appendChild(this.menuButton("Controles", () => this.goTo("controls")));
+    el.appendChild(
+      this.menuButton("Menú principal", () => this.goTo("quit")),
+    );
   }
 
-  /** Página de opciones del jugador. De momento: el POV (zoom de la partida). */
+  /** Opciones del jugador: POV + acceso al remapeo de teclas. */
   private fillOptions(el: HTMLElement): void {
     el.appendChild(this.buildPovSlider());
+    el.appendChild(
+      this.menuButton("Cambiar teclas", () => this.goTo("keys")),
+    );
+  }
+
+  /** Elección de qué jugador remapear. */
+  private fillKeys(el: HTMLElement): void {
+    el.appendChild(this.menuButton("Jugador 1", () => this.goTo("keysP1")));
+    el.appendChild(this.menuButton("Jugador 2", () => this.goTo("keysP2")));
+  }
+
+  /** Lista de acciones con su tecla; pulsar una captura la nueva tecla. */
+  private fillKeyBindings(el: HTMLElement, slot: PlayerSlot): void {
+    for (const { action, label } of ACTION_LABELS) {
+      const row = document.createElement("div");
+      row.className = "pause-keyrow";
+
+      const name = document.createElement("span");
+      name.className = "pause-label";
+      name.textContent = label;
+      row.appendChild(name);
+
+      const keyBtn = document.createElement("button");
+      keyBtn.type = "button";
+      keyBtn.className = "pause-key";
+      keyBtn.textContent = keyLabel(bindings[slot][action][0] ?? "—");
+      keyBtn.addEventListener("click", () => {
+        this.captureKey(slot, action, keyBtn);
+      });
+      row.appendChild(keyBtn);
+
+      el.appendChild(row);
+    }
+
+    const reset = this.menuButton("Restaurar por defecto", () => {
+      resetBindings(slot);
+      // Re-dibuja la página actual para reflejar los valores por defecto.
+      const page = this.buildPage(slot === "p1" ? "keysP1" : "keysP2");
+      this.viewport.replaceChildren(page);
+    });
+    reset.classList.add("pause-btn-danger");
+    el.appendChild(reset);
+  }
+
+  /**
+   * Captura la próxima tecla pulsada y la asigna a la acción. Escape cancela.
+   */
+  private captureKey(
+    slot: PlayerSlot,
+    action: (typeof ACTION_LABELS)[number]["action"],
+    btn: HTMLButtonElement,
+  ): void {
+    if (this.capturing) return;
+    this.capturing = true;
+    btn.classList.add("capturing");
+    btn.textContent = "Pulsa una tecla…";
+
+    const finish = (): void => {
+      window.removeEventListener("keydown", onDown, true);
+      this.capturing = false;
+      btn.classList.remove("capturing");
+    };
+
+    const onDown = (e: KeyboardEvent): void => {
+      e.preventDefault();
+      e.stopPropagation();
+      const key = e.key.toLowerCase();
+      if (key !== "escape") {
+        rebind(slot, action, key);
+      }
+      btn.textContent = keyLabel(bindings[slot][action][0] ?? "—");
+      finish();
+    };
+
+    // Captura en fase de captura para adelantarnos al onKey del menú.
+    window.addEventListener("keydown", onDown, true);
+  }
+
+  /** Confirmación para abandonar la partida y volver al menú principal. */
+  private fillQuit(el: HTMLElement): void {
+    const warn = document.createElement("p");
+    warn.className = "pause-warn";
+    warn.textContent =
+      "Si sales ahora perderás el progreso de esta partida. ¿Seguro?";
+    el.appendChild(warn);
+
+    const confirm = this.menuButton("Sí, salir al menú", () => {
+      this.setOpen(false);
+      this.cb.onQuitToMenu();
+    });
+    confirm.classList.add("pause-btn-danger");
+    el.appendChild(confirm);
+
+    el.appendChild(this.menuButton("Cancelar", () => this.back()));
   }
 
   private buildPovSlider(): HTMLElement {
@@ -328,8 +468,17 @@ export class PauseMenu {
     for (const def of defs) el.appendChild(this.buildToggle(def));
   }
 
+  /** Resumen de controles de P1 (leído en vivo de los bindings) + la pausa. */
   private fillControls(el: HTMLElement): void {
-    for (const [action, keys] of CONTROLS) {
+    const rows: Array<[string, string]> = ACTION_LABELS.map(
+      ({ action, label }) => [
+        label,
+        bindings.p1[action].map(keyLabel).join(" / "),
+      ],
+    );
+    rows.push(["Pausa", "Esc"]);
+
+    for (const [action, keys] of rows) {
       const row = document.createElement("div");
       row.className = "pause-control";
       const a = document.createElement("span");

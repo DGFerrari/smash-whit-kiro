@@ -1,4 +1,4 @@
-import { PLAYER } from "../config.ts";
+import { PLAYER, SHIELD } from "../config.ts";
 import type { AABB, Vec2 } from "../core/types.ts";
 import type { InputState } from "../core/input.ts";
 import type { Platform } from "../physics/platform.ts";
@@ -64,6 +64,29 @@ export class Player {
   /** Usos del ataque fuerte restantes EN EL AIRE (como los saltos). */
   heavyAirUses: number = HEAVY_LUNGE.maxAirUses;
 
+  /**
+   * Escudo: salud del escudo en [0..1]. 1 = lleno (burbuja grande), 0 = roto.
+   * Mientras `shielding` está activo se drena; al soltar se regenera.
+   */
+  shieldHealth = 1;
+  /** ¿Está levantando el escudo ahora mismo (en suelo)? (para render). */
+  shielding = false;
+  /** Bloqueo por rotura de escudo (s). Mientras >0 no puede actuar. */
+  private shieldBreakTimer = 0;
+  /** Esquivas aéreas restantes antes de tocar suelo/pared. */
+  airDodgeUses: number = SHIELD.airDodgeMaxUses;
+  /** Tiempo restante de esquiva aérea activa (s); >0 = invulnerable. */
+  private airDodgeTimer = 0;
+  /** ¿Está en plena esquiva aérea? (para render / invulnerabilidad). */
+  get dodging(): boolean {
+    return this.airDodgeTimer > 0;
+  }
+  /** Radio actual del escudo para el render (0 si no hay escudo). */
+  get shieldRadius(): number {
+    if (!this.shielding) return 0;
+    return SHIELD.minRadius + (SHIELD.maxRadius - SHIELD.minRadius) * this.shieldHealth;
+  }
+
   /** Bloqueo de control horizontal tras un wall jump (s). */
   private wallJumpLockTimer = 0;
   /**
@@ -115,6 +138,11 @@ export class Player {
     this.damage = 0;
     this.hitFlash = 0;
     this.hitstunTimer = 0;
+    this.shieldHealth = 1;
+    this.shielding = false;
+    this.shieldBreakTimer = 0;
+    this.airDodgeUses = SHIELD.airDodgeMaxUses;
+    this.airDodgeTimer = 0;
   }
 
   /** ¿Está aturdido por un golpe recibido? (no puede moverse ni atacar). */
@@ -147,10 +175,28 @@ export class Player {
     damage: number,
     fromFacing: 1 | -1,
   ): void {
-    this.damage += damage;
+    // Una esquiva aérea activa da invulnerabilidad: el golpe no hace nada.
+    if (this.dodging) return;
+
+    // Si está escudando, el escudo absorbe daño y knockback según su salud,
+    // y además se drena de golpe por el impacto.
+    let dmgMult = 1;
+    let kbMult = 1;
+    if (this.shielding && this.shieldHealth > 0) {
+      // Con el escudo lleno pasa poco; cuanto más gastado, más pasa.
+      const h = this.shieldHealth;
+      dmgMult = SHIELD.damageTakenFull + (1 - SHIELD.damageTakenFull) * (1 - h);
+      kbMult = SHIELD.knockbackTakenFull + (1 - SHIELD.knockbackTakenFull) * (1 - h);
+      // El impacto consume escudo proporcional al daño recibido.
+      this.shieldHealth = Math.max(0, this.shieldHealth - damage * 0.03);
+      if (this.shieldHealth <= 0) this.breakShield();
+    }
+
+    const effectiveDamage = damage * dmgMult;
+    this.damage += effectiveDamage;
 
     const scale = 1 + this.damage * 0.012;
-    const kb = baseKnockback * scale;
+    const kb = baseKnockback * scale * kbMult;
     const horizontal = kb * (1 - knockbackUp);
     const vertical = kb * knockbackUp;
 
@@ -160,7 +206,7 @@ export class Player {
 
     // Aturdimiento: más largo cuanto más fuerte el golpe.
     this.hitstunTimer =
-      PLAYER.hitstunBase + damage * PLAYER.hitstunPerDamage;
+      PLAYER.hitstunBase + effectiveDamage * PLAYER.hitstunPerDamage;
 
     // Un golpe interrumpe lo que estuvieras haciendo.
     this.attack = null;
@@ -168,6 +214,14 @@ export class Player {
     this.heavyChargeSteps = 0;
     this.wallSliding = false;
     this.wallGrabDir = 0;
+    this.shielding = false;
+  }
+
+  /** El escudo se rompe: queda bloqueado un rato y se vacía. */
+  private breakShield(): void {
+    this.shieldHealth = 0;
+    this.shielding = false;
+    this.shieldBreakTimer = SHIELD.breakLockTime;
   }
 
   /**
@@ -192,12 +246,18 @@ export class Player {
       return;
     }
 
+    // Escudo / esquiva se procesa antes del combate: si estás escudando no
+    // atacas, y una esquiva aérea consume el input de este paso.
+    this.handleShield(input, dt);
+
     // Combate: primero avanzamos el ataque en curso; luego, si estamos libres,
     // procesamos los inputs de ataque.
     this.updateAttack();
-    this.handleAttackInput(input);
+    if (!this.shielding && this.shieldBreakTimer <= 0) {
+      this.handleAttackInput(input);
+    }
 
-    // Mientras atacamos o cargamos no aceptamos input de movimiento/salto.
+    // Mientras atacamos, cargamos, escudamos o esquivamos no hay movimiento.
     const canMove = !this.isBusy();
 
     if (canMove) {
@@ -235,7 +295,92 @@ export class Player {
   private isBusy(): boolean {
     if (this.charging) return true;
     if (this.attack && !this.attack.cancelable) return true;
+    if (this.shielding) return true;
+    if (this.shieldBreakTimer > 0) return true;
+    if (this.dodging) return true;
     return false;
+  }
+
+  /**
+   * Escudo y esquiva.
+   *  - En SUELO: mantener el botón levanta el escudo (burbuja que se encoge).
+   *    Al soltar, se baja. Si se agota del todo, se rompe (bloqueo temporal).
+   *  - En el AIRE: pulsar el botón hace una esquiva/impulso en la dirección
+   *    apuntada (o hacia donde miras si no apuntas). Sirve para cambiar de
+   *    dirección en el aire y recuperar. Usos limitados por salto.
+   */
+  private handleShield(input: InputState, dt: number): void {
+    // Avanza temporizadores propios del escudo.
+    this.shieldBreakTimer = Math.max(0, this.shieldBreakTimer - dt);
+    this.airDodgeTimer = Math.max(0, this.airDodgeTimer - dt);
+
+    // Si el escudo está roto, no se puede usar nada hasta que pase el bloqueo.
+    if (this.shieldBreakTimer > 0) {
+      this.shielding = false;
+      return;
+    }
+
+    if (this.onGround) {
+      // Esquiva aérea termina al tocar suelo; recarga de usos.
+      this.airDodgeUses = SHIELD.airDodgeMaxUses;
+
+      const wantsShield = input.shieldHeld;
+      if (wantsShield && this.shieldHealth > 0 && !this.attacking) {
+        this.shielding = true;
+        // Drena mientras se mantiene.
+        this.shieldHealth = Math.max(
+          0,
+          this.shieldHealth - dt / SHIELD.drainTime,
+        );
+        if (this.shieldHealth <= 0) this.breakShield();
+        // Escudando en suelo: anclado (no se desliza).
+        this.vel.x = approach(this.vel.x, 0, PLAYER.groundFriction * dt);
+      } else {
+        this.shielding = false;
+        this.regenShield(dt);
+      }
+      return;
+    }
+
+    // --- En el aire ---
+    this.shielding = false; // la burbuja solo se levanta en suelo
+    this.regenShield(dt);
+
+    // Esquiva aérea al pulsar (flanco), si quedan usos y no estamos ya en una.
+    if (input.shieldPressed && this.airDodgeUses > 0 && this.airDodgeTimer <= 0) {
+      this.doAirDodge(input);
+    }
+  }
+
+  private regenShield(dt: number): void {
+    if (this.shieldHealth < 1) {
+      this.shieldHealth = Math.min(1, this.shieldHealth + dt / SHIELD.regenTime);
+    }
+  }
+
+  /**
+   * Esquiva aérea direccional: impulso en la dirección apuntada (o hacia donde
+   * miras si no se apunta). Da invulnerabilidad breve y permite cambiar de
+   * dirección en el aire. Consume un uso.
+   */
+  private doAirDodge(input: InputState): void {
+    let dx = input.moveX;
+    let dy = input.moveY;
+    if (dx === 0 && dy === 0) {
+      // Sin dirección: esquiva horizontal hacia donde miramos.
+      dx = this.facing;
+    }
+    // Normaliza para que la diagonal no sea más rápida.
+    const len = Math.hypot(dx, dy) || 1;
+    this.vel.x = (dx / len) * SHIELD.airDodgeSpeed;
+    this.vel.y = (dy / len) * SHIELD.airDodgeSpeed;
+    if (dx !== 0) this.facing = dx > 0 ? 1 : -1;
+    this.airDodgeTimer = SHIELD.airDodgeTime;
+    this.airDodgeUses = Math.max(0, this.airDodgeUses - 1);
+    // Cancela ataque/carga en curso.
+    this.attack = null;
+    this.charging = false;
+    this.heavyChargeSteps = 0;
   }
 
   /** Avanza el ataque en curso y lo descarta al terminar. */
@@ -526,9 +671,10 @@ export class Player {
       if (this.vel.y > PLAYER.wallSlideSpeed) {
         this.vel.y = PLAYER.wallSlideSpeed;
       }
-      // Recuperamos saltos y usos del fuerte aéreo mientras estamos agarrados.
+      // Recuperamos saltos y usos del fuerte/esquiva aéreos mientras agarrados.
       this.jumpsLeft = PLAYER.maxJumps;
       this.heavyAirUses = HEAVY_LUNGE.maxAirUses;
+      this.airDodgeUses = SHIELD.airDodgeMaxUses;
     }
   }
 

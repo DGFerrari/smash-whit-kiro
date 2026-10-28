@@ -2,6 +2,7 @@ import { BLAST_ZONE } from "../config.ts";
 import type { Player } from "../entities/player.ts";
 import type { Platform } from "../physics/platform.ts";
 import type { Camera } from "./camera.ts";
+import type { World, DeathEffect } from "../game/world.ts";
 import { debug } from "../debug/debugState.ts";
 import { drawPercentHud, type PercentEntry } from "../ui/percentHud.ts";
 
@@ -50,14 +51,7 @@ export class Renderer {
     return window.innerHeight;
   }
 
-  render(
-    player: Player,
-    dummy: Player,
-    platforms: Platform[],
-    camera: Camera,
-    lives: number,
-    alpha: number,
-  ): void {
+  render(world: World, camera: Camera, alpha: number): void {
     const ctx = this.ctx;
     const w = this.cssWidth;
     const h = this.cssHeight;
@@ -68,27 +62,39 @@ export class Renderer {
     // --- Mundo (afectado por la cámara) ---
     ctx.save();
     camera.apply(ctx);
-    this.drawPlatforms(ctx, platforms);
-    if (debug.showBlastZone) this.drawBlastZone(ctx);
-    // El dummy es un Player: se dibuja igual, con otro color y sin ataque.
-    this.drawFighter(ctx, dummy, alpha, "#c45b7a");
-    this.drawFighter(ctx, player, alpha, "#7fb2ff");
-    this.drawAttack(ctx, player); // el "cubo" del ataque del jugador
-    if (debug.showHitboxes) {
-      this.drawHitbox(ctx, player, alpha);
-      this.drawHitbox(ctx, dummy, alpha);
+    this.drawPlatforms(ctx, world.platforms);
+    // Plataformas temporales de reaparición (una por combatiente que acaba de
+    // reaparecer): se dibujan distintas para comunicar que son efímeras.
+    for (const f of world.fighters) {
+      if (f.respawnPlatform) this.drawRespawnPlatform(ctx, f.respawnPlatform);
     }
+    if (debug.showBlastZone) this.drawBlastZone(ctx);
+
+    // Combatientes vivos y sus ataques/escudos.
+    for (const f of world.fighters) {
+      if (!f.alive || f.isDead) continue;
+      this.drawShield(ctx, f.player, alpha);
+      this.drawFighter(ctx, f.player, alpha, f.color);
+      this.drawAttack(ctx, f.player);
+      if (debug.showHitboxes) this.drawHitbox(ctx, f.player, alpha);
+    }
+
+    // Efectos de muerte encima de todo (en coords de mundo).
+    for (const e of world.deathEffects) this.drawDeathEffect(ctx, e);
+
     ctx.restore();
 
     // --- HUD y overlays de debug (espacio de pantalla) ---
-    // Panel de porcentajes + vidas estilo Smash (abajo, centrado).
-    const entries: PercentEntry[] = [
-      { label: "P1", color: "#7fb2ff", damage: player.damage, lives },
-      { label: "DUMMY", color: "#c45b7a", damage: dummy.damage, lives: -1 },
-    ];
+    const entries: PercentEntry[] = world.fighters.map((f) => ({
+      label: f.label,
+      color: f.color,
+      damage: f.player.damage,
+      // Vidas infinitas (dummy) -> -1 oculta el medidor.
+      lives: Number.isFinite(f.lives) ? f.lives : -1,
+    }));
     drawPercentHud(ctx, entries, w, h);
 
-    if (debug.showStats) this.drawStats(ctx, player, camera);
+    if (debug.showStats) this.drawStats(ctx, world.player, camera);
     if (debug.showFps) this.drawFps(ctx);
   }
 
@@ -242,7 +248,9 @@ export class Renderer {
     // Color del cuerpo. El flash de golpe siempre manda. Los colores de estado
     // (suelo/aire/pared) solo si el toggle de dev tools está activo.
     let color: string;
-    if (fighter.hitFlash > 0) {
+    if (fighter.dodging) {
+      color = "rgba(200, 230, 255, 0.55)"; // esquiva: translúcido (invulnerable)
+    } else if (fighter.hitFlash > 0) {
       color = "#ffffff";
     } else if (debug.showStateColors && fighter.wallSliding) {
       color = "#6bffb0"; // pared
@@ -338,10 +346,99 @@ export class Renderer {
     ctx.restore();
   }
 
+  /** Burbuja de escudo alrededor del combatiente (se encoge con su salud). */
+  private drawShield(
+    ctx: CanvasRenderingContext2D,
+    player: Player,
+    alpha: number,
+  ): void {
+    const radius = player.shieldRadius;
+    if (radius <= 0) return;
+    const rx = lerp(player.prevPos.x, player.pos.x, alpha) + player.width / 2;
+    const ry = lerp(player.prevPos.y, player.pos.y, alpha) + player.height / 2;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(rx, ry, radius, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(120, 200, 255, 0.28)";
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = "rgba(160, 220, 255, 0.8)";
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  /** Plataforma temporal de reaparición: barra tenue y punteada. */
+  private drawRespawnPlatform(
+    ctx: CanvasRenderingContext2D,
+    p: Platform,
+  ): void {
+    const { x, y, w, h } = p.box;
+    ctx.save();
+    ctx.fillStyle = "rgba(180, 210, 255, 0.22)";
+    ctx.fillRect(x, y, w, h);
+    ctx.setLineDash([8, 6]);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = "rgba(180, 210, 255, 0.6)";
+    ctx.strokeRect(x, y, w, h);
+    ctx.restore();
+  }
+
+  /**
+   * Efecto de muerte: anillo expansivo + destello en el punto donde el
+   * combatiente cruzó la blast zone. Se anima con su tiempo de vida restante.
+   */
+  private drawDeathEffect(
+    ctx: CanvasRenderingContext2D,
+    e: DeathEffect,
+  ): void {
+    const t = 1 - e.life / e.maxLife; // 0..1
+    const maxR = 90;
+    const r = maxR * easeOut(t);
+    const alpha = 1 - t;
+
+    ctx.save();
+    // Anillo expansivo.
+    ctx.globalAlpha = alpha;
+    ctx.lineWidth = 6 * (1 - t) + 1;
+    ctx.strokeStyle = e.color;
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, r, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Destello central.
+    ctx.globalAlpha = alpha * 0.8;
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, 10 * (1 - t), 0, Math.PI * 2);
+    ctx.fill();
+
+    // Chispas radiales.
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = e.color;
+    ctx.lineWidth = 3;
+    const spikes = 8;
+    for (let i = 0; i < spikes; i++) {
+      const ang = (i / spikes) * Math.PI * 2;
+      const inner = r * 0.6;
+      const outer = r * 1.1;
+      ctx.beginPath();
+      ctx.moveTo(e.x + Math.cos(ang) * inner, e.y + Math.sin(ang) * inner);
+      ctx.lineTo(e.x + Math.cos(ang) * outer, e.y + Math.sin(ang) * outer);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
 }
 
 function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
+}
+
+/** Suavizado de salida (rápido al principio, lento al final). */
+function easeOut(t: number): number {
+  return 1 - (1 - t) * (1 - t);
 }
 
 /** Oscurece (o aclara con f>1) un color hex #rrggbb por un factor f. */
