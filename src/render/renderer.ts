@@ -66,7 +66,9 @@ export class Renderer {
     // Plataformas temporales de reaparición (una por combatiente que acaba de
     // reaparecer): se dibujan distintas para comunicar que son efímeras.
     for (const f of world.fighters) {
-      if (f.respawnPlatform) this.drawRespawnPlatform(ctx, f.respawnPlatform);
+      if (f.respawnPlatform && f.respawnPlatformBlinkOn) {
+        this.drawRespawnPlatform(ctx, f.respawnPlatform);
+      }
     }
     if (debug.showBlastZone) this.drawBlastZone(ctx);
 
@@ -385,49 +387,93 @@ export class Renderer {
   }
 
   /**
-   * Efecto de muerte: anillo expansivo + destello en el punto donde el
-   * combatiente cruzó la blast zone. Se anima con su tiempo de vida restante.
+   * Efecto de muerte: un RAYO vertical estilo Smash que cae desde arriba sobre
+   * el punto donde el combatiente salió, con un destello en el impacto. El
+   * zigzag es estable (usa la semilla del efecto) y se desvanece con la vida.
    */
   private drawDeathEffect(
     ctx: CanvasRenderingContext2D,
     e: DeathEffect,
   ): void {
-    const t = 1 - e.life / e.maxLife; // 0..1
-    const maxR = 90;
-    const r = maxR * easeOut(t);
-    const alpha = 1 - t;
+    const prog = 1 - e.life / e.maxLife; // 0..1
+    // El rayo "cae" rápido (primera mitad) y luego se desvanece.
+    const fall = Math.min(1, prog / 0.35);
+    const fade = prog < 0.35 ? 1 : 1 - (prog - 0.35) / 0.65;
+
+    // El rayo nace muy arriba del impacto y baja hasta el punto.
+    const topY = e.y - 620;
+    const tipY = topY + (e.y - topY) * easeOut(fall);
+
+    // Construimos el zigzag del rayo con desviaciones pseudoaleatorias estables.
+    const segments = 14;
+    const points: Array<{ x: number; y: number }> = [];
+    for (let i = 0; i <= segments; i++) {
+      const s = i / segments;
+      const y = topY + (tipY - topY) * s;
+      // Amplitud del zigzag mayor arriba, estrecha cerca del impacto.
+      const amp = 26 * (1 - s) + 6;
+      const jitter = Math.sin((i * 12.9898 + e.seed) * 43.233);
+      const x = e.x + (jitter - Math.trunc(jitter)) * 2 * amp - amp;
+      points.push({ x, y });
+    }
 
     ctx.save();
-    // Anillo expansivo.
-    ctx.globalAlpha = alpha;
-    ctx.lineWidth = 6 * (1 - t) + 1;
-    ctx.strokeStyle = e.color;
-    ctx.beginPath();
-    ctx.arc(e.x, e.y, r, 0, Math.PI * 2);
-    ctx.stroke();
+    ctx.globalAlpha = fade;
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
 
-    // Destello central.
-    ctx.globalAlpha = alpha * 0.8;
-    ctx.fillStyle = "#ffffff";
-    ctx.beginPath();
-    ctx.arc(e.x, e.y, 10 * (1 - t), 0, Math.PI * 2);
-    ctx.fill();
-
-    // Chispas radiales.
-    ctx.globalAlpha = alpha;
+    // Halo ancho del rayo (brillo).
     ctx.strokeStyle = e.color;
-    ctx.lineWidth = 3;
-    const spikes = 8;
-    for (let i = 0; i < spikes; i++) {
-      const ang = (i / spikes) * Math.PI * 2;
-      const inner = r * 0.6;
-      const outer = r * 1.1;
+    ctx.globalAlpha = fade * 0.5;
+    ctx.lineWidth = 12;
+    this.strokePolyline(ctx, points);
+
+    // Núcleo blanco brillante.
+    ctx.globalAlpha = fade;
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 4;
+    this.strokePolyline(ctx, points);
+
+    // Una rama secundaria a media altura para dar el look ramificado.
+    const branchStart = points[Math.floor(segments * 0.45)];
+    if (branchStart) {
+      ctx.strokeStyle = e.color;
+      ctx.globalAlpha = fade * 0.7;
+      ctx.lineWidth = 3;
       ctx.beginPath();
-      ctx.moveTo(e.x + Math.cos(ang) * inner, e.y + Math.sin(ang) * inner);
-      ctx.lineTo(e.x + Math.cos(ang) * outer, e.y + Math.sin(ang) * outer);
+      ctx.moveTo(branchStart.x, branchStart.y);
+      ctx.lineTo(branchStart.x + 40, branchStart.y + 70);
+      ctx.lineTo(branchStart.x + 18, branchStart.y + 120);
       ctx.stroke();
     }
+
+    // Destello/anillo en el punto de impacto (cuando el rayo ya tocó).
+    if (fall >= 1) {
+      const flashR = 46 * easeOut(Math.min(1, (prog - 0.35) / 0.4));
+      ctx.globalAlpha = fade;
+      ctx.fillStyle = "#ffffff";
+      ctx.beginPath();
+      ctx.arc(e.x, e.y, 14 * fade, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = e.color;
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(e.x, e.y, flashR, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
     ctx.restore();
+  }
+
+  private strokePolyline(
+    ctx: CanvasRenderingContext2D,
+    points: Array<{ x: number; y: number }>,
+  ): void {
+    if (points.length === 0) return;
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+    ctx.stroke();
   }
 
 }

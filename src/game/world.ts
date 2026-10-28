@@ -13,13 +13,16 @@ export const FIGHTER_COLORS = ["#7fb2ff", "#c45b7a"] as const;
 export const FIGHTER_LABELS = ["P1", "P2"] as const;
 
 /**
- * Efecto visual de muerte: una "explosión" en el punto donde el combatiente
- * cruzó la blast zone. Vive unos frames y lo dibuja el renderer.
+ * Efecto visual de muerte: un RAYO estilo Smash que cae sobre el punto donde el
+ * combatiente cruzó la blast zone. Vive unos frames y lo dibuja el renderer.
  */
 export interface DeathEffect {
+  /** Punto de impacto (donde salió el combatiente). */
   x: number;
   y: number;
   color: string;
+  /** Semilla para que el zigzag del rayo sea estable durante su vida. */
+  readonly seed: number;
   /** Tiempo de vida restante (s) y total, para animar [1..0]. */
   life: number;
   readonly maxLife: number;
@@ -56,6 +59,21 @@ export class Fighter {
 
   /** ¿Sigue en juego? false = eliminado (sin vidas). */
   alive = true;
+
+  /** Índice del último combatiente que lo golpeó (para atribuir el KO), o -1. */
+  lastHitBy = -1;
+
+  /**
+   * ¿La plataforma temporal debe parpadear este frame? Parpadea más rápido
+   * cuanto menos tiempo le queda, avisando de que va a desaparecer.
+   */
+  get respawnPlatformBlinkOn(): boolean {
+    if (!this.respawnPlatform) return false;
+    const left = this.respawnPlatformTimer;
+    // Frecuencia de parpadeo acelerada en el último tramo.
+    const hz = left < 1 ? 10 : left < 2 ? 5 : 2.5;
+    return Math.floor(left * hz) % 2 === 0;
+  }
 
   /** Arranca la plataforma temporal bajo el jugador recién reaparecido. */
   armRespawnPlatform(platform: Platform): void {
@@ -104,6 +122,14 @@ export class World {
   /** ¿Terminó la partida? Y el índice del ganador (o -1). */
   gameOver = false;
   winnerIndex = -1;
+
+  /**
+   * Evento de "KO dramático" pendiente de consumir por la capa de presentación
+   * (para la cámara lenta + destello). Se activa cuando un golpe manda a un
+   * rival con un knockback que lo va a matar casi seguro. El loop lo lee y lo
+   * limpia. Guarda el índice del golpeado.
+   */
+  pendingDramaticKO: number | null = null;
 
   /** Input neutro permanente para el dummy en entrenamiento. */
   private readonly dummyInput: InputState = createInputState();
@@ -230,12 +256,28 @@ export class World {
         if (target.respawnTimer > 0) continue; // no golpear a muertos/reapareciendo
         if (atk.hasHit(target.player)) continue;
         if (overlaps(atk.hitbox, target.player.box)) {
-          target.player.receiveHit(
+          const res = target.player.receiveHit(
             atk.knockback,
             atk.def.knockbackUp,
             atk.damage,
             atk.attackerFacing,
           );
+          if (res.connected) {
+            // El atacante se apunta el daño infligido.
+            attacker.player.stats.dealt += res.effectiveDamage;
+            // Recordamos quién golpeó por última vez (para atribuir el KO).
+            target.lastHitBy = attacker.index;
+            // ¿KO dramático? Golpe potente sobre un rival ya cargado, con
+            // knockback suficiente para sacarlo. Solo en versus y una vez.
+            if (
+              this.mode === "versus" &&
+              this.pendingDramaticKO === null &&
+              target.player.damage >= 85 &&
+              res.knockbackSpeed >= 950
+            ) {
+              this.pendingDramaticKO = target.index;
+            }
+          }
         }
       }
     }
@@ -256,6 +298,13 @@ export class World {
   private onFighterDied(f: Fighter): void {
     // Efecto de muerte en el punto de salida.
     this.spawnDeathEffect(f);
+
+    // Estadísticas: muerte propia y KO para quien le pegó por última vez.
+    f.player.stats.deaths += 1;
+    if (f.lastHitBy >= 0 && f.lastHitBy !== f.index) {
+      this.fighters[f.lastHitBy].player.stats.kos += 1;
+    }
+    f.lastHitBy = -1;
 
     // En ENTRENAMIENTO nadie se elimina: el dummy tiene vidas infinitas y el
     // jugador recarga vidas al llegar a 0, para poder seguir practicando.
@@ -288,6 +337,7 @@ export class World {
       x,
       y,
       color: f.color,
+      seed: Math.random() * 1000,
       life: 0.6,
       maxLife: 0.6,
     });

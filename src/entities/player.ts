@@ -12,6 +12,18 @@ import {
   type AttackDir,
 } from "../combat/attacks.ts";
 
+/** Resultado de un golpe recibido, que el World usa para stats y efectos. */
+export interface HitResult {
+  /** ¿El golpe conectó de verdad? (false si estaba esquivando/invulnerable). */
+  connected: boolean;
+  /** Daño que finalmente entró (ya reducido por escudo). */
+  effectiveDamage: number;
+  /** Daño absorbido por el escudo. */
+  blocked: number;
+  /** Magnitud del knockback resultante (px/s), para detectar KO dramático. */
+  knockbackSpeed: number;
+}
+
 /**
  * Jugador con física custom de platform fighter.
  *
@@ -48,6 +60,24 @@ export class Player {
 
   /** Daño acumulado en % (estilo Smash: a más %, más knockback recibido). */
   damage = 0;
+
+  /**
+   * Estadísticas acumuladas de la partida (para las calificaciones del podio).
+   * dealt lo suma el World al conectar un golpe; taken/blocked se suman aquí.
+   */
+  readonly stats = {
+    /** Daño total infligido a rivales. */
+    dealt: 0,
+    /** Daño total recibido (ya reducido por escudo). */
+    taken: 0,
+    /** Daño total absorbido por el escudo (lo que "ahorró"). */
+    blocked: 0,
+    /** Nº de KOs conseguidos (rivales enviados fuera). */
+    kos: 0,
+    /** Nº de veces que ha muerto. */
+    deaths: 0,
+  };
+
   /** Parpadeo al recibir golpe (pasos), solo visual. */
   hitFlash = 0;
   /** Aturdimiento restante (s). Mientras >0 no puede moverse ni atacar. */
@@ -174,9 +204,11 @@ export class Player {
     knockbackUp: number,
     damage: number,
     fromFacing: 1 | -1,
-  ): void {
+  ): HitResult {
     // Una esquiva aérea activa da invulnerabilidad: el golpe no hace nada.
-    if (this.dodging) return;
+    if (this.dodging) {
+      return { connected: false, effectiveDamage: 0, blocked: 0, knockbackSpeed: 0 };
+    }
 
     // Si está escudando, el escudo absorbe daño y knockback según su salud,
     // y además se drena de golpe por el impacto.
@@ -193,7 +225,10 @@ export class Player {
     }
 
     const effectiveDamage = damage * dmgMult;
+    const blocked = damage - effectiveDamage;
     this.damage += effectiveDamage;
+    this.stats.taken += effectiveDamage;
+    this.stats.blocked += blocked;
 
     const scale = 1 + this.damage * 0.012;
     const kb = baseKnockback * scale * kbMult;
@@ -215,6 +250,13 @@ export class Player {
     this.wallSliding = false;
     this.wallGrabDir = 0;
     this.shielding = false;
+
+    return {
+      connected: true,
+      effectiveDamage,
+      blocked,
+      knockbackSpeed: Math.hypot(this.vel.x, this.vel.y),
+    };
   }
 
   /** El escudo se rompe: queda bloqueado un rato y se vacía. */

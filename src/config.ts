@@ -135,8 +135,8 @@ export const PLAYER = {
   width: 36,
   height: 56,
 
-  /** Gravedad en px/s^2. */
-  gravity: 2600,
+  /** Gravedad en px/s^2. Más ligera para poder reaccionar en el aire. */
+  gravity: 1900,
 
   /** Velocidad horizontal máxima al correr (px/s). */
   moveSpeed: 420,
@@ -150,10 +150,10 @@ export const PLAYER = {
   airFriction: 1200,
 
   /** Velocidad inicial del salto (px/s, hacia arriba = negativo). */
-  jumpSpeed: 980,
+  jumpSpeed: 880,
 
   /** Caída máxima para que no acelere infinitamente (px/s). */
-  maxFallSpeed: 1600,
+  maxFallSpeed: 1300,
 
   /**
    * Salto más "jugoso":
