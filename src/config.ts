@@ -73,6 +73,26 @@ export const CAMERA = {
 
   /** Zoom extra multiplicativo al pausar (1.25 = 25% más cerca). */
   pauseZoomBoost: 1.25,
+
+  /**
+   * Al pausar, la cámara se acerca y se desplaza hacia el jugador (0 = sin
+   * desplazamiento, 1 = centrada del todo en el jugador). Al despausar vuelve
+   * al encuadre normal de la isla.
+   */
+  pauseFocusLerp: 0.85,
+} as const;
+
+/**
+ * POV (zoom global que el jugador ajusta en Opciones). Es un multiplicador
+ * sobre el zoom calculado por la cámara: 1 = por defecto, <1 aleja (ves más),
+ * >1 acerca (ves menos). No afecta a la física.
+ */
+export const POV = {
+  min: 0.7,
+  max: 1.4,
+  default: 1,
+  /** Paso del slider en Opciones. */
+  step: 0.05,
 } as const;
 
 /** Reglas de combate básicas (de momento solo vidas y reaparición). */

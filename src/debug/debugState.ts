@@ -1,3 +1,5 @@
+import { POV } from "../config.ts";
+
 /**
  * Estado de depuración compartido. Un único objeto que el panel de
  * desarrollador modifica y que el renderer (y quien haga falta) lee.
@@ -31,6 +33,12 @@ export interface DebugState {
    * ataque fuerte en el aire.
    */
   showResources: boolean;
+  /**
+   * POV: multiplicador de zoom que el jugador ajusta en Opciones. 1 = por
+   * defecto; menor aleja (ves más campo), mayor acerca. No es realmente
+   * "debug", pero vive aquí porque es el estado global compartido con el render.
+   */
+  povZoom: number;
 }
 
 /** Instancia global del estado de debug. Todo apunta a este mismo objeto. */
@@ -43,4 +51,5 @@ export const debug: DebugState = {
   showStateColors: true,
   dummyPinned: false,
   showResources: false,
+  povZoom: POV.default,
 };

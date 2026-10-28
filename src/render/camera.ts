@@ -1,4 +1,5 @@
 import { CAMERA, VIEW, WORLD } from "../config.ts";
+import { debug } from "../debug/debugState.ts";
 import type { Player } from "../entities/player.ts";
 
 /**
@@ -30,6 +31,9 @@ export class Camera {
   private pauseBoost = 1;
   private targetPauseBoost = 1;
 
+  /** ¿Pausado? En pausa el foco se desplaza hacia el jugador. */
+  private paused = false;
+
   /** Tamaño real del canvas en píxeles de pantalla. */
   private screenW: number = VIEW.width;
   private screenH: number = VIEW.height;
@@ -42,8 +46,9 @@ export class Camera {
     this.fit = Math.min(screenW / VIEW.width, screenH / VIEW.height);
   }
 
-  /** Activa/desactiva el zoom extra de pausa. */
+  /** Activa/desactiva el zoom extra de pausa y el reencuadre hacia el jugador. */
   setPaused(paused: boolean): void {
+    this.paused = paused;
     this.targetPauseBoost = paused ? CAMERA.pauseZoomBoost : 1;
   }
 
@@ -65,9 +70,21 @@ export class Camera {
   follow(player: Player): void {
     const box = this.computeTargetBox(player);
 
-    // Suavizado de posición hacia el centro de la caja objetivo.
-    this.focus.x += (box.cx - this.focus.x) * CAMERA.smooth;
-    this.focus.y += (box.cy - this.focus.y) * CAMERA.smooth;
+    // Centro objetivo. Al pausar lo desplazamos hacia el jugador (reencuadre);
+    // al despausar vuelve al centro del encuadre normal de la isla.
+    let targetX = box.cx;
+    let targetY = box.cy;
+    if (this.paused) {
+      const px = player.pos.x + player.width / 2;
+      const py = player.pos.y + player.height / 2;
+      const t = CAMERA.pauseFocusLerp;
+      targetX = box.cx + (px - box.cx) * t;
+      targetY = box.cy + (py - box.cy) * t;
+    }
+
+    // Suavizado de posición hacia el centro objetivo.
+    this.focus.x += (targetX - this.focus.x) * CAMERA.smooth;
+    this.focus.y += (targetY - this.focus.y) * CAMERA.smooth;
 
     // Zoom objetivo: el que hace que la caja quepa justo en pantalla.
     this.targetZoom = this.zoomForBox(box.halfW, box.halfH);
@@ -128,7 +145,8 @@ export class Camera {
    * coordenadas de mundo aparece bien colocado. El llamante hace save/restore.
    */
   apply(ctx: CanvasRenderingContext2D): void {
-    const scale = this.fit * this.zoom * this.pauseBoost;
+    // povZoom es el ajuste del jugador en Opciones (multiplicador global).
+    const scale = this.fit * this.zoom * this.pauseBoost * debug.povZoom;
     ctx.translate(this.screenW / 2, this.screenH / 2);
     ctx.scale(scale, scale);
     ctx.translate(-this.focus.x, -this.focus.y);

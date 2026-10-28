@@ -51,7 +51,7 @@ body {
   pointer-events: none;
 }
 
-/* Capa oscura: solo visible cuando el menú está abierto. */
+/* Velo oscuro: solo visual, NO captura clics (el menú solo se cierra con Esc). */
 .pause-scrim {
   position: absolute;
   inset: 0;
@@ -62,7 +62,6 @@ body {
 
 #pause-menu.open .pause-scrim {
   background: rgba(4, 7, 14, 0.45);
-  pointer-events: auto;
 }
 
 /* Envoltura: ancla el panel a la derecha, centrado en vertical. */
@@ -82,7 +81,7 @@ body {
   pointer-events: auto;
 }
 
-/* Panel único. Las páginas se apilan dentro. */
+/* Panel único. El viewport interior recorta y por dentro deslizan las páginas. */
 .pause-panel {
   width: 320px;
   max-height: 74vh;
@@ -97,84 +96,76 @@ body {
   overflow: hidden;
 }
 
-/* Migas de pan. */
-.pause-crumbs {
+/* Viewport: recorta en horizontal para el deslizamiento entre páginas. */
+.pause-viewport {
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+  display: grid; /* páginas apiladas en la misma celda */
+}
+
+/* Una página ocupa todo el viewport. Al animar, se traslada en X. */
+.pause-page {
+  grid-area: 1 / 1;
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.pause-page.sliding {
+  transition: transform 0.26s ease;
+}
+
+/* Cabecera: flecha de volver (opcional) + título de la página. */
+.pause-header {
+  display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 8px;
   margin-bottom: 12px;
   padding-bottom: 10px;
   border-bottom: 1px solid #222b3d;
+  flex: none;
 }
 
-.pause-crumb {
+.pause-back {
   background: transparent;
   border: none;
-  color: #7fb2ff;
-  font-size: 15px;
-  font-weight: 700;
+  color: #cdd6e4;
+  font-size: 24px;
+  line-height: 1;
   cursor: pointer;
-  padding: 2px 4px;
-  border-radius: 6px;
+  padding: 0 6px;
+  border-radius: 8px;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 
-.pause-crumb:hover {
-  background: rgba(127, 178, 255, 0.12);
+.pause-back:hover {
+  background: rgba(127, 178, 255, 0.15);
+  color: #7fb2ff;
 }
 
-.pause-crumb.current {
+.pause-title {
   color: #f1f4fa;
-  cursor: default;
+  font-size: 17px;
+  font-weight: 700;
+  margin: 0;
 }
 
-.pause-crumb.current:hover {
-  background: transparent;
-}
-
-.pause-crumb-sep {
-  color: #4f5a70;
-  font-size: 14px;
-  padding: 0 2px;
-}
-
-/* Pila de páginas: las anteriores quedan detrás y atenuadas. */
-.pause-stack {
-  position: relative;
-  flex: 1;
-  overflow-y: auto;
-}
-
-.pause-page {
+/* Cuerpo de la página: lo que scrollea si hay mucho contenido. */
+.pause-body {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  overflow-y: auto;
+  min-height: 0;
 }
 
-.pause-resume {
-  width: 100%;
-  padding: 12px 14px;
-  margin-bottom: 14px;
-  background: #2f6bff;
-  color: #fff;
-  border: none;
-  border-radius: 10px;
-  font-size: 15px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.15s ease;
-}
-
-.pause-resume:hover {
-  background: #4680ff;
-}
-
-/* Botones de navegación a submenús. */
-.pause-nav {
+/* Botón de menú uniforme: todos del mismo gris y tamaño, azul al pasar. */
+.pause-btn {
   width: 100%;
   padding: 12px 14px;
   margin-top: 6px;
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(255, 255, 255, 0.06);
   color: #e6e6e6;
   border: 1px solid #2d3850;
   border-radius: 10px;
@@ -182,11 +173,46 @@ body {
   font-weight: 600;
   text-align: left;
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: background 0.15s ease, color 0.15s ease,
+    border-color 0.15s ease;
 }
 
-.pause-nav:hover {
-  background: rgba(255, 255, 255, 0.09);
+.pause-btn:first-child {
+  margin-top: 0;
+}
+
+.pause-btn:hover {
+  background: #2f6bff;
+  border-color: #2f6bff;
+  color: #ffffff;
+}
+
+/* Campo de opción (p. ej. slider de POV). */
+.pause-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+}
+
+.pause-field-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pause-field-value {
+  color: #7fb2ff;
+  font-size: 14px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.pause-slider {
+  width: 100%;
+  accent-color: #7fb2ff;
+  cursor: pointer;
 }
 
 .pause-row {
