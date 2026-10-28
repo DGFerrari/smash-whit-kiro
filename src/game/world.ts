@@ -64,6 +64,13 @@ export class Fighter {
   lastHitBy = -1;
 
   /**
+   * Animación de la tarjeta de HUD [0..1]: 1 = visible en su sitio, 0 = caída
+   * fuera de pantalla. Cae al morir y vuelve a surgir al reaparecer. La anima
+   * el World cada paso.
+   */
+  hudAnim = 1;
+
+  /**
    * ¿La plataforma temporal debe parpadear este frame? Parpadea más rápido
    * cuanto menos tiempo le queda, avisando de que va a desaparecer.
    */
@@ -195,6 +202,9 @@ export class World {
 
     for (const f of this.fighters) {
       this.updateFighter(f, inputs[f.index], dt, platforms);
+      // Animación de la tarjeta de HUD: cae al morir/eliminarse, surge al vivir.
+      const target = !f.alive || f.isDead ? 0 : 1;
+      f.hudAnim += (target - f.hudAnim) * Math.min(1, dt * 12);
     }
 
     this.resolveHits();

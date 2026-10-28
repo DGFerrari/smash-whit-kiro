@@ -93,6 +93,7 @@ export class Renderer {
       damage: f.player.damage,
       // Vidas infinitas (dummy) -> -1 oculta el medidor.
       lives: Number.isFinite(f.lives) ? f.lives : -1,
+      anim: f.hudAnim,
     }));
     drawPercentHud(ctx, entries, w, h);
 

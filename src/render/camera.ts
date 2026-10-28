@@ -53,6 +53,31 @@ export class Camera {
   }
 
   /**
+   * Override cinemático: en vez del encuadre automático, la cámara persigue
+   * (suavizado) un punto de mundo y un zoom concretos. Lo usa la intro para
+   * recorrer a los jugadores. Llamar a clearCinematic() para volver al auto.
+   */
+  private cinematic: { x: number; y: number; zoom: number } | null = null;
+
+  focusOn(x: number, y: number, zoom: number): void {
+    this.cinematic = { x, y, zoom };
+  }
+
+  clearCinematic(): void {
+    this.cinematic = null;
+  }
+
+  /** Avanza solo el suavizado del override cinemático (sin tocar el auto). */
+  updateCinematic(): void {
+    if (!this.cinematic) return;
+    this.focus.x += (this.cinematic.x - this.focus.x) * CAMERA.smooth;
+    this.focus.y += (this.cinematic.y - this.focus.y) * CAMERA.smooth;
+    this.zoom += (this.cinematic.zoom - this.zoom) * CAMERA.zoomSmooth;
+    this.targetZoom = this.zoom;
+    this.pauseBoost += (1 - this.pauseBoost) * 0.12;
+  }
+
+  /**
    * Coloca la cámara directamente en su objetivo (sin suavizar), útil al
    * iniciar para no ver un "viaje" de la cámara en el primer frame.
    */
@@ -68,6 +93,12 @@ export class Camera {
    * Actualiza la cámara (una vez por frame de render; es puramente visual).
    */
   follow(world: World): void {
+    // Durante un override cinemático, la intro conduce la cámara.
+    if (this.cinematic) {
+      this.updateCinematic();
+      return;
+    }
+
     const box = this.computeTargetBox(world);
 
     // Centro objetivo. Al pausar lo desplazamos hacia el jugador principal

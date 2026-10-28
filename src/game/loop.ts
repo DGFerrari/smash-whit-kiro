@@ -4,6 +4,29 @@ import type { Renderer } from "../render/renderer.ts";
 import type { Camera } from "../render/camera.ts";
 import type { World } from "./world.ts";
 
+/** Avisos que el loop manda a la capa de presentación (overlays). */
+export interface LoopCallbacks {
+  /** Fin de partida (solo versus). */
+  onGameOver?: (winnerIndex: number) => void;
+  /** Texto de la cuenta atrás de intro ("3","2","1","GO!") o null para ocultar. */
+  onCountdown?: (text: string | null) => void;
+  /** Empieza un KO dramático (cámara lenta): índice del golpeado. */
+  onDramaticKO?: (victimIndex: number) => void;
+  /** Destello del KO dramático en [0..1] (1 = pleno), para el overlay. */
+  onKOFlash?: (intensity: number) => void;
+}
+
+/** Fases de una partida gestionadas por el loop. */
+type Phase = "intro" | "playing";
+
+/** Guion de la intro: cuánto dura cada tramo (s) y qué muestra. */
+const INTRO_STEPS: Array<{ dur: number; text: string | null; focus: "p0" | "p1" | "all" }> = [
+  { dur: 0.9, text: "3", focus: "p0" },
+  { dur: 0.9, text: "2", focus: "p1" },
+  { dur: 0.9, text: "1", focus: "all" },
+  { dur: 0.6, text: "GO!", focus: "all" },
+];
+
 /**
  * Bucle principal con timestep fijo + acumulador (patrón "Fix Your Timestep").
  *
@@ -11,12 +34,13 @@ import type { World } from "./world.ts";
  *  - La CÁMARA y el RENDER se actualizan una vez por frame (son visuales).
  *  - `alpha` interpola el render entre pasos de física para verse suave.
  *
- * El loop no decide de modos ni de pantallas: simula un World y lo dibuja. La
- * capa superior (main) crea/destruye el loop al entrar/salir de una partida y
- * escucha `onGameOver` para mostrar la pantalla de fin.
+ * Añade dos capas de "presentación" que NO rompen el determinismo:
+ *  - Fase de intro: cuenta atrás 3·2·1·GO con cámara cinemática; la física no
+ *    avanza hasta "GO!".
+ *  - Cámara lenta (timeScale) en el KO dramático: escala el tiempo que
+ *    alimenta el acumulador, pero cada paso sigue siendo de FIXED_DT.
  */
 export class GameLoop {
-  /** Un dispositivo de teclado por combatiente (P1 y P2). */
   private readonly inputs: KeyboardInput[];
   private readonly inputStates: InputState[];
 
@@ -27,14 +51,22 @@ export class GameLoop {
   private rafId = 0;
   private gameOverNotified = false;
 
+  private phase: Phase = "intro";
+  private introElapsed = 0;
+
+  /** Escala de tiempo (1 = normal; <1 = cámara lenta). */
+  private timeScale = 1;
+  private targetTimeScale = 1;
+  /** Temporizador de la cámara lenta del KO dramático (s de reloj real). */
+  private slowmoTimer = 0;
+  private koVictim = -1;
+
   constructor(
     private readonly world: World,
     private readonly renderer: Renderer,
     private readonly camera: Camera,
-    /** Se llama una vez cuando la partida termina (solo versus). */
-    private readonly onGameOver?: (winnerIndex: number) => void,
+    private readonly cb: LoopCallbacks = {},
   ) {
-    // P1 siempre; P2 solo tiene efecto real si el mundo lo usa (versus).
     this.inputs = [new KeyboardInput("p1"), new KeyboardInput("p2")];
     this.inputStates = [createInputState(), createInputState()];
   }
@@ -45,6 +77,9 @@ export class GameLoop {
     for (const i of this.inputs) i.attach();
     this.lastTime = performance.now();
     this.accumulator = 0;
+    this.phase = "intro";
+    this.introElapsed = 0;
+    this.cb.onCountdown?.(INTRO_STEPS[0].text);
     this.rafId = requestAnimationFrame(this.frame);
   }
 
@@ -54,18 +89,14 @@ export class GameLoop {
     cancelAnimationFrame(this.rafId);
   }
 
-  /** Llamar cuando cambie el tamaño de la ventana. */
   onResize(): void {
     this.renderer.resize();
     this.camera.resize(this.renderer.cssWidth, this.renderer.cssHeight);
   }
 
-  /**
-   * Pausa o reanuda la simulación. Pausado: la física no avanza, pero el render
-   * y la cámara siguen (para ver la animación del zoom de pausa). La cámara
-   * recibe el aviso para aplicar el zoom extra y el reencuadre al jugador.
-   */
   setPaused(value: boolean): void {
+    // No se puede pausar durante la intro.
+    if (this.phase === "intro") return;
     this.paused = value;
     this.camera.setPaused(value);
   }
@@ -79,41 +110,118 @@ export class GameLoop {
 
     let alpha = 1;
 
-    if (this.paused) {
-      // Pausado: no avanzamos física. Mantenemos el input "fresco" para no
-      // registrar un salto fantasma al reanudar, y no acumulamos tiempo.
+    if (this.phase === "intro") {
+      alpha = this.updateIntro(frameTime);
+    } else if (this.paused) {
       this.accumulator = 0;
     } else {
-      this.accumulator += frameTime;
-
-      let steps = 0;
-      while (this.accumulator >= FIXED_DT && steps < MAX_STEPS_PER_FRAME) {
-        for (let i = 0; i < this.inputs.length; i++) {
-          this.inputs[i].sample(this.inputStates[i]);
-        }
-        this.world.step(this.inputStates, FIXED_DT);
-        this.accumulator -= FIXED_DT;
-        steps++;
-      }
-
-      if (steps >= MAX_STEPS_PER_FRAME) {
-        this.accumulator = 0;
-      }
-
-      alpha = this.accumulator / FIXED_DT;
-
-      // Notifica fin de partida una sola vez.
-      if (this.world.gameOver && !this.gameOverNotified) {
-        this.gameOverNotified = true;
-        this.onGameOver?.(this.world.winnerIndex);
-      }
+      alpha = this.updatePlaying(frameTime);
     }
 
-    // La cámara encuadra a todos los combatientes vivos (visual, por frame).
+    // Cámara: durante la intro la conduce la cinemática (ya seteada en
+    // updateIntro); en juego sigue el encuadre automático.
     this.camera.follow(this.world);
 
     this.renderer.render(this.world, this.camera, alpha);
 
     this.rafId = requestAnimationFrame(this.frame);
   };
+
+  /** Intro: cuenta atrás con cámara que recorre a los jugadores. */
+  private updateIntro(frameTime: number): number {
+    this.introElapsed += frameTime;
+
+    // ¿En qué tramo del guion estamos?
+    let acc = 0;
+    let current = INTRO_STEPS[INTRO_STEPS.length - 1];
+    let finished = true;
+    for (const step of INTRO_STEPS) {
+      if (this.introElapsed < acc + step.dur) {
+        current = step;
+        finished = false;
+        break;
+      }
+      acc += step.dur;
+    }
+
+    // Cámara cinemática según el foco del tramo.
+    this.applyIntroCamera(current.focus);
+    this.cb.onCountdown?.(current.text);
+
+    if (finished) {
+      // Termina la intro: liberamos la cámara y empezamos a jugar.
+      this.camera.clearCinematic();
+      this.camera.snapTo(this.world);
+      this.phase = "playing";
+      this.accumulator = 0;
+      this.cb.onCountdown?.(null);
+    }
+    return 1;
+  }
+
+  private applyIntroCamera(focus: "p0" | "p1" | "all"): void {
+    if (focus === "all") {
+      // Encuadre normal (deja que el auto lo calcule): quitamos cinemática.
+      this.camera.clearCinematic();
+      return;
+    }
+    const idx = focus === "p0" ? 0 : 1;
+    const f = this.world.fighters[idx];
+    if (!f) {
+      this.camera.clearCinematic();
+      return;
+    }
+    const cx = f.player.pos.x + f.player.width / 2;
+    const cy = f.player.pos.y + f.player.height / 2;
+    this.camera.focusOn(cx, cy, 1.25);
+  }
+
+  /** Fase de juego con acumulador y cámara lenta opcional. */
+  private updatePlaying(frameTime: number): number {
+    // Suavizado de la escala de tiempo (entra/sale de la cámara lenta).
+    this.timeScale += (this.targetTimeScale - this.timeScale) * 0.25;
+
+    // Cámara lenta del KO dramático.
+    if (this.slowmoTimer > 0) {
+      this.slowmoTimer -= frameTime;
+      // Destello que decae con el tiempo restante.
+      this.cb.onKOFlash?.(Math.max(0, this.slowmoTimer / 0.9));
+      if (this.slowmoTimer <= 0) {
+        this.targetTimeScale = 1;
+        this.cb.onKOFlash?.(0);
+      }
+    }
+
+    this.accumulator += frameTime * this.timeScale;
+
+    let steps = 0;
+    while (this.accumulator >= FIXED_DT && steps < MAX_STEPS_PER_FRAME) {
+      for (let i = 0; i < this.inputs.length; i++) {
+        this.inputs[i].sample(this.inputStates[i]);
+      }
+      this.world.step(this.inputStates, FIXED_DT);
+      steps++;
+      this.accumulator -= FIXED_DT;
+
+      // ¿El mundo señaló un KO dramático? Arrancamos la cámara lenta.
+      if (this.world.pendingDramaticKO !== null && this.slowmoTimer <= 0) {
+        this.koVictim = this.world.pendingDramaticKO;
+        this.world.pendingDramaticKO = null;
+        this.slowmoTimer = 0.9;
+        this.targetTimeScale = 0.25;
+        this.cb.onDramaticKO?.(this.koVictim);
+      }
+    }
+
+    if (steps >= MAX_STEPS_PER_FRAME) this.accumulator = 0;
+
+    const alpha = this.accumulator / FIXED_DT;
+
+    if (this.world.gameOver && !this.gameOverNotified) {
+      this.gameOverNotified = true;
+      this.cb.onGameOver?.(this.world.winnerIndex);
+    }
+
+    return alpha;
+  }
 }

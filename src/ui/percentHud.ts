@@ -16,6 +16,12 @@ export interface PercentEntry {
   damage: number;
   /** Vidas restantes. Usa -1 para no mostrar medidor de vidas (p. ej. dummy). */
   lives: number;
+  /**
+   * Animación de entrada/salida de la tarjeta [0..1]:
+   *   1 = colocada en su sitio; 0 = fuera (caída abajo). Valores intermedios
+   *   interpolan la caída/surgimiento. Por defecto 1.
+   */
+  anim?: number;
 }
 
 export function drawPercentHud(
@@ -35,8 +41,21 @@ export function drawPercentHud(
 
   entries.forEach((e, i) => {
     const x = startX + i * (boxW + gap);
-    drawBox(ctx, e, x, y, boxW, boxH);
+    // Animación de caída/surgimiento: anim=1 en su sitio; anim=0 fuera (abajo).
+    const anim = e.anim ?? 1;
+    // Desplazamiento vertical hacia abajo fuera de pantalla cuando anim->0.
+    const fallDist = boxH + 60;
+    const ay = y + (1 - easeOutBack(anim)) * fallDist;
+    drawBox(ctx, e, x, ay, boxW, boxH, anim);
   });
+}
+
+/** Easing con pequeño rebote al asentarse (para el "surgir" de la tarjeta). */
+function easeOutBack(t: number): number {
+  const c1 = 1.70158;
+  const c3 = c1 + 1;
+  const x = t - 1;
+  return 1 + c3 * x * x * x + c1 * x * x;
 }
 
 function drawBox(
@@ -46,8 +65,10 @@ function drawBox(
   y: number,
   w: number,
   h: number,
+  alpha = 1,
 ): void {
   ctx.save();
+  ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
 
   // Fondo del recuadro con un borde del color del combatiente.
   roundRect(ctx, x, y, w, h, 12);

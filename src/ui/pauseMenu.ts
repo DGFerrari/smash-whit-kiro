@@ -181,72 +181,91 @@ export class PauseMenu {
     }
   }
 
-  /** Muestra la página actual sin animación (al abrir o resetear). */
-  private renderInitial(): void {
-    const current = this.nav[this.nav.length - 1];
-    const page = this.buildPage(current);
-    this.viewport.replaceChildren(page);
-  }
-
-  /** Entra a una subpágina: la nueva llega desde la derecha y empuja la actual. */
-  private goTo(page: PageId): void {
-    if (this.animating) return;
-    const outgoing = this.viewport.firstElementChild as HTMLElement | null;
-    this.nav.push(page);
-    const incoming = this.buildPage(page);
-    this.slide(outgoing, incoming, "forward");
-  }
-
-  /** Vuelve una página: la actual sale por la derecha y reentra la anterior. */
-  private back(): void {
-    if (this.animating || this.nav.length <= 1) return;
-    const outgoing = this.viewport.firstElementChild as HTMLElement | null;
-    this.nav.pop();
-    const incoming = this.buildPage(this.nav[this.nav.length - 1]);
-    this.slide(outgoing, incoming, "back");
-  }
-
   /**
-   * Anima el deslizamiento horizontal entre dos páginas.
-   *  - forward: la nueva entra desde la derecha, la vieja se va a la izquierda.
-   *  - back: la nueva entra desde la izquierda, la vieja se va a la derecha.
+   * Re-dibuja la pila de tarjetas. Cada página de `nav` es una TARJETA. La de
+   * arriba (actual) está centrada y activa; las anteriores quedan a la
+   * izquierda, desplazadas, escaladas y oscurecidas, pero SIGUEN VISIBLES. Al
+   * navegar, la nueva tarjeta entra desde la derecha empujando el resto.
    */
-  private slide(
-    outgoing: HTMLElement | null,
-    incoming: HTMLElement,
-    dir: "forward" | "back",
-  ): void {
-    this.animating = true;
-
-    const fromIncoming = dir === "forward" ? "100%" : "-100%";
-    const toOutgoing = dir === "forward" ? "-100%" : "100%";
-
-    incoming.style.transform = `translateX(${fromIncoming})`;
-    this.viewport.appendChild(incoming);
-
-    // Forzamos reflow para que la transición parta del estado inicial.
-    void incoming.offsetWidth;
-
-    incoming.classList.add("sliding");
-    if (outgoing) outgoing.classList.add("sliding");
-
-    requestAnimationFrame(() => {
-      incoming.style.transform = "translateX(0)";
-      if (outgoing) outgoing.style.transform = `translateX(${toOutgoing})`;
+  private renderStack(animateTop: "none" | "enter" | "leaving"): void {
+    // Reconstruimos las tarjetas de la pila actual.
+    const cards: HTMLElement[] = this.nav.map((page) => {
+      const card = this.buildPage(page);
+      card.classList.add("pause-card");
+      return card;
     });
 
-    const done = (): void => {
-      incoming.classList.remove("sliding");
-      incoming.style.transform = "";
-      if (outgoing && outgoing.parentElement === this.viewport) {
-        this.viewport.removeChild(outgoing);
-      }
-      this.animating = false;
+    this.viewport.replaceChildren(...cards);
+    const top = cards.length - 1;
+
+    const layout = (): void => {
+      cards.forEach((card, i) => {
+        const depth = top - i; // 0 = arriba, 1 = justo detrás...
+        this.placeCard(card, depth);
+      });
     };
 
-    incoming.addEventListener("transitionend", done, { once: true });
-    // Red de seguridad por si transitionend no dispara.
-    window.setTimeout(done, 320);
+    if (animateTop === "enter") {
+      // La tarjeta superior entra desde la derecha.
+      const topCard = cards[top];
+      topCard.style.transition = "none";
+      topCard.style.transform = "translateX(120%)";
+      topCard.style.opacity = "0";
+      void topCard.offsetWidth;
+      topCard.style.transition = "";
+      requestAnimationFrame(layout);
+    } else {
+      layout();
+    }
+  }
+
+  /** Coloca una tarjeta según su profundidad en la pila. */
+  private placeCard(card: HTMLElement, depth: number): void {
+    // Cada nivel se desplaza a la izquierda y se encoge/oscurece un poco.
+    const shiftX = -depth * 54;
+    const scale = 1 - depth * 0.06;
+    card.style.transform = `translateX(${shiftX}px) scale(${scale})`;
+    card.style.opacity = depth === 0 ? "1" : "1";
+    card.style.zIndex = String(100 - depth);
+    card.classList.toggle("behind", depth > 0);
+    // Oscurecemos progresivamente las de atrás con una capa interna.
+    card.style.setProperty("--dim", String(Math.min(0.62, depth * 0.3)));
+    // Las de atrás no reciben clics.
+    card.style.pointerEvents = depth === 0 ? "auto" : "none";
+  }
+
+  /** Muestra la página actual sin animación (al abrir o resetear). */
+  private renderInitial(): void {
+    this.renderStack("none");
+  }
+
+  /** Entra a una subpágina: la nueva tarjeta llega desde la derecha. */
+  private goTo(page: PageId): void {
+    if (this.animating) return;
+    this.animating = true;
+    this.nav.push(page);
+    this.renderStack("enter");
+    window.setTimeout(() => {
+      this.animating = false;
+    }, 300);
+  }
+
+  /** Vuelve una página: la tarjeta superior sale por la derecha. */
+  private back(): void {
+    if (this.animating || this.nav.length <= 1) return;
+    this.animating = true;
+    const cards = Array.from(this.viewport.children) as HTMLElement[];
+    const topCard = cards[cards.length - 1];
+
+    // Anima la salida de la tarjeta superior hacia la derecha.
+    topCard.style.transform = "translateX(120%)";
+    topCard.style.opacity = "0";
+
+    window.setTimeout(() => {
+      this.nav.pop();
+      this.renderStack("none");
+      this.animating = false;
+    }, 260);
   }
 
   private buildPage(page: PageId): HTMLElement {
@@ -361,9 +380,8 @@ export class PauseMenu {
 
     const reset = this.menuButton("Restaurar por defecto", () => {
       resetBindings(slot);
-      // Re-dibuja la página actual para reflejar los valores por defecto.
-      const page = this.buildPage(slot === "p1" ? "keysP1" : "keysP2");
-      this.viewport.replaceChildren(page);
+      // Re-dibuja la pila para reflejar los valores por defecto.
+      this.renderStack("none");
     });
     reset.classList.add("pause-btn-danger");
     el.appendChild(reset);
