@@ -1,0 +1,265 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  width: 100%;
+  background: #060a14;
+  overflow: hidden;
+  font-family: system-ui, sans-serif;
+}
+
+/* El canvas ocupa toda la ventana. */
+#game {
+  display: block;
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+}
+
+/* Fila de control dentro del menú de pausa. */
+.pause-control {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 8px;
+}
+
+.pause-control-action {
+  color: #cdd6e4;
+  font-size: 13px;
+}
+
+.pause-control-keys {
+  color: #7fb2ff;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: right;
+}
+
+/* ===== Menú de pausa ===== */
+#pause-menu {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  pointer-events: none;
+}
+
+/* Capa oscura: solo visible cuando el menú está abierto. */
+.pause-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(4, 7, 14, 0);
+  transition: background 0.2s ease;
+  pointer-events: none;
+}
+
+#pause-menu.open .pause-scrim {
+  background: rgba(4, 7, 14, 0.45);
+  pointer-events: auto;
+}
+
+/* Contenedor de columnas, anclado a la derecha y centrado en vertical. Las
+   columnas se apilan en fila; los submenús se insertan a la izquierda. */
+.pause-columns {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  transform: translate(100%, -50%);
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  padding-right: 0;
+  max-height: 72vh;
+  transition: transform 0.22s ease, opacity 0.22s ease;
+  opacity: 0;
+  pointer-events: none;
+}
+
+#pause-menu.open .pause-columns {
+  transform: translate(0, -50%);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Cada columna (principal o submenú). */
+.pause-panel {
+  width: 300px;
+  max-height: 72vh;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: rgba(16, 21, 32, 0.98);
+  border: 1px solid #2d3850;
+  border-radius: 14px;
+  box-shadow: -12px 0 40px rgba(0, 0, 0, 0.5);
+  padding: 20px 18px;
+  overflow-y: auto;
+}
+
+/* El panel principal queda pegado a la derecha, sin esquina derecha redondeada. */
+.pause-main {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  border-right: none;
+}
+
+/* Submenú: entra deslizando desde la derecha (hacia su hueco a la izquierda). */
+.pause-sub {
+  opacity: 0;
+  transform: translateX(24px);
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.pause-sub.in {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.pause-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.pause-header h2 {
+  color: #f1f4fa;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.pause-close {
+  background: transparent;
+  border: none;
+  color: #6b7891;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 8px;
+  line-height: 1;
+}
+
+.pause-close:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+}
+
+.pause-resume {
+  width: 100%;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  background: #2f6bff;
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.pause-resume:hover {
+  background: #4680ff;
+}
+
+/* Botones de navegación a submenús. */
+.pause-nav {
+  width: 100%;
+  padding: 12px 14px;
+  margin-top: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #e6e6e6;
+  border: 1px solid #2d3850;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.pause-nav:hover {
+  background: rgba(255, 255, 255, 0.09);
+}
+
+/* Botón "Atrás" en la cabecera de un submenú. */
+.pause-back {
+  background: transparent;
+  border: none;
+  color: #7fb2ff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 8px;
+}
+
+.pause-back:hover {
+  background: rgba(127, 178, 255, 0.12);
+}
+
+.pause-section {
+  border-top: 1px solid #222b3d;
+  padding-top: 10px;
+}
+
+.pause-section h3 {
+  color: #7fb2ff;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 6px;
+}
+
+.pause-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 9px 8px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.pause-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.pause-row input {
+  margin-top: 2px;
+  width: 16px;
+  height: 16px;
+  accent-color: #7fb2ff;
+  cursor: pointer;
+  flex: none;
+}
+
+.pause-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pause-label {
+  color: #e6e6e6;
+  font-size: 14px;
+}
+
+.pause-hint {
+  color: #6b7891;
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.pause-foot {
+  color: #4f5a70;
+  font-size: 12px;
+  text-align: center;
+  margin-top: 10px;
+}

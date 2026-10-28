@@ -1,0 +1,151 @@
+import { CAMERA, VIEW, WORLD } from "../config.ts";
+import type { Player } from "../entities/player.ts";
+
+/**
+ * Cámara 2D de encuadre estilo Smash.
+ *
+ * Cada frame construye una caja objetivo (en coords de mundo) que contiene:
+ *   - el encuadre base centrado en la isla, y
+ *   - al jugador,
+ * con un margen alrededor. Luego elige el centro (el de esa caja) y el zoom
+ * necesario para que la caja quepa justo en el viewport. Así:
+ *   - sobre la isla la cámara está "en reposo" (encuadre base),
+ *   - al alejarte, la caja crece hacia ti -> el centro se desplaza un poco y el
+ *     zoom baja, dejándote al filo de la pantalla cuando tocas la blast zone.
+ *
+ * El viewport lógico es VIEW.width x VIEW.height; el canvas real (pantalla
+ * completa) se escala para encajarlo.
+ */
+export class Camera {
+  /** Centro de la cámara, en coordenadas de mundo (suavizado). */
+  private readonly focus: { x: number; y: number } = {
+    x: WORLD.centerX,
+    y: WORLD.groundY,
+  };
+  /** Zoom actual (suavizado) y objetivo. */
+  private zoom: number = 1;
+  private targetZoom: number = 1;
+
+  /** Boost de zoom de pausa (1 = sin boost). Se suaviza aparte. */
+  private pauseBoost = 1;
+  private targetPauseBoost = 1;
+
+  /** Tamaño real del canvas en píxeles de pantalla. */
+  private screenW: number = VIEW.width;
+  private screenH: number = VIEW.height;
+  /** Escala para encajar el viewport lógico en el canvas real. */
+  private fit = 1;
+
+  resize(screenW: number, screenH: number): void {
+    this.screenW = screenW;
+    this.screenH = screenH;
+    this.fit = Math.min(screenW / VIEW.width, screenH / VIEW.height);
+  }
+
+  /** Activa/desactiva el zoom extra de pausa. */
+  setPaused(paused: boolean): void {
+    this.targetPauseBoost = paused ? CAMERA.pauseZoomBoost : 1;
+  }
+
+  /**
+   * Coloca la cámara directamente en su objetivo (sin suavizar), útil al
+   * iniciar para no ver un "viaje" de la cámara en el primer frame.
+   */
+  snapTo(player: Player): void {
+    const box = this.computeTargetBox(player);
+    this.focus.x = box.cx;
+    this.focus.y = box.cy;
+    this.zoom = this.zoomForBox(box.halfW, box.halfH);
+    this.targetZoom = this.zoom;
+  }
+
+  /**
+   * Actualiza la cámara (una vez por frame de render; es puramente visual).
+   */
+  follow(player: Player): void {
+    const box = this.computeTargetBox(player);
+
+    // Suavizado de posición hacia el centro de la caja objetivo.
+    this.focus.x += (box.cx - this.focus.x) * CAMERA.smooth;
+    this.focus.y += (box.cy - this.focus.y) * CAMERA.smooth;
+
+    // Zoom objetivo: el que hace que la caja quepa justo en pantalla.
+    this.targetZoom = this.zoomForBox(box.halfW, box.halfH);
+    this.zoom += (this.targetZoom - this.zoom) * CAMERA.zoomSmooth;
+
+    // Boost de pausa suavizado.
+    this.pauseBoost += (this.targetPauseBoost - this.pauseBoost) * 0.12;
+  }
+
+  /**
+   * Caja objetivo en mundo: centro (cx, cy) y semiejes (halfW, halfH) que
+   * contienen el encuadre base de la isla y al jugador, con margen.
+   */
+  private computeTargetBox(player: Player): {
+    cx: number;
+    cy: number;
+    halfW: number;
+    halfH: number;
+  } {
+    const baseCx = WORLD.centerX;
+    const baseCy = WORLD.groundY + CAMERA.baseCenterOffsetY;
+
+    // Bordes del encuadre base (isla en reposo).
+    let left = baseCx - CAMERA.baseHalfWidth;
+    let right = baseCx + CAMERA.baseHalfWidth;
+    let top = baseCy - CAMERA.baseHalfHeight;
+    let bottom = baseCy + CAMERA.baseHalfHeight;
+
+    // Expandimos la caja para incluir al jugador (centro del jugador).
+    const px = player.pos.x + player.width / 2;
+    const py = player.pos.y + player.height / 2;
+    left = Math.min(left, px - CAMERA.margin);
+    right = Math.max(right, px + CAMERA.margin);
+    top = Math.min(top, py - CAMERA.margin);
+    bottom = Math.max(bottom, py + CAMERA.margin);
+
+    return {
+      cx: (left + right) / 2,
+      cy: (top + bottom) / 2,
+      halfW: (right - left) / 2,
+      halfH: (bottom - top) / 2,
+    };
+  }
+
+  /**
+   * Zoom que hace que una caja de semiejes (halfW, halfH) quepa justo en el
+   * viewport lógico. Tomamos el eje más restrictivo y aplicamos topes.
+   */
+  private zoomForBox(halfW: number, halfH: number): number {
+    const zx = VIEW.width / 2 / halfW;
+    const zy = VIEW.height / 2 / halfH;
+    const z = Math.min(zx, zy);
+    return clamp(z, CAMERA.minZoom, CAMERA.maxZoom);
+  }
+
+  /**
+   * Aplica la transformación de cámara al contexto. Tras esto, dibujar en
+   * coordenadas de mundo aparece bien colocado. El llamante hace save/restore.
+   */
+  apply(ctx: CanvasRenderingContext2D): void {
+    const scale = this.fit * this.zoom * this.pauseBoost;
+    ctx.translate(this.screenW / 2, this.screenH / 2);
+    ctx.scale(scale, scale);
+    ctx.translate(-this.focus.x, -this.focus.y);
+  }
+
+  get screenWidth(): number {
+    return this.screenW;
+  }
+  get screenHeight(): number {
+    return this.screenH;
+  }
+  /** Zoom lógico actual (sin el factor de encaje a pantalla ni pausa). */
+  get currentZoom(): number {
+    return this.zoom;
+  }
+}
+
+function clamp(v: number, min: number, max: number): number {
+  return v < min ? min : v > max ? max : v;
+}

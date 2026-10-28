@@ -1,0 +1,481 @@
+import { PLAYER } from "../config.ts";
+import type { AABB, Vec2 } from "../core/types.ts";
+import type { InputState } from "../core/input.ts";
+import type { Platform } from "../physics/platform.ts";
+import { overlaps } from "../physics/aabb.ts";
+import { ActiveAttack } from "../combat/activeAttack.ts";
+import {
+  CHARGE,
+  HEAVY_ATTACKS,
+  LIGHT_ATTACKS,
+  type AttackDir,
+} from "../combat/attacks.ts";
+
+/**
+ * Jugador con física custom de platform fighter.
+ *
+ * El método clave es fixedUpdate(input, platforms, dt): avanza la simulación
+ * un paso de tiempo FIJO. Nunca se le pasa el delta variable del frame; eso lo
+ * gestiona el bucle principal con su acumulador. Mantener dt fijo hace que el
+ * movimiento sea determinista y consistente.
+ */
+export class Player {
+  /** Posición de la esquina superior izquierda (unidades de física). */
+  readonly pos: Vec2;
+  /** Velocidad en px/s. */
+  readonly vel: Vec2 = { x: 0, y: 0 };
+
+  readonly width = PLAYER.width;
+  readonly height = PLAYER.height;
+
+  /** Mitad del ancho, útil para centrar al jugador en una coordenada. */
+  static readonly halfWidth = PLAYER.width / 2;
+
+  /** ¿Está tocando suelo este paso? */
+  onGround = false;
+  /** Lado en el que toca pared: -1 pared a la izquierda, +1 derecha, 0 ninguna. */
+  touchingWall: -1 | 0 | 1 = 0;
+  /** ¿Está agarrado/deslizando por una pared este paso? (para render). */
+  wallSliding = false;
+  /** Dirección a la que mira: 1 derecha, -1 izquierda (para render/ataques). */
+  facing: 1 | -1 = 1;
+
+  /** Temporizadores para el feel del salto (en segundos). */
+  private coyoteTimer = 0;
+  private jumpBufferTimer = 0;
+  private jumpsLeft: number = PLAYER.maxJumps;
+
+  /** Daño acumulado en % (estilo Smash: a más %, más knockback recibido). */
+  damage = 0;
+  /** Parpadeo al recibir golpe (pasos), solo visual. */
+  hitFlash = 0;
+
+  /** Ataque en curso, o null si no está atacando. */
+  attack: ActiveAttack | null = null;
+  /** Pasos que lleva cargando el ataque fuerte (0 si no está cargando). */
+  private heavyChargeSteps = 0;
+  /** ¿Está cargando el fuerte ahora mismo? (para render). */
+  charging = false;
+  /** Buffer de ataque ligero pendiente (s restantes, 0 = nada). */
+  private lightBufferTimer = 0;
+
+  /** Bloqueo de control horizontal tras un wall jump (s). */
+  private wallJumpLockTimer = 0;
+  /**
+   * Pared contra la que estábamos agarrados al final del paso anterior (-1/0/1).
+   * La usamos al decidir el salto, ya que el estado de agarre se calcula tras
+   * resolver colisiones. 1 frame de desfase a 60 Hz es imperceptible.
+   */
+  private wallGrabDir: -1 | 0 | 1 = 0;
+
+  /** Posición del paso anterior, para interpolar al renderizar. */
+  readonly prevPos: Vec2;
+
+  constructor(x: number, y: number) {
+    this.pos = { x, y };
+    this.prevPos = { x, y };
+  }
+
+  /** Caja de colisión actual. */
+  get box(): AABB {
+    return { x: this.pos.x, y: this.pos.y, w: this.width, h: this.height };
+  }
+
+  /**
+   * Reaparece en (worldX, worldY), centrado en worldX. Resetea velocidad,
+   * estado de salto y la posición previa para que el render no interpole un
+   * salto feo desde el punto de muerte.
+   */
+  respawn(worldX: number, worldY: number): void {
+    this.pos.x = worldX - Player.halfWidth;
+    this.pos.y = worldY;
+    this.prevPos.x = this.pos.x;
+    this.prevPos.y = this.pos.y;
+    this.vel.x = 0;
+    this.vel.y = 0;
+    this.onGround = false;
+    this.coyoteTimer = 0;
+    this.jumpBufferTimer = 0;
+    this.jumpsLeft = PLAYER.maxJumps;
+    this.wallJumpLockTimer = 0;
+    this.wallGrabDir = 0;
+    this.wallSliding = false;
+    this.touchingWall = 0;
+    this.attack = null;
+    this.charging = false;
+    this.heavyChargeSteps = 0;
+    this.lightBufferTimer = 0;
+    // Al reaparecer (tras perder una vida) el daño se resetea, como en Smash.
+    this.damage = 0;
+    this.hitFlash = 0;
+  }
+
+  /**
+   * Recibe un golpe. El knockback base del ataque se amplifica según el daño
+   * acumulado: cuanto más % lleva el jugador, más lejos sale despedido.
+   */
+  receiveHit(
+    baseKnockback: number,
+    knockbackUp: number,
+    damage: number,
+    fromFacing: 1 | -1,
+  ): void {
+    this.damage += damage;
+
+    const scale = 1 + this.damage * 0.012;
+    const kb = baseKnockback * scale;
+    const horizontal = kb * (1 - knockbackUp);
+    const vertical = kb * knockbackUp;
+
+    this.vel.x = fromFacing * horizontal;
+    this.vel.y = -vertical;
+    this.hitFlash = 8;
+
+    // Un golpe interrumpe lo que estuvieras haciendo.
+    this.attack = null;
+    this.charging = false;
+    this.heavyChargeSteps = 0;
+    this.wallSliding = false;
+    this.wallGrabDir = 0;
+  }
+
+  /**
+   * Un paso de simulación con timestep fijo.
+   * @param input intención del jugador (humano, IA o red) para este paso.
+   * @param platforms plataformas sólidas del nivel.
+   * @param dt segundos por paso (siempre el mismo valor, FIXED_DT).
+   */
+  fixedUpdate(input: InputState, platforms: Platform[], dt: number): void {
+    // Guardamos la posición previa antes de mover: la usa el render.
+    this.prevPos.x = this.pos.x;
+    this.prevPos.y = this.pos.y;
+
+    // Combate: primero avanzamos el ataque en curso; luego, si estamos libres,
+    // procesamos los inputs de ataque.
+    this.updateAttack();
+    this.handleAttackInput(input);
+
+    // Mientras atacamos o cargamos no aceptamos input de movimiento/salto.
+    const canMove = !this.isBusy();
+
+    if (canMove) {
+      this.applyHorizontal(input, dt);
+      this.applyJump(input, dt);
+    } else if (this.onGround) {
+      // En SUELO, al atacar/cargar nos anclamos (frenamos) para no deslizar.
+      this.vel.x = approach(this.vel.x, 0, PLAYER.groundFriction * dt);
+    }
+    // En el AIRE, atacar/cargar NO toca la velocidad horizontal: conservamos el
+    // momentum y seguimos volando con la inercia que llevábamos.
+    this.applyGravity(dt);
+
+    // Integramos y resolvemos colisiones por ejes separados.
+    this.moveAndCollideX(dt, platforms);
+    this.moveAndCollideY(dt, platforms);
+
+    // El agarre a la pared se evalúa tras colisionar (necesita touchingWall).
+    // No se puede uno agarrar mientras ataca/carga.
+    if (!this.isBusy()) {
+      this.applyWallSlide(input);
+    } else {
+      this.wallSliding = false;
+      this.wallGrabDir = 0;
+    }
+
+    this.updateTimers(dt);
+  }
+
+  /**
+   * ¿Está ocupado de forma que bloquea moverse/saltar? Cargando sí; atacando
+   * solo durante startup/active. En RECOVERY te dejamos moverte y encadenar,
+   * para que el combate fluya y no se sienta "pegado".
+   */
+  private isBusy(): boolean {
+    if (this.charging) return true;
+    if (this.attack && !this.attack.cancelable) return true;
+    return false;
+  }
+
+  /** Avanza el ataque en curso y lo descarta al terminar. */
+  private updateAttack(): void {
+    if (this.attack) {
+      const alive = this.attack.step(this.box);
+      if (!alive) this.attack = null;
+    }
+  }
+
+  /**
+   * Procesa inputs de ataque. Usa un buffer para el ligero y permite cancelar
+   * el recovery del ataque actual con uno nuevo, de modo que se encadenan sin
+   * la pausa larga de antes.
+   */
+  private handleAttackInput(input: InputState): void {
+    // Bufferizamos el ligero: si lo pulsas mientras aún no puedes atacar, se
+    // guarda un instante y sale en cuanto estés libre.
+    if (input.lightPressed) {
+      this.lightBufferTimer = PLAYER.attackBuffer;
+    }
+
+    // ¿Podemos iniciar un ataque? Sí si no hay ataque, o si el actual ya está
+    // en recovery (cancelable). Cargar bloquea (estás manteniendo el fuerte).
+    const canStart =
+      !this.charging && (this.attack === null || this.attack.cancelable);
+
+    // --- Fuerte: cargar mientras se mantiene, lanzar al soltar ---
+    if (input.heavyHeld && canStart) {
+      this.charging = true;
+      this.heavyChargeSteps = 1;
+      this.attack = null; // cancela el recovery anterior al empezar a cargar
+      this.lightBufferTimer = 0;
+      return;
+    }
+    if (this.charging) {
+      if (input.heavyHeld) {
+        this.heavyChargeSteps = Math.min(
+          this.heavyChargeSteps + 1,
+          CHARGE.maxChargeSteps,
+        );
+        return;
+      }
+      // Soltó: lanzamos el fuerte con lo cargado.
+      const dir = this.attackDir(input);
+      this.orientForAttack(input, dir);
+      const charge01 = this.heavyChargeSteps / CHARGE.maxChargeSteps;
+      this.startAttack("heavy", dir, charge01);
+      this.charging = false;
+      this.heavyChargeSteps = 0;
+      return;
+    }
+
+    // --- Ligero: sale del buffer en cuanto podemos ---
+    if (this.lightBufferTimer > 0 && canStart) {
+      const dir = this.attackDir(input);
+      this.orientForAttack(input, dir);
+      this.startAttack("light", dir, 0);
+      this.lightBufferTimer = 0;
+    }
+  }
+
+  /** Dirección del ataque a partir del input (vertical tiene prioridad). */
+  private attackDir(input: InputState): AttackDir {
+    if (input.moveY < 0) return "up";
+    if (input.moveY > 0) return "down";
+    if (input.moveX !== 0) return "side";
+    return "neutral";
+  }
+
+  private startAttack(
+    kind: "light" | "heavy",
+    dir: AttackDir,
+    charge01: number,
+  ): void {
+    const def = kind === "light" ? LIGHT_ATTACKS[dir] : HEAVY_ATTACKS[dir];
+    // Iniciar un ataque cancela el recovery del anterior (encadenado).
+    this.attack = new ActiveAttack(def, this.facing, charge01);
+  }
+
+  /**
+   * Orienta el facing hacia la X pulsada al atacar lateral. Se llama desde
+   * startAttack vía attackDir, pero lo aplicamos aparte para dejarlo explícito.
+   */
+  private orientForAttack(input: InputState, dir: AttackDir): void {
+    if (dir === "side" && input.moveX !== 0) {
+      this.facing = input.moveX > 0 ? 1 : -1;
+    }
+  }
+
+  /** Progreso de carga actual [0..1], para el render. */
+  get chargeRatio(): number {
+    return this.heavyChargeSteps / CHARGE.maxChargeSteps;
+  }
+
+  private applyHorizontal(input: InputState, dt: number): void {
+    // Durante el bloqueo tras un wall jump, el input horizontal no manda: así
+    // el empuje de separación de la pared no se cancela de inmediato.
+    if (this.wallJumpLockTimer > 0) return;
+
+    const wantsMove = input.moveX !== 0;
+    const accel = this.onGround ? PLAYER.groundAccel : PLAYER.airAccel;
+    const friction = this.onGround ? PLAYER.groundFriction : PLAYER.airFriction;
+
+    if (wantsMove) {
+      this.facing = input.moveX > 0 ? 1 : -1;
+      const target = input.moveX * PLAYER.moveSpeed;
+      // Aceleramos hacia la velocidad objetivo.
+      this.vel.x = approach(this.vel.x, target, accel * dt);
+    } else {
+      // Sin input: frenamos hacia 0.
+      this.vel.x = approach(this.vel.x, 0, friction * dt);
+    }
+  }
+
+  private applyJump(input: InputState, dt: number): void {
+    // Bufferizamos el salto: si lo pulsa justo antes de tocar suelo, se guarda.
+    if (input.jumpPressed) {
+      this.jumpBufferTimer = PLAYER.jumpBuffer;
+    } else {
+      this.jumpBufferTimer = Math.max(0, this.jumpBufferTimer - dt);
+    }
+
+    const canGroundJump = this.onGround || this.coyoteTimer > 0;
+    const canWallJump = !this.onGround && this.wallGrabDir !== 0;
+    const wantsToJump = this.jumpBufferTimer > 0;
+
+    if (wantsToJump) {
+      if (canGroundJump) {
+        this.doJump();
+      } else if (canWallJump) {
+        // Agarrados a la pared: salto diagonal alejándonos de ella.
+        this.doWallJump();
+      } else if (this.jumpsLeft > 0) {
+        // Salto aéreo (doble salto).
+        this.doJump();
+      }
+    }
+
+    // Salto variable: si suelta el botón mientras sube, cortamos el impulso.
+    if (!input.jumpHeld && this.vel.y < 0) {
+      this.vel.y *= PLAYER.jumpCutMultiplier;
+    }
+  }
+
+  private doJump(): void {
+    this.vel.y = -PLAYER.jumpSpeed;
+    this.jumpBufferTimer = 0;
+    this.coyoteTimer = 0;
+    this.onGround = false;
+    this.jumpsLeft = Math.max(0, this.jumpsLeft - 1);
+  }
+
+  /**
+   * Wall jump: impulso diagonal ALEJÁNDOSE de la pared. wallGrabDir es el lado
+   * donde está la pared (-1 izq, +1 der), así que el empuje horizontal va en
+   * sentido contrario. Bloquea el control horizontal un instante.
+   */
+  private doWallJump(): void {
+    const away = -this.wallGrabDir; // sentido opuesto a la pared
+    this.vel.y = -PLAYER.wallJumpSpeedY;
+    this.vel.x = away * PLAYER.wallJumpSpeedX;
+    this.facing = away === 1 ? 1 : -1; // miramos hacia donde saltamos
+    this.wallJumpLockTimer = PLAYER.wallJumpLockTime;
+    this.jumpBufferTimer = 0;
+    this.wallGrabDir = 0; // consumimos el agarre
+    this.wallSliding = false;
+    this.onGround = false;
+    // No gastamos salto aéreo: el wall jump es su propia acción.
+  }
+
+  private applyGravity(dt: number): void {
+    this.vel.y += PLAYER.gravity * dt;
+    if (this.vel.y > PLAYER.maxFallSpeed) {
+      this.vel.y = PLAYER.maxFallSpeed;
+    }
+  }
+
+  private moveAndCollideX(dt: number, platforms: Platform[]): void {
+    this.pos.x += this.vel.x * dt;
+    this.touchingWall = 0;
+    for (const p of platforms) {
+      // Las plataformas one-way no tienen paredes laterales: se atraviesan.
+      if (p.oneWay) continue;
+      if (!overlaps(this.box, p.box)) continue;
+      if (this.vel.x > 0) {
+        // Moviéndonos a la derecha: nos pegamos al borde izquierdo de la plat.
+        this.pos.x = p.box.x - this.width;
+        this.touchingWall = 1;
+      } else if (this.vel.x < 0) {
+        this.pos.x = p.box.x + p.box.w;
+        this.touchingWall = -1;
+      }
+      this.vel.x = 0;
+    }
+  }
+
+  private moveAndCollideY(dt: number, platforms: Platform[]): void {
+    // Pies en el paso anterior, para decidir si una plataforma one-way nos
+    // sostiene (solo si veníamos desde arriba, nunca atravesándola al subir).
+    const prevFeet = this.prevPos.y + this.height;
+    this.pos.y += this.vel.y * dt;
+    let grounded = false;
+
+    for (const p of platforms) {
+      if (!overlaps(this.box, p.box)) continue;
+
+      if (p.oneWay) {
+        // One-way: solo colisiona cayendo y si los pies estaban por encima del
+        // borde superior en el paso previo (con 1px de tolerancia).
+        const fallingOntoTop = this.vel.y > 0 && prevFeet <= p.box.y + 1;
+        if (fallingOntoTop) {
+          this.pos.y = p.box.y - this.height;
+          this.vel.y = 0;
+          grounded = true;
+        }
+        // Si no, la atravesamos (subiendo o entrando por el lado/abajo).
+        continue;
+      }
+
+      if (this.vel.y > 0) {
+        // Cayendo: aterrizamos sobre la plataforma.
+        this.pos.y = p.box.y - this.height;
+        grounded = true;
+      } else if (this.vel.y < 0) {
+        // Subiendo: nos golpeamos la cabeza con el techo.
+        this.pos.y = p.box.y + p.box.h;
+      }
+      this.vel.y = 0;
+    }
+
+    this.onGround = grounded;
+  }
+
+  /**
+   * Agarre a la pared: si estamos en el aire, cayendo, tocando una pared y
+   * empujando con el input hacia ella (mirando hacia ella), deslizamos despacio
+   * y recuperamos los saltos.
+   */
+  private applyWallSlide(input: InputState): void {
+    this.wallSliding = false;
+    this.wallGrabDir = 0;
+
+    if (this.onGround || this.touchingWall === 0) return;
+    // Durante el bloqueo del wall jump no re-agarramos (si no, saltar contra la
+    // pared que acabas de dejar te volvería a pegar al instante).
+    if (this.wallJumpLockTimer > 0) return;
+    // Hay que estar empujando hacia la pared que tocamos.
+    const pushingIntoWall = input.moveX === this.touchingWall;
+    // Solo al caer (no mientras aún subimos tras un salto).
+    const falling = this.vel.y > 0;
+
+    if (pushingIntoWall && falling) {
+      this.wallSliding = true;
+      this.wallGrabDir = this.touchingWall; // recordamos el lado para el salto
+      this.facing = this.touchingWall; // miramos hacia la pared
+      if (this.vel.y > PLAYER.wallSlideSpeed) {
+        this.vel.y = PLAYER.wallSlideSpeed;
+      }
+      // Recuperamos los saltos mientras estamos agarrados.
+      this.jumpsLeft = PLAYER.maxJumps;
+    }
+  }
+
+  private updateTimers(dt: number): void {
+    this.wallJumpLockTimer = Math.max(0, this.wallJumpLockTimer - dt);
+    this.lightBufferTimer = Math.max(0, this.lightBufferTimer - dt);
+    if (this.hitFlash > 0) this.hitFlash--;
+
+    if (this.onGround) {
+      // Tocar suelo recarga el coyote time y los saltos.
+      this.coyoteTimer = PLAYER.coyoteTime;
+      this.jumpsLeft = PLAYER.maxJumps;
+    } else {
+      this.coyoteTimer = Math.max(0, this.coyoteTimer - dt);
+    }
+  }
+}
+
+/** Mueve `current` hacia `target` como mucho `maxDelta`, sin pasarse. */
+function approach(current: number, target: number, maxDelta: number): number {
+  if (current < target) return Math.min(current + maxDelta, target);
+  if (current > target) return Math.max(current - maxDelta, target);
+  return target;
+}

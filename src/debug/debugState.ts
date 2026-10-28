@@ -1,0 +1,25 @@
+/**
+ * Estado de depuración compartido. Un único objeto que el panel de
+ * desarrollador modifica y que el renderer (y quien haga falta) lee.
+ *
+ * Centralizarlo aquí hace trivial añadir nuevos toggles: añades un flag, un
+ * checkbox en el menú de pausa (ui/pauseMenu.ts) y su dibujado en el renderer.
+ */
+export interface DebugState {
+  /** Dibujar el rectángulo de la blast zone (borde invisible). */
+  showBlastZone: boolean;
+  /** Dibujar el contorno de la caja de colisión del jugador. */
+  showHitboxes: boolean;
+  /** Overlay con posición, velocidad y estado del jugador. */
+  showStats: boolean;
+  /** Mostrar FPS. */
+  showFps: boolean;
+}
+
+/** Instancia global del estado de debug. Todo apunta a este mismo objeto. */
+export const debug: DebugState = {
+  showBlastZone: false,
+  showHitboxes: false,
+  showStats: false,
+  showFps: false,
+};
