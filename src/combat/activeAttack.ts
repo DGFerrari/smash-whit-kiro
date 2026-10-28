@@ -95,7 +95,14 @@ export class ActiveAttack {
     this.timer = 0;
   }
 
-  /** Coloca la hitbox relativa al jugador según la dirección del ataque. */
+  /**
+   * Coloca la hitbox relativa al jugador según la dirección del ataque.
+   *
+   * Importante: la hitbox NACE en el CENTRO del jugador y se extiende hacia
+   * fuera. Así cubre el cuerpo del atacante y golpea a un rival que esté muy
+   * pegado, no solo lo que hay por delante del borde. `reach` ya no es un hueco
+   * desde el borde, sino cuánto sobresale respecto al centro.
+   */
   private computeHitbox(pb: AABB): AABB {
     const s = this.sizeMult;
     const w = this.def.hitbox.w * s;
@@ -107,17 +114,16 @@ export class ActiveAttack {
 
     switch (this.def.dir) {
       case "up":
-        return { x: cx - w / 2, y: pb.y - reach - h, w, h };
+        // Desde el centro hacia arriba.
+        return { x: cx - w / 2, y: cy + reach - h, w, h };
       case "down":
-        return { x: cx - w / 2, y: pb.y + pb.h + reach, w, h };
+        // Desde el centro hacia abajo.
+        return { x: cx - w / 2, y: cy - reach, w, h };
       case "side":
       case "neutral":
       default: {
-        // Hacia donde mira el jugador.
-        const x =
-          this.facing === 1
-            ? pb.x + pb.w + reach
-            : pb.x - reach - w;
+        // Desde el centro hacia donde mira el jugador.
+        const x = this.facing === 1 ? cx - reach : cx + reach - w;
         return { x, y: cy - h / 2, w, h };
       }
     }

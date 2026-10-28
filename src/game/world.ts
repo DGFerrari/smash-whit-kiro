@@ -3,6 +3,7 @@ import { Player } from "../entities/player.ts";
 import { Platform } from "../physics/platform.ts";
 import { overlaps } from "../physics/aabb.ts";
 import { createInputState, type InputState } from "../core/input.ts";
+import { debug } from "../debug/debugState.ts";
 
 /**
  * El "mundo" contiene todo el estado simulable: jugador(es) y plataformas.
@@ -57,27 +58,33 @@ export class World {
   /** Avanza la simulación un paso de tiempo fijo con el input dado. */
   step(input: InputState, dt: number): void {
     this.player.fixedUpdate(input, this.platforms, dt);
-    // El dummy se simula con input neutro: cae, colisiona y recibe knockback,
-    // pero no actúa por sí mismo.
-    this.dummy.fixedUpdate(this.dummyInput, this.platforms, dt);
-    this.returnDummyHome();
+    this.updateDummy(dt);
     this.resolveHits();
     this.checkBlastZone();
   }
 
   /**
-   * Devuelve el dummy despacio a su posición de reposo cuando está quieto en el
-   * suelo, para poder repetir pruebas sin perseguirlo.
+   * Actualiza el dummy según el modo elegido en dev tools:
+   *  - Fijado (dummyPinned): clavado en su sitio, inmóvil, ignora knockback.
+   *  - Libre: se simula como un jugador (cae, recibe golpes y knockback). Si
+   *    sale por la blast zone, reaparece en su sitio como un jugador normal.
    */
-  private returnDummyHome(): void {
-    const quiet =
-      this.dummy.onGround &&
-      Math.abs(this.dummy.vel.x) < 20 &&
-      Math.abs(this.dummy.vel.y) < 20;
-    if (quiet) {
-      this.dummy.pos.x += (this.dummyHomeX - this.dummy.pos.x) * 0.04;
+  private updateDummy(dt: number): void {
+    if (debug.dummyPinned) {
+      // Clavado: anulamos movimiento y lo mantenemos en su posición de reposo.
+      this.dummy.pos.x = this.dummyHomeX;
+      this.dummy.pos.y = WORLD.groundY - this.dummy.height;
+      this.dummy.prevPos.x = this.dummy.pos.x;
+      this.dummy.prevPos.y = this.dummy.pos.y;
+      this.dummy.vel.x = 0;
+      this.dummy.vel.y = 0;
+      return;
     }
-    // Si cae fuera por la blast zone, lo reaparecemos en su sitio.
+
+    // Libre: física normal con input neutro.
+    this.dummy.fixedUpdate(this.dummyInput, this.platforms, dt);
+
+    // Si cae fuera del mapa, reaparece como un jugador.
     const b = this.dummy.box;
     const out =
       b.x + b.w < BLAST_ZONE.left ||
@@ -85,7 +92,10 @@ export class World {
       b.y + b.h < BLAST_ZONE.top ||
       b.y > BLAST_ZONE.bottom;
     if (out) {
-      this.dummy.respawn(this.dummyHomeX + Player.halfWidth, WORLD.groundY - 100);
+      this.dummy.respawn(
+        this.dummyHomeX + Player.halfWidth,
+        WORLD.groundY - 120,
+      );
     }
   }
 

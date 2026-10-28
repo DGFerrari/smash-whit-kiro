@@ -1,12 +1,12 @@
 import { debug, type DebugState } from "../debug/debugState.ts";
 
 /**
- * Menú de pausa con submenús en columnas.
+ * Menú de pausa con navegación por niveles y migas de pan.
  *
- * El panel principal vive pegado a la derecha. Al abrir un submenú (Dev tools,
- * Controles), este aparece como OTRA columna a la IZQUIERDA del panel principal
- * y lo empuja: las columnas se apilan de derecha a izquierda. Cerrar un submenú
- * lo retira y las demás recuperan su sitio.
+ * Hay una página raíz ("Pausa") y subpáginas (Dev tools, Dummy, Controles). Al
+ * entrar en una subpágina, la página anterior queda detrás ATENUADA (gris) y la
+ * nueva aparece encima. Arriba se muestran migas de pan (p. ej. "Pausa › Dev
+ * tools") y se vuelve pulsando una miga anterior o el botón "‹".
  *
  * El menú avisa por callbacks (onOpen / onClose) para pausar el juego y el zoom.
  */
@@ -29,11 +29,29 @@ const DEV_TOGGLES: ToggleDef[] = [
     hint: "Contorno de las cajas de colisión.",
   },
   {
+    key: "showStun",
+    label: "Aturdimiento (stun)",
+    hint: "Marca cuándo un jugador ataca o está golpeado.",
+  },
+  {
+    key: "showStateColors",
+    label: "Colores de estado",
+    hint: "Tiñe al jugador según suelo / aire / pared.",
+  },
+  {
     key: "showStats",
     label: "Stats del jugador",
     hint: "Posición, velocidad y estado en vivo.",
   },
   { key: "showFps", label: "FPS" },
+];
+
+const DUMMY_TOGGLES: ToggleDef[] = [
+  {
+    key: "dummyPinned",
+    label: "Fijar dummy en su sitio",
+    hint: "Clavado e inmóvil, ignora el knockback. Desactívalo para poder empujarlo al vacío; reaparecerá como un jugador.",
+  },
 ];
 
 const CONTROLS: Array<[string, string]> = [
@@ -50,26 +68,52 @@ export interface PauseMenuCallbacks {
   onClose: () => void;
 }
 
-/** Identificador de cada submenú. */
-type SubmenuId = "dev" | "controls";
+type PageId = "root" | "dev" | "dummy" | "controls";
+
+const PAGE_TITLE: Record<PageId, string> = {
+  root: "Pausa",
+  dev: "Dev tools",
+  dummy: "Dummy",
+  controls: "Controles",
+};
 
 export class PauseMenu {
   private readonly root: HTMLDivElement;
-  /** Contenedor flex donde se apilan las columnas (fila). */
-  private readonly columns: HTMLDivElement;
+  private readonly stack: HTMLDivElement;
+  private readonly crumbs: HTMLElement;
   private open = false;
 
-  /** Submenús abiertos, en orden de apertura (se insertan a la izquierda). */
-  private readonly openSubmenus = new Map<SubmenuId, HTMLElement>();
+  /** Pila de navegación. Siempre empieza en "root". */
+  private nav: PageId[] = ["root"];
 
   constructor(private readonly cb: PauseMenuCallbacks) {
     this.root = document.createElement("div");
     this.root.id = "pause-menu";
-    this.columns = document.createElement("div");
-    this.columns.className = "pause-columns";
-    this.build();
+
+    const panel = document.createElement("div");
+    panel.className = "pause-panel";
+
+    this.crumbs = document.createElement("nav");
+    this.crumbs.className = "pause-crumbs";
+    panel.appendChild(this.crumbs);
+
+    this.stack = document.createElement("div");
+    this.stack.className = "pause-stack";
+    panel.appendChild(this.stack);
+
+    const scrim = document.createElement("div");
+    scrim.className = "pause-scrim";
+    scrim.addEventListener("click", () => this.setOpen(false));
+
+    this.root.appendChild(scrim);
+    const wrap = document.createElement("div");
+    wrap.className = "pause-wrap";
+    wrap.appendChild(panel);
+    this.root.appendChild(wrap);
+
     document.body.appendChild(this.root);
     window.addEventListener("keydown", this.onKey);
+    this.renderNav();
   }
 
   get isOpen(): boolean {
@@ -79,10 +123,10 @@ export class PauseMenu {
   private onKey = (e: KeyboardEvent): void => {
     if (e.key !== "Escape") return;
     e.preventDefault();
-    // Esc cierra primero el último submenú abierto; si no hay, cierra el menú.
-    if (this.open && this.openSubmenus.size > 0) {
-      const last = [...this.openSubmenus.keys()].pop()!;
-      this.closeSubmenu(last);
+    // Esc retrocede un nivel; en la raíz, cierra el menú.
+    if (this.open && this.nav.length > 1) {
+      this.nav.pop();
+      this.renderNav();
     } else {
       this.setOpen(!this.open);
     }
@@ -93,142 +137,103 @@ export class PauseMenu {
     this.open = value;
     this.root.classList.toggle("open", this.open);
     if (this.open) {
+      this.nav = ["root"];
+      this.renderNav();
       this.cb.onOpen();
     } else {
-      // Al cerrar el menú, cerramos también los submenús.
-      for (const id of [...this.openSubmenus.keys()]) this.closeSubmenu(id);
       this.cb.onClose();
     }
   }
 
-  private build(): void {
-    // Capa oscura de fondo (clic para cerrar todo).
-    const scrim = document.createElement("div");
-    scrim.className = "pause-scrim";
-    scrim.addEventListener("click", () => this.setOpen(false));
-    this.root.appendChild(scrim);
-
-    this.root.appendChild(this.columns);
-
-    // El panel principal va el último del flex, así queda a la derecha.
-    this.columns.appendChild(this.buildMainPanel());
+  private goTo(page: PageId): void {
+    this.nav.push(page);
+    this.renderNav();
   }
 
-  private buildMainPanel(): HTMLElement {
-    const panel = document.createElement("div");
-    panel.className = "pause-panel pause-main";
+  private backTo(index: number): void {
+    this.nav = this.nav.slice(0, index + 1);
+    this.renderNav();
+  }
 
-    const header = document.createElement("div");
-    header.className = "pause-header";
-    const title = document.createElement("h2");
-    title.textContent = "Pausa";
-    header.appendChild(title);
-    const close = document.createElement("button");
-    close.className = "pause-close";
-    close.type = "button";
-    close.textContent = "✕";
-    close.title = "Cerrar (Esc)";
-    close.addEventListener("click", () => this.setOpen(false));
-    header.appendChild(close);
-    panel.appendChild(header);
+  /** Re-dibuja migas de pan + las páginas apiladas (anteriores atenuadas). */
+  private renderNav(): void {
+    // Migas de pan.
+    this.crumbs.replaceChildren();
+    this.nav.forEach((page, i) => {
+      if (i > 0) {
+        const sep = document.createElement("span");
+        sep.className = "pause-crumb-sep";
+        sep.textContent = "›";
+        this.crumbs.appendChild(sep);
+      }
+      const crumb = document.createElement("button");
+      crumb.type = "button";
+      crumb.className = "pause-crumb";
+      crumb.textContent = PAGE_TITLE[page];
+      if (i === this.nav.length - 1) crumb.classList.add("current");
+      crumb.addEventListener("click", () => this.backTo(i));
+      this.crumbs.appendChild(crumb);
+    });
 
-    // Botones del menú principal.
-    panel.appendChild(
-      this.buildMenuButton("▶  Reanudar", "pause-resume", () =>
+    // Páginas: todas las de la pila se dibujan; las anteriores quedan
+    // atenuadas (gris) detrás, la última activa.
+    this.stack.replaceChildren();
+    this.nav.forEach((page, i) => {
+      const pageEl = this.buildPage(page);
+      pageEl.classList.add("pause-page");
+      const isCurrent = i === this.nav.length - 1;
+      pageEl.classList.toggle("dimmed", !isCurrent);
+      // Desplazamos ligeramente las páginas de fondo para dar profundidad.
+      pageEl.style.transform = isCurrent
+        ? "translateX(0)"
+        : `translateX(${-(this.nav.length - 1 - i) * 10}px) scale(0.98)`;
+      this.stack.appendChild(pageEl);
+    });
+  }
+
+  private buildPage(page: PageId): HTMLElement {
+    switch (page) {
+      case "dev":
+        return this.buildTogglePage(DEV_TOGGLES);
+      case "dummy":
+        return this.buildTogglePage(DUMMY_TOGGLES);
+      case "controls":
+        return this.buildControlsPage();
+      case "root":
+      default:
+        return this.buildRootPage();
+    }
+  }
+
+  private buildRootPage(): HTMLElement {
+    const el = document.createElement("div");
+    el.appendChild(
+      this.navButton("▶  Reanudar", "pause-resume", () =>
         this.setOpen(false),
       ),
     );
-    panel.appendChild(
-      this.buildMenuButton("Dev tools  ›", "pause-nav", () =>
-        this.toggleSubmenu("dev"),
+    el.appendChild(
+      this.navButton("Dev tools  ›", "pause-nav", () => this.goTo("dev")),
+    );
+    el.appendChild(
+      this.navButton("Dummy  ›", "pause-nav", () => this.goTo("dummy")),
+    );
+    el.appendChild(
+      this.navButton("Controles  ›", "pause-nav", () =>
+        this.goTo("controls"),
       ),
     );
-    panel.appendChild(
-      this.buildMenuButton("Controles  ›", "pause-nav", () =>
-        this.toggleSubmenu("controls"),
-      ),
-    );
-
-    const foot = document.createElement("p");
-    foot.className = "pause-foot";
-    foot.textContent = "Esc para reanudar";
-    panel.appendChild(foot);
-
-    return panel;
+    return el;
   }
 
-  private buildMenuButton(
-    label: string,
-    cls: string,
-    onClick: () => void,
-  ): HTMLButtonElement {
-    const btn = document.createElement("button");
-    btn.className = cls;
-    btn.type = "button";
-    btn.textContent = label;
-    btn.addEventListener("click", onClick);
-    return btn;
+  private buildTogglePage(defs: ToggleDef[]): HTMLElement {
+    const el = document.createElement("div");
+    for (const def of defs) el.appendChild(this.buildToggle(def));
+    return el;
   }
 
-  private toggleSubmenu(id: SubmenuId): void {
-    if (this.openSubmenus.has(id)) this.closeSubmenu(id);
-    else this.openSubmenu(id);
-  }
-
-  private openSubmenu(id: SubmenuId): void {
-    if (this.openSubmenus.has(id)) return;
-    const col =
-      id === "dev" ? this.buildDevColumn() : this.buildControlsColumn();
-    // Se inserta al PRINCIPIO del flex: queda a la izquierda, empujando.
-    this.columns.insertBefore(col, this.columns.firstChild);
-    this.openSubmenus.set(id, col);
-    // Forzamos reflow y animamos la entrada.
-    requestAnimationFrame(() => col.classList.add("in"));
-  }
-
-  private closeSubmenu(id: SubmenuId): void {
-    const col = this.openSubmenus.get(id);
-    if (!col) return;
-    this.openSubmenus.delete(id);
-    col.classList.remove("in");
-    col.addEventListener(
-      "transitionend",
-      () => col.remove(),
-      { once: true },
-    );
-    // Red de seguridad por si no dispara transitionend.
-    setTimeout(() => col.remove(), 300);
-  }
-
-  /** Columna de submenú con cabecera "Atrás" + contenido. */
-  private buildSubColumn(title: string, id: SubmenuId): HTMLElement {
-    const col = document.createElement("div");
-    col.className = "pause-panel pause-sub";
-
-    const header = document.createElement("div");
-    header.className = "pause-header";
-    const back = document.createElement("button");
-    back.className = "pause-back";
-    back.type = "button";
-    back.textContent = "‹ Atrás";
-    back.addEventListener("click", () => this.closeSubmenu(id));
-    header.appendChild(back);
-    const h = document.createElement("h2");
-    h.textContent = title;
-    header.appendChild(h);
-    col.appendChild(header);
-
-    return col;
-  }
-
-  private buildDevColumn(): HTMLElement {
-    const col = this.buildSubColumn("Dev tools", "dev");
-    for (const def of DEV_TOGGLES) col.appendChild(this.buildToggle(def));
-    return col;
-  }
-
-  private buildControlsColumn(): HTMLElement {
-    const col = this.buildSubColumn("Controles", "controls");
+  private buildControlsPage(): HTMLElement {
+    const el = document.createElement("div");
     for (const [action, keys] of CONTROLS) {
       const row = document.createElement("div");
       row.className = "pause-control";
@@ -240,9 +245,22 @@ export class PauseMenu {
       k.textContent = keys;
       row.appendChild(a);
       row.appendChild(k);
-      col.appendChild(row);
+      el.appendChild(row);
     }
-    return col;
+    return el;
+  }
+
+  private navButton(
+    label: string,
+    cls: string,
+    onClick: () => void,
+  ): HTMLButtonElement {
+    const btn = document.createElement("button");
+    btn.className = cls;
+    btn.type = "button";
+    btn.textContent = label;
+    btn.addEventListener("click", onClick);
+    return btn;
   }
 
   private buildToggle(def: ToggleDef): HTMLElement {

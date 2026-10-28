@@ -49,6 +49,8 @@ export class Player {
   damage = 0;
   /** Parpadeo al recibir golpe (pasos), solo visual. */
   hitFlash = 0;
+  /** Aturdimiento restante (s). Mientras >0 no puede moverse ni atacar. */
+  hitstunTimer = 0;
 
   /** Ataque en curso, o null si no está atacando. */
   attack: ActiveAttack | null = null;
@@ -108,6 +110,17 @@ export class Player {
     // Al reaparecer (tras perder una vida) el daño se resetea, como en Smash.
     this.damage = 0;
     this.hitFlash = 0;
+    this.hitstunTimer = 0;
+  }
+
+  /** ¿Está aturdido por un golpe recibido? (no puede moverse ni atacar). */
+  get stunned(): boolean {
+    return this.hitstunTimer > 0;
+  }
+
+  /** ¿Está en plena acción de ataque (startup/active, no cancelable)? */
+  get attacking(): boolean {
+    return this.attack !== null && !this.attack.cancelable;
   }
 
   /**
@@ -131,6 +144,10 @@ export class Player {
     this.vel.y = -vertical;
     this.hitFlash = 8;
 
+    // Aturdimiento: más largo cuanto más fuerte el golpe.
+    this.hitstunTimer =
+      PLAYER.hitstunBase + damage * PLAYER.hitstunPerDamage;
+
     // Un golpe interrumpe lo que estuvieras haciendo.
     this.attack = null;
     this.charging = false;
@@ -149,6 +166,17 @@ export class Player {
     // Guardamos la posición previa antes de mover: la usa el render.
     this.prevPos.x = this.pos.x;
     this.prevPos.y = this.pos.y;
+
+    // Si está aturdido, ignora toda intención: solo lo mueve la física.
+    if (this.hitstunTimer > 0) {
+      this.applyGravity(dt);
+      this.moveAndCollideX(dt, platforms);
+      this.moveAndCollideY(dt, platforms);
+      this.wallSliding = false;
+      this.wallGrabDir = 0;
+      this.updateTimers(dt);
+      return;
+    }
 
     // Combate: primero avanzamos el ataque en curso; luego, si estamos libres,
     // procesamos los inputs de ataque.
@@ -461,6 +489,7 @@ export class Player {
   private updateTimers(dt: number): void {
     this.wallJumpLockTimer = Math.max(0, this.wallJumpLockTimer - dt);
     this.lightBufferTimer = Math.max(0, this.lightBufferTimer - dt);
+    this.hitstunTimer = Math.max(0, this.hitstunTimer - dt);
     if (this.hitFlash > 0) this.hitFlash--;
 
     if (this.onGround) {

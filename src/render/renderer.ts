@@ -239,16 +239,17 @@ export class Renderer {
     const rx = lerp(fighter.prevPos.x, fighter.pos.x, alpha);
     const ry = lerp(fighter.prevPos.y, fighter.pos.y, alpha);
 
-    // Flash blanco al recibir golpe; si no, color por estado.
+    // Color del cuerpo. El flash de golpe siempre manda. Los colores de estado
+    // (suelo/aire/pared) solo si el toggle de dev tools está activo.
     let color: string;
     if (fighter.hitFlash > 0) {
       color = "#ffffff";
-    } else if (fighter.wallSliding) {
-      color = "#6bffb0";
-    } else if (!fighter.onGround) {
-      color = shade(baseColor, 0.85); // algo más oscuro en el aire
+    } else if (debug.showStateColors && fighter.wallSliding) {
+      color = "#6bffb0"; // pared
+    } else if (debug.showStateColors && !fighter.onGround) {
+      color = shade(baseColor, 0.85); // aire (algo más oscuro)
     } else {
-      color = baseColor;
+      color = baseColor; // suelo / sin colores de estado
     }
     ctx.fillStyle = color;
     ctx.fillRect(rx, ry, fighter.width, fighter.height);
@@ -257,6 +258,24 @@ export class Renderer {
     ctx.lineWidth = 2;
     ctx.strokeStyle = "rgba(0,0,0,0.35)";
     ctx.strokeRect(rx, ry, fighter.width, fighter.height);
+
+    // Marca de aturdimiento (dev): aro amarillo si ataca, magenta si golpeado.
+    if (debug.showStun && (fighter.stunned || fighter.attacking)) {
+      ctx.save();
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = fighter.stunned ? "#ff53d0" : "#ffd84d";
+      ctx.strokeRect(rx - 4, ry - 4, fighter.width + 8, fighter.height + 8);
+      // Etiqueta corta encima.
+      ctx.font = "700 12px ui-monospace, monospace";
+      ctx.textAlign = "center";
+      ctx.fillStyle = fighter.stunned ? "#ff53d0" : "#ffd84d";
+      ctx.fillText(
+        fighter.stunned ? "STUN" : "ATK",
+        rx + fighter.width / 2,
+        ry - 10,
+      );
+      ctx.restore();
+    }
 
     // Ojo que marca hacia dónde mira.
     ctx.fillStyle = "#0d1017";

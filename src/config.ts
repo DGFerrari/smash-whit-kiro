@@ -144,6 +144,14 @@ export const PLAYER = {
   attackBuffer: 0.14,
 
   /**
+   * Hitstun (aturdimiento al recibir un golpe): durante este tiempo el jugador
+   * no puede moverse ni atacar, solo lo arrastra el knockback. La duración base
+   * se amplía con el daño del golpe recibido.
+   */
+  hitstunBase: 0.12, // s por golpe
+  hitstunPerDamage: 0.012, // s extra por punto de daño del golpe
+
+  /**
    * Wall jump: al saltar estando agarrado a una pared, el impulso es diagonal
    * (alejándose de la pared), no recto hacia arriba.
    */
