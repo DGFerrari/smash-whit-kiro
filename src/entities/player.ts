@@ -7,6 +7,7 @@ import { ActiveAttack } from "../combat/activeAttack.ts";
 import {
   CHARGE,
   HEAVY_ATTACKS,
+  HEAVY_LUNGE,
   LIGHT_ATTACKS,
   type AttackDir,
 } from "../combat/attacks.ts";
@@ -60,6 +61,8 @@ export class Player {
   charging = false;
   /** Buffer de ataque ligero pendiente (s restantes, 0 = nada). */
   private lightBufferTimer = 0;
+  /** Usos del ataque fuerte restantes EN EL AIRE (como los saltos). */
+  heavyAirUses: number = HEAVY_LUNGE.maxAirUses;
 
   /** Bloqueo de control horizontal tras un wall jump (s). */
   private wallJumpLockTimer = 0;
@@ -107,6 +110,7 @@ export class Player {
     this.charging = false;
     this.heavyChargeSteps = 0;
     this.lightBufferTimer = 0;
+    this.heavyAirUses = HEAVY_LUNGE.maxAirUses;
     // Al reaparecer (tras perder una vida) el daño se resetea, como en Smash.
     this.damage = 0;
     this.hitFlash = 0;
@@ -121,6 +125,16 @@ export class Player {
   /** ¿Está en plena acción de ataque (startup/active, no cancelable)? */
   get attacking(): boolean {
     return this.attack !== null && !this.attack.cancelable;
+  }
+
+  /** ¿Se quedó sin saltos disponibles (ni en suelo ni aéreos)? */
+  get outOfJumps(): boolean {
+    return !this.onGround && this.coyoteTimer <= 0 && this.jumpsLeft <= 0;
+  }
+
+  /** ¿Se quedó sin usos de ataque fuerte en el aire? */
+  get outOfHeavy(): boolean {
+    return !this.onGround && this.heavyAirUses <= 0;
   }
 
   /**
@@ -250,7 +264,9 @@ export class Player {
       !this.charging && (this.attack === null || this.attack.cancelable);
 
     // --- Fuerte: cargar mientras se mantiene, lanzar al soltar ---
-    if (input.heavyHeld && canStart) {
+    // En el aire solo si quedan usos (como los saltos).
+    const canHeavy = this.onGround || this.heavyAirUses > 0;
+    if (input.heavyHeld && canStart && canHeavy) {
       this.charging = true;
       this.heavyChargeSteps = 1;
       this.attack = null; // cancela el recovery anterior al empezar a cargar
@@ -270,6 +286,7 @@ export class Player {
       this.orientForAttack(input, dir);
       const charge01 = this.heavyChargeSteps / CHARGE.maxChargeSteps;
       this.startAttack("heavy", dir, charge01);
+      this.applyHeavyLunge(dir);
       this.charging = false;
       this.heavyChargeSteps = 0;
       return;
@@ -300,6 +317,34 @@ export class Player {
     const def = kind === "light" ? LIGHT_ATTACKS[dir] : HEAVY_ATTACKS[dir];
     // Iniciar un ataque cancela el recovery del anterior (encadenado).
     this.attack = new ActiveAttack(def, this.facing, charge01);
+  }
+
+  /**
+   * Impulso que el fuerte da al PROPIO jugador, en la dirección del ataque.
+   * Cancela el movimiento previo (se SUSTITUYE la velocidad) para que sirva de
+   * recuperación: te lanza hacia donde atacas. Gasta un uso aéreo.
+   */
+  private applyHeavyLunge(dir: AttackDir): void {
+    switch (dir) {
+      case "up":
+        this.vel.x = 0;
+        this.vel.y = -HEAVY_LUNGE.speedUp;
+        break;
+      case "down":
+        this.vel.x = 0;
+        this.vel.y = HEAVY_LUNGE.speedDown;
+        break;
+      case "side":
+      case "neutral":
+      default:
+        this.vel.x = this.facing * HEAVY_LUNGE.speedX;
+        // Un pelín de elevación para que el lateral también ayude a volver.
+        this.vel.y = Math.min(this.vel.y, -120);
+        break;
+    }
+    if (!this.onGround) {
+      this.heavyAirUses = Math.max(0, this.heavyAirUses - 1);
+    }
   }
 
   /**
@@ -481,8 +526,9 @@ export class Player {
       if (this.vel.y > PLAYER.wallSlideSpeed) {
         this.vel.y = PLAYER.wallSlideSpeed;
       }
-      // Recuperamos los saltos mientras estamos agarrados.
+      // Recuperamos saltos y usos del fuerte aéreo mientras estamos agarrados.
       this.jumpsLeft = PLAYER.maxJumps;
+      this.heavyAirUses = HEAVY_LUNGE.maxAirUses;
     }
   }
 
@@ -493,9 +539,10 @@ export class Player {
     if (this.hitFlash > 0) this.hitFlash--;
 
     if (this.onGround) {
-      // Tocar suelo recarga el coyote time y los saltos.
+      // Tocar suelo recarga el coyote time, los saltos y el fuerte aéreo.
       this.coyoteTimer = PLAYER.coyoteTime;
       this.jumpsLeft = PLAYER.maxJumps;
+      this.heavyAirUses = HEAVY_LUNGE.maxAirUses;
     } else {
       this.coyoteTimer = Math.max(0, this.coyoteTimer - dt);
     }

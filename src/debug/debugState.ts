@@ -26,6 +26,11 @@ export interface DebugState {
    * knockback (útil para practicar combos siempre en el mismo sitio).
    */
   dummyPinned: boolean;
+  /**
+   * Avisar visualmente cuando un jugador se queda sin saltos o sin usos de
+   * ataque fuerte en el aire.
+   */
+  showResources: boolean;
 }
 
 /** Instancia global del estado de debug. Todo apunta a este mismo objeto. */
@@ -37,4 +42,5 @@ export const debug: DebugState = {
   showStun: false,
   showStateColors: true,
   dummyPinned: false,
+  showResources: false,
 };

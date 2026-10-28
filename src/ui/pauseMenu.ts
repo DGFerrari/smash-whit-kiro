@@ -39,6 +39,11 @@ const DEV_TOGGLES: ToggleDef[] = [
     hint: "Tiñe al jugador según suelo / aire / pared.",
   },
   {
+    key: "showResources",
+    label: "Saltos / ataques agotados",
+    hint: "Avisa cuando un jugador se queda sin saltos o sin fuerte aéreo.",
+  },
+  {
     key: "showStats",
     label: "Stats del jugador",
     hint: "Posición, velocidad y estado en vivo.",
@@ -175,20 +180,12 @@ export class PauseMenu {
       this.crumbs.appendChild(crumb);
     });
 
-    // Páginas: todas las de la pila se dibujan; las anteriores quedan
-    // atenuadas (gris) detrás, la última activa.
-    this.stack.replaceChildren();
-    this.nav.forEach((page, i) => {
-      const pageEl = this.buildPage(page);
-      pageEl.classList.add("pause-page");
-      const isCurrent = i === this.nav.length - 1;
-      pageEl.classList.toggle("dimmed", !isCurrent);
-      // Desplazamos ligeramente las páginas de fondo para dar profundidad.
-      pageEl.style.transform = isCurrent
-        ? "translateX(0)"
-        : `translateX(${-(this.nav.length - 1 - i) * 10}px) scale(0.98)`;
-      this.stack.appendChild(pageEl);
-    });
+    // Solo se dibuja la página ACTUAL. El rastro de dónde vienes queda en las
+    // migas de pan; mostrar las páginas de fondo las solapaba y se leían mal.
+    const current = this.nav[this.nav.length - 1];
+    const pageEl = this.buildPage(current);
+    pageEl.classList.add("pause-page");
+    this.stack.replaceChildren(pageEl);
   }
 
   private buildPage(page: PageId): HTMLElement {

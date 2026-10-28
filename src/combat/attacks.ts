@@ -156,3 +156,20 @@ export const CHARGE = {
   /** La hitbox también crece un poco a plena carga. */
   maxSizeMult: 1.35,
 } as const;
+
+/**
+ * Impulso que el ataque fuerte da al PROPIO jugador (lunge). Sirve para
+ * recuperarse de caídas: el fuerte cancela el movimiento y te lanza hacia la
+ * dirección del ataque. Como los saltos, hay un número limitado de usos en el
+ * aire para que no se pueda volar indefinidamente.
+ */
+export const HEAVY_LUNGE = {
+  /** Impulso horizontal (px/s) para ataques laterales/neutrales. */
+  speedX: 620,
+  /** Impulso vertical (px/s) para ataque arriba (recuperación clásica). */
+  speedUp: 900,
+  /** Impulso hacia abajo (px/s) para ataque abajo (picar). */
+  speedDown: 700,
+  /** Usos del fuerte en el aire antes de tocar suelo/pared. */
+  maxAirUses: 2,
+} as const;

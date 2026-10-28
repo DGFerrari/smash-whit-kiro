@@ -277,6 +277,25 @@ export class Renderer {
       ctx.restore();
     }
 
+    // Recursos agotados (dev): avisa si se quedó sin saltos o sin fuerte aéreo.
+    if (debug.showResources && (fighter.outOfJumps || fighter.outOfHeavy)) {
+      ctx.save();
+      ctx.font = "700 11px ui-monospace, monospace";
+      ctx.textAlign = "center";
+      const labels: string[] = [];
+      if (fighter.outOfJumps) labels.push("SIN SALTO");
+      if (fighter.outOfHeavy) labels.push("SIN FUERTE");
+      ctx.fillStyle = "#ff6b6b";
+      labels.forEach((t, i) => {
+        ctx.fillText(
+          t,
+          rx + fighter.width / 2,
+          ry + fighter.height + 16 + i * 14,
+        );
+      });
+      ctx.restore();
+    }
+
     // Ojo que marca hacia dónde mira.
     ctx.fillStyle = "#0d1017";
     const eyeW = 6;

@@ -88,7 +88,7 @@ body {
   max-height: 74vh;
   display: flex;
   flex-direction: column;
-  background: rgba(16, 21, 32, 0.98);
+  background: #10151f;
   border: 1px solid #2d3850;
   border-right: none;
   border-radius: 14px 0 0 14px;
@@ -149,16 +149,6 @@ body {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  transition: opacity 0.2s ease, transform 0.2s ease;
-}
-
-/* Las páginas de fondo se superponen (absolutas) y se atenúan. */
-.pause-page.dimmed {
-  position: absolute;
-  inset: 0;
-  opacity: 0.25;
-  filter: grayscale(1);
-  pointer-events: none;
 }
 
 .pause-resume {
