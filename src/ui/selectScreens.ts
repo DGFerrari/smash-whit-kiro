@@ -204,9 +204,9 @@ export class CharacterSelect {
 
   /**
    * Tarjeta de un jugador: etiqueta, hueco de ficha y pestañas de control.
-   *  - P1 y P2: Jugador / CPU (no se pueden desactivar: hace falta mínimo 2).
-   *    P1 puede ser CPU para montar partidas de solo CPUs.
-   *  - P3/P4: Jugador / CPU / Deshabilitado.
+   * TODOS los slots (incluido P1) pueden ser Jugador / CPU / Deshabilitado. La
+   * única restricción es que debe haber al menos 2 slots activos para empezar
+   * (lo valida `canStart`), así que el botón de continuar se bloquea solo.
    */
   private buildPlayerCard(p: number): HTMLElement {
     const card = document.createElement("div");
@@ -224,15 +224,11 @@ export class CharacterSelect {
     slotHint.textContent = "arrastra →";
     card.appendChild(slotHint);
 
-    // P1 y P2 no se pueden DESHABILITAR (mínimo 2 jugadores), pero sí elegir
-    // entre Jugador y CPU. P3/P4 añaden la opción "Deshabilitado".
-    const canDisable = p >= 2;
+    // Cualquier slot (incluido P1) puede ser Jugador / CPU / Deshabilitado.
     const controlOptions: Array<{ value: SlotControl; label: string }> = [
       { value: "human", label: "Jugador" },
       { value: "cpu", label: "CPU" },
-      ...(canDisable
-        ? [{ value: "off" as SlotControl, label: "Deshabilitado" }]
-        : []),
+      { value: "off" as SlotControl, label: "Deshabilitado" },
     ];
 
     const tabs = document.createElement("div");
