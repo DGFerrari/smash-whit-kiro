@@ -434,6 +434,36 @@ body {
   pointer-events: auto;
 }
 
+/* Anillo de progreso: centrado, solo visible mientras se "llena" la carga. */
+.loading-ring {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 90px;
+  height: 90px;
+  transform: translate(-50%, -50%) rotate(-90deg);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+#loading-screen.filling .loading-ring {
+  opacity: 1;
+}
+
+.loading-ring-track {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.15);
+  stroke-width: 6;
+}
+
+.loading-ring-fill {
+  fill: none;
+  stroke: #7fb2ff;
+  stroke-width: 6;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.05s linear;
+}
+
 /* ===== Cuenta atrás de intro ===== */
 #countdown {
   position: fixed;

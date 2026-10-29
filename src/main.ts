@@ -61,6 +61,8 @@ class App {
     await this.loading.cover();
     this.teardownMatch();
     this.mainMenu.show();
+    // Con la pantalla tapada, el anillo de carga se llena.
+    await this.loading.fill(500);
     // Iris se abre revelando el menú.
     await this.loading.reveal();
     this.busy = false;
@@ -74,6 +76,8 @@ class App {
     await this.loading.cover();
     this.mainMenu.hide();
     this.teardownMatch();
+    // Con la pantalla tapada, el anillo de carga se llena.
+    await this.loading.fill(600);
 
     const world = new World(mode);
     this.world = world;

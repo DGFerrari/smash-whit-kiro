@@ -22,6 +22,9 @@
  */
 export class LoadingScreen {
   private readonly root: HTMLDivElement;
+  /** Anillo de progreso visible mientras la pantalla está tapada. */
+  private readonly ring: SVGCircleElement;
+  private readonly ringCircumference: number;
   private raf = 0;
   /** Radio que cubre de sobra la pantalla (diagonal). */
   private get maxRadius(): number {
@@ -32,7 +35,62 @@ export class LoadingScreen {
     this.root = document.createElement("div");
     this.root.id = "loading-screen";
     this.setRadius(this.maxRadius); // empieza totalmente abierto (invisible)
+
+    // Anillo de progreso circular (SVG) centrado. Visible solo durante fill().
+    const R = 34;
+    this.ringCircumference = 2 * Math.PI * R;
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("class", "loading-ring");
+    svg.setAttribute("viewBox", "0 0 80 80");
+    const track = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    track.setAttribute("class", "loading-ring-track");
+    track.setAttribute("cx", "40");
+    track.setAttribute("cy", "40");
+    track.setAttribute("r", String(R));
+    this.ring = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    this.ring.setAttribute("class", "loading-ring-fill");
+    this.ring.setAttribute("cx", "40");
+    this.ring.setAttribute("cy", "40");
+    this.ring.setAttribute("r", String(R));
+    this.ring.style.strokeDasharray = String(this.ringCircumference);
+    this.setRingProgress(0);
+    svg.appendChild(track);
+    svg.appendChild(this.ring);
+    this.root.appendChild(svg);
+
     document.body.appendChild(this.root);
+  }
+
+  private setRingProgress(p: number): void {
+    // offset = circunferencia * (1 - progreso): a 0 el anillo está vacío.
+    const clamped = Math.max(0, Math.min(1, p));
+    this.ring.style.strokeDashoffset = String(
+      this.ringCircumference * (1 - clamped),
+    );
+  }
+
+  /**
+   * Con la pantalla tapada (tras cover), llena el anillo de progreso de 0 a 1
+   * en `duration` ms. Representa visualmente la carga antes de revelar.
+   */
+  fill(duration = 500): Promise<void> {
+    this.root.classList.add("filling");
+    this.setRingProgress(0);
+    cancelAnimationFrame(this.raf);
+    const start = performance.now();
+    return new Promise<void>((resolve) => {
+      const tick = (now: number): void => {
+        const t = Math.min(1, (now - start) / duration);
+        this.setRingProgress(t);
+        if (t < 1) {
+          this.raf = requestAnimationFrame(tick);
+        } else {
+          this.root.classList.remove("filling");
+          resolve();
+        }
+      };
+      this.raf = requestAnimationFrame(tick);
+    });
   }
 
   /** Aplica el radio del agujero transparente centrado. */
