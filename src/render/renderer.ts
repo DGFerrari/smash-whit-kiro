@@ -6,6 +6,8 @@ import type { Platform } from "../physics/platform.ts";
 import { Camera } from "./camera.ts";
 import type { World, DeathEffect, HitEffect } from "../game/world.ts";
 import { getStage, type StageTheme } from "../game/stages.ts";
+import { getCharacter, type AnimState, type CharacterId } from "../game/characters.ts";
+import { preloadModel, FighterModel } from "./models.ts";
 import { debug } from "../debug/debugState.ts";
 import { drawPercentHud, type PercentEntry } from "../ui/percentHud.ts";
 import { Background3D } from "./background.ts";
@@ -45,6 +47,15 @@ export class Renderer {
   private readonly stageGroup = new THREE.Group();
   private stageBuiltFor: World | null = null;
 
+  /**
+   * Modelos 3D PERSISTENTES por combatiente (no se recrean por frame: el mixer
+   * de animación necesita vivir entre frames). Clave: índice de combatiente.
+   */
+  private readonly modelGroup = new THREE.Group();
+  private readonly modelsByIndex = new Map<number, FighterModel | null>();
+  /** Mundo del que creamos los modelos actuales (para rehacerlos al cambiar). */
+  private modelsBuiltFor: World | null = null;
+
   /** Reutilizamos geometrías/materiales base para no recrearlos por frame. */
   private readonly boxGeo = new THREE.BoxGeometry(1, 1, 1);
   private readonly sphereGeo = new THREE.SphereGeometry(1, 20, 16);
@@ -73,6 +84,7 @@ export class Renderer {
     this.scene = new THREE.Scene();
     this.scene.add(this.dynamicGroup);
     this.scene.add(this.stageGroup);
+    this.scene.add(this.modelGroup);
 
     this.setupLights();
     this.background = new Background3D(this.scene);
@@ -166,6 +178,10 @@ export class Renderer {
     this.keyLight.target.position.set(fx, fy, 0);
     this.keyLight.position.set(fx - 260, fy + 620, 760);
     this.keyLight.target.updateMatrixWorld();
+
+    // Modelos 3D persistentes (si los personajes tienen .glb).
+    this.ensureModels(world);
+    this.updateModels(world, alpha);
 
     // Reconstruimos los objetos dinámicos (combatientes, ataques, efectos).
     this.rebuildDynamic(world, alpha);
@@ -368,6 +384,97 @@ export class Renderer {
   }
 
   // ---------------------------------------------------------------------------
+  // Modelos 3D de los personajes (persistentes por combatiente)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Precarga los .glb de una lista de personajes. La app lo llama durante la
+   * pantalla de carga para que al empezar la partida ya estén listos. Ignora
+   * errores (un personaje que falle al cargar usa el cubo de fallback).
+   */
+  async preloadCharacters(ids: CharacterId[]): Promise<void> {
+    const urls = new Set<string>();
+    for (const id of ids) {
+      const m = getCharacter(id).model;
+      if (m) urls.add(m.url);
+    }
+    await Promise.all(
+      [...urls].map((u) => preloadModel(u).catch((e) => console.warn("[models]", u, e))),
+    );
+  }
+
+  /** Crea/renueva las instancias de modelo cuando cambia de mundo. */
+  private ensureModels(world: World): void {
+    if (this.modelsBuiltFor === world) return;
+    this.modelsBuiltFor = world;
+    this.clearModels();
+
+    for (const f of world.fighters) {
+      const def = getCharacter(f.characterId);
+      const spec = def.model;
+      if (!spec) {
+        this.modelsByIndex.set(f.index, null); // sin modelo -> cubo de fallback
+        continue;
+      }
+      // El modelo ya debería estar precargado; si no, lo crea al resolver.
+      preloadModel(spec.url)
+        .then((loaded) => {
+          // El mundo pudo cambiar mientras cargaba: comprobamos.
+          if (this.modelsBuiltFor !== world) return;
+          const tint = spec.tint ? new THREE.Color(def.color).getHex() : null;
+          const fm = new FighterModel(loaded, spec, tint);
+          this.modelsByIndex.set(f.index, fm);
+          this.modelGroup.add(fm.root);
+        })
+        .catch(() => {
+          this.modelsByIndex.set(f.index, null); // fallback a cubo
+        });
+    }
+  }
+
+  private clearModels(): void {
+    for (const fm of this.modelsByIndex.values()) {
+      if (fm) {
+        this.modelGroup.remove(fm.root);
+        fm.dispose();
+      }
+    }
+    this.modelsByIndex.clear();
+  }
+
+  /** ¿El combatiente de este índice tiene un modelo 3D vivo (no cubo)? */
+  private hasLiveModel(index: number): boolean {
+    return !!this.modelsByIndex.get(index);
+  }
+
+  /** Coloca, orienta y anima cada modelo según el estado del combatiente. */
+  private updateModels(world: World, alpha: number): void {
+    for (const f of world.fighters) {
+      const fm = this.modelsByIndex.get(f.index);
+      if (!fm) continue;
+      const visible = f.alive && !f.isDead;
+      fm.root.visible = visible;
+      if (!visible) continue;
+      const p = f.player;
+      const sceneX = lerp(p.prevPos.x, p.pos.x, alpha) + p.width / 2;
+      const sceneY = -(lerp(p.prevPos.y, p.pos.y, alpha) + p.height); // pies
+      fm.place(sceneX, sceneY, p.facing);
+      fm.setState(this.animStateFor(p));
+      fm.update(this.frameDt);
+    }
+  }
+
+  /** Mapea el estado del jugador a un estado de animación lógico. */
+  private animStateFor(player: Player): AnimState {
+    if (player.hitstunTimer > 0) return "hit";
+    if (player.shielding) return "shield";
+    if (player.attack) return "attack";
+    if (!player.onGround) return player.vel.y < 0 ? "jump" : "fall";
+    if (Math.abs(player.vel.x) > 20) return "run";
+    return "idle";
+  }
+
+  // ---------------------------------------------------------------------------
   // Escenario (estático por mundo)
   // ---------------------------------------------------------------------------
 
@@ -566,10 +673,13 @@ export class Renderer {
     // Blast zone (debug): marco de líneas.
     if (debug.showBlastZone) this.addBlastZone();
 
-    // Combatientes vivos + ataques + escudos.
+    // Combatientes vivos + ataques + escudos. Si el personaje tiene modelo 3D,
+    // NO dibujamos el cubo (el modelo persistente ya lo representa).
     for (const f of world.fighters) {
       if (!f.alive || f.isDead) continue;
-      this.addFighter(f.player, alpha, f.color, f.index);
+      if (!this.hasLiveModel(f.index)) {
+        this.addFighter(f.player, alpha, f.color, f.index);
+      }
       this.addShield(f.player, alpha);
       this.addAttack(f.player);
     }
@@ -948,11 +1058,16 @@ export class Renderer {
     const now = performance.now();
     const dt = now - this.lastFrameTime;
     this.lastFrameTime = now;
+    // dt del frame en segundos (limitado), para animar los mixers de modelos.
+    this.frameDt = Math.min(0.05, Math.max(0, dt / 1000));
     if (dt > 0) {
       const instant = 1000 / dt;
       this.fps = this.fps === 0 ? instant : this.fps * 0.9 + instant * 0.1;
     }
   }
+
+  /** dt del último frame (s), para los AnimationMixer de los modelos. */
+  private frameDt = 0;
 
   private drawStats(
     ctx: CanvasRenderingContext2D,

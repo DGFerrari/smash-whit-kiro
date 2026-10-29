@@ -206,8 +206,12 @@ class App {
     this.charSelect.hide();
     this.stageSelect.hide();
     this.teardownMatch();
-    // Con la pantalla tapada, el anillo de carga se llena.
-    await this.loading.fill(600);
+    // Con la pantalla tapada, el anillo de carga se llena, y aprovechamos para
+    // precargar los modelos 3D de los personajes elegidos (si los tienen).
+    await Promise.all([
+      this.loading.fill(600),
+      renderer.preloadCharacters(config.characters),
+    ]);
 
     const world = new World(mode, undefined, config);
     this.world = world;
