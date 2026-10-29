@@ -69,6 +69,17 @@ export class Camera {
   }
 
   /**
+   * Encuadre cinemático que CONTIENE a todos los combatientes vivos, con un
+   * factor de zoom extra (zoomMult > 1 acerca; < 1 aleja). Lo usa la intro para
+   * mostrar a todos los jugadores antes de empezar.
+   */
+  cinematicFrameAll(world: World, zoomMult = 1): void {
+    const box = this.computeTargetBox(world);
+    const z = this.zoomForBox(box.halfW, box.halfH) * zoomMult;
+    this.cinematic = { x: box.cx, y: box.cy, zoom: z };
+  }
+
+  /**
    * Cámara libre del modo replay: fija foco y zoom directamente (sin suavizar)
    * y se mantiene ahí hasta clearCinematic(). Pensado para arrastrar/zoom.
    */

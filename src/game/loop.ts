@@ -25,12 +25,17 @@ export interface LoopCallbacks {
 type Phase = "intro" | "playing";
 
 /** Guion de la intro: cuánto dura cada tramo (s) y qué muestra. */
-const INTRO_STEPS: Array<{ dur: number; text: string | null; focus: "p0" | "p1" | "all" }> = [
-  { dur: 0.9, text: "3", focus: "p0" },
-  { dur: 0.9, text: "2", focus: "p1" },
-  { dur: 0.9, text: "1", focus: "all" },
-  { dur: 0.6, text: "GO!", focus: "all" },
-];
+/**
+ * Foco de un tramo de intro: índice de un jugador concreto, o "all" (encuadre
+ * que contiene a todos). El guion se GENERA según cuántos jugadores haya, para
+ * que la cámara recorra a todos antes de empezar.
+ */
+type IntroFocus = number | "all";
+interface IntroStep {
+  dur: number;
+  text: string | null;
+  focus: IntroFocus;
+}
 
 /**
  * Bucle principal con timestep fijo + acumulador (patrón "Fix Your Timestep").
@@ -58,6 +63,8 @@ export class GameLoop {
 
   private phase: Phase = "intro";
   private introElapsed = 0;
+  /** Guion de la intro, generado según el nº de jugadores (recorre a todos). */
+  private readonly introSteps: IntroStep[];
 
   /** Escala de tiempo (1 = normal; <1 = cámara lenta). */
   private timeScale = 1;
@@ -93,6 +100,28 @@ export class GameLoop {
       this.inputs.push(new KeyboardInput(PLAYER_SLOTS[i] ?? "p1"));
       this.inputStates.push(createInputState());
     }
+
+    this.introSteps = this.buildIntroSteps(n);
+  }
+
+  /**
+   * Construye el guion de la intro recorriendo a cada jugador y cerrando con un
+   * encuadre de todos. Reparte la cuenta atrás "3·2·1·GO" a lo largo del
+   * recorrido para que la cámara enseñe a todos antes de empezar.
+   */
+  private buildIntroSteps(n: number): IntroStep[] {
+    const steps: IntroStep[] = [];
+    // Un vistazo rápido a cada jugador (sin texto, para que el recorrido fluya).
+    const perPlayer = Math.min(0.6, 2.4 / Math.max(1, n));
+    for (let i = 0; i < n; i++) {
+      steps.push({ dur: perPlayer, text: null, focus: i });
+    }
+    // Cuenta atrás con la cámara ya encuadrando a todos.
+    steps.push({ dur: 0.7, text: "3", focus: "all" });
+    steps.push({ dur: 0.7, text: "2", focus: "all" });
+    steps.push({ dur: 0.7, text: "1", focus: "all" });
+    steps.push({ dur: 0.6, text: "GO!", focus: "all" });
+    return steps;
   }
 
   start(): void {
@@ -103,7 +132,7 @@ export class GameLoop {
     this.accumulator = 0;
     this.phase = "intro";
     this.introElapsed = 0;
-    this.cb.onCountdown?.(INTRO_STEPS[0].text);
+    this.cb.onCountdown?.(this.introSteps[0].text);
     this.rafId = requestAnimationFrame(this.frame);
   }
 
@@ -157,9 +186,9 @@ export class GameLoop {
 
     // ¿En qué tramo del guion estamos?
     let acc = 0;
-    let current = INTRO_STEPS[INTRO_STEPS.length - 1];
+    let current = this.introSteps[this.introSteps.length - 1];
     let finished = true;
-    for (const step of INTRO_STEPS) {
+    for (const step of this.introSteps) {
       if (this.introElapsed < acc + step.dur) {
         current = step;
         finished = false;
@@ -183,21 +212,21 @@ export class GameLoop {
     return 1;
   }
 
-  private applyIntroCamera(focus: "p0" | "p1" | "all"): void {
+  private applyIntroCamera(focus: IntroFocus): void {
     if (focus === "all") {
-      // Encuadre normal (deja que el auto lo calcule): quitamos cinemática.
-      this.camera.clearCinematic();
+      // Encuadre cinemático que contiene a TODOS los jugadores (ligeramente
+      // alejado para que se vean enteros). Suavizado por focusOn/cinematic.
+      this.camera.cinematicFrameAll(this.world, 0.95);
       return;
     }
-    const idx = focus === "p0" ? 0 : 1;
-    const f = this.world.fighters[idx];
+    const f = this.world.fighters[focus];
     if (!f) {
-      this.camera.clearCinematic();
+      this.camera.cinematicFrameAll(this.world, 0.95);
       return;
     }
     const cx = f.player.pos.x + f.player.width / 2;
     const cy = f.player.pos.y + f.player.height / 2;
-    this.camera.focusOn(cx, cy, 1.25);
+    this.camera.focusOn(cx, cy, 1.3);
   }
 
   /** Fase de juego con acumulador y cámara lenta opcional. */

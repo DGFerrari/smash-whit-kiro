@@ -47,11 +47,16 @@ export class Renderer {
   /** Reutilizamos geometrías/materiales base para no recrearlos por frame. */
   private readonly boxGeo = new THREE.BoxGeometry(1, 1, 1);
   private readonly sphereGeo = new THREE.SphereGeometry(1, 20, 16);
+  /** Aristas de la caja unitaria, compartidas (EdgesGeometry es cara de crear). */
+  private readonly edgesGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1));
+  /** Color de fondo cacheado (se re-set al cambiar de escenario, no por frame). */
+  private readonly bgColor = new THREE.Color();
 
   constructor(canvas: HTMLCanvasElement) {
     // Marcamos las geometrías compartidas para que clearGroup no las libere.
     markShared(this.boxGeo);
     markShared(this.sphereGeo);
+    markShared(this.edgesGeo);
 
     this.three = new THREE.WebGLRenderer({
       canvas,
@@ -121,7 +126,10 @@ export class Renderer {
     this.ensureStage(world);
     this.background.setBackdrop(stageDef.backdrop);
     this.background.update(camera);
-    this.scene.background = new THREE.Color(stageDef.theme.background);
+    // Reutilizamos el mismo objeto Color (set es barato; crear uno nuevo cada
+    // frame generaba basura innecesaria).
+    this.bgColor.set(stageDef.theme.background);
+    this.scene.background = this.bgColor;
 
     // Reconstruimos los objetos dinámicos (combatientes, ataques, efectos).
     this.rebuildDynamic(world, alpha);
@@ -640,7 +648,7 @@ export class Renderer {
     // un contorno gris la distingue del jugador humano de un vistazo.
     if (isCpu) {
       const edges = new THREE.LineSegments(
-        new THREE.EdgesGeometry(this.boxGeo),
+        this.edgesGeo,
         new THREE.LineBasicMaterial({ color: 0x9aa5be }),
       );
       // Un pelín más grande que el cuerpo para que el borde se vea por fuera.
@@ -651,7 +659,7 @@ export class Renderer {
 
     if (debug.showHitboxes) {
       const edges = new THREE.LineSegments(
-        new THREE.EdgesGeometry(this.boxGeo),
+        this.edgesGeo,
         new THREE.LineBasicMaterial({ color: 0x50ff8c }),
       );
       edges.scale.set(player.width, player.height, DEPTH.fighter);
@@ -715,7 +723,7 @@ export class Renderer {
     const w = BLAST_ZONE.right - BLAST_ZONE.left;
     const h = BLAST_ZONE.bottom - BLAST_ZONE.top;
     const edges = new THREE.LineSegments(
-      new THREE.EdgesGeometry(this.boxGeo),
+      this.edgesGeo,
       new THREE.LineBasicMaterial({ color: 0xff5050, transparent: true, opacity: 0.85 }),
     );
     edges.scale.set(w, h, 1);

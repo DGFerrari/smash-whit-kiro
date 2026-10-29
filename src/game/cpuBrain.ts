@@ -182,7 +182,7 @@ export class CpuBrain {
       return s;
     }
 
-    // --- 4) Acercarse (según agresividad/alcance del perfil) ---
+    // --- 4) Acercarse / merodear (según agresividad/alcance del perfil) ---
     this.holdingHeavy = 0;
     // Distancia de "pegado" un poco distinta por CPU, para no apilarse todas en
     // el mismo punto haciendo lo mismo.
@@ -193,6 +193,11 @@ export class CpuBrain {
     } else if (!shouldEngage && adx < 120) {
       // Perfil pasivo (fácil): mantiene distancia si está muy cerca sin atacar.
       s.moveX = -dir;
+    } else {
+      // No hay nada urgente y el rival está lejos: MERODEAR en vez de quedarse
+      // quieta. Alterna acercarse / alejarse / parar en un ciclo determinista
+      // desfasado por personalidad, para que se sienta viva y varíe entre CPUs.
+      s.moveX = this.wanderDir(dir);
     }
 
     // Saltar hacia un rival por encima.
@@ -373,6 +378,28 @@ export class CpuBrain {
         s.heavyReleased = true;
         this.usedHeavyRecover = true;
       }
+    }
+  }
+
+  /**
+   * Dirección de merodeo cuando no hay objetivo urgente: un ciclo lento y
+   * determinista (acercarse / parar / alejarse / parar) desfasado por la
+   * personalidad, para que la CPU se mueva en vez de quedarse plantada y para
+   * que varias CPUs no hagan lo mismo a la vez. `toFoe` es la dirección hacia
+   * el rival (+1/-1).
+   */
+  private wanderDir(toFoe: 1 | -1): number {
+    // Ciclo de ~160 pasos (~2.6 s) dividido en 4 fases.
+    const phase = Math.floor(((this.tick + this.variation * 37) % 160) / 40);
+    switch (phase) {
+      case 0:
+        return toFoe; // se acerca
+      case 1:
+        return 0; // observa
+      case 2:
+        return -toFoe as number; // se aleja
+      default:
+        return 0; // observa
     }
   }
 
