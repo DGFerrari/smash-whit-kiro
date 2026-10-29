@@ -44,7 +44,7 @@ class App {
 
   /** Grabador activo de la partida actual (null si no se graba). */
   private recorder: ReplayRecorder | null = null;
-  /** Replay grabado de la última partida (para ofrecer descargarlo al acabar). */
+  /** Replay grabado de la última partida (se guarda solo al terminar). */
   private lastReplay: ReplayData | null = null;
 
   /** Config elegida de la partida en curso (para grabación y revancha). */
@@ -112,9 +112,10 @@ class App {
       this.matchOver.hide();
       void this.toMenu();
     },
-    // Descargar el replay de la partida recién jugada.
-    onDownloadReplay: () => {
-      if (this.lastReplay) downloadReplay(this.lastReplay);
+    // La partida ya se guardó sola; este botón abre la lista de repeticiones.
+    onViewReplays: () => {
+      this.matchOver.hide();
+      this.replayListScreen.show();
     },
   });
 
@@ -300,7 +301,7 @@ class App {
         }
       : undefined;
 
-    // Finalizamos el replay grabado (el podio ofrecerá descargarlo).
+    // Finalizamos el replay grabado (se guarda automáticamente abajo).
     this.lastReplay =
       this.recorder && this.recorder.length > 0
         ? this.recorder.build(replayResult)
@@ -335,13 +336,12 @@ class App {
 
   /** Abre la lista de repeticiones guardadas (desde el menú). */
   private async openReplayList(): Promise<void> {
-    if (this.busy) return;
-    this.busy = true;
+    // No tocamos this.busy aquí: transition() ya lo gestiona (y si lo
+    // pusiéramos a true antes, transition abortaría por su propio guard).
     await this.transition(() => {
       this.hideMenu();
       this.replayListScreen.show();
     });
-    this.busy = false;
   }
 
   /** Vuelve del reproductor a la lista de repeticiones. */

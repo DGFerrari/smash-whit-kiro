@@ -234,7 +234,8 @@ export interface FighterResult {
 export interface MatchOverCallbacks {
   onRematch: () => void;
   onMenu: () => void;
-  onDownloadReplay: () => void;
+  /** Ir a la lista de repeticiones (la partida ya quedó guardada). */
+  onViewReplays: () => void;
 }
 
 export class MatchOverScreen {
@@ -279,14 +280,14 @@ export class MatchOverScreen {
     rematch.addEventListener("click", () => this.cb.onRematch());
     actions.appendChild(rematch);
 
-    // Descargar replay: acción terciaria (icono de descarga).
-    const download = document.createElement("button");
-    download.type = "button";
-    download.className = "result-btn result-btn-download";
-    download.innerHTML =
-      '<span class="result-btn-icon">⭳</span><span class="result-btn-text">Descargar replay</span><span class="result-btn-sub">Guarda esta partida</span>';
-    download.addEventListener("click", () => this.cb.onDownloadReplay());
-    actions.appendChild(download);
+    // Ver repeticiones: la partida se guarda sola; este botón lleva a la lista.
+    const replays = document.createElement("button");
+    replays.type = "button";
+    replays.className = "result-btn result-btn-download";
+    replays.innerHTML =
+      '<span class="result-btn-icon">▶</span><span class="result-btn-text">Ver repeticiones</span><span class="result-btn-sub">Guardada automáticamente</span>';
+    replays.addEventListener("click", () => this.cb.onViewReplays());
+    actions.appendChild(replays);
 
     // Menú: botón secundario (neutro, icono de casa).
     const menu = document.createElement("button");
