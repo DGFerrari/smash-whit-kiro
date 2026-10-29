@@ -661,3 +661,138 @@ body {
   align-items: center;
   text-align: center;
 }
+
+/* ===== Selección de modo en el menú principal ===== */
+#main-menu {
+  --menu-accent: #2f6bff;
+  transition: background 0.4s ease;
+}
+
+/* Un resplandor del color del modo elegido tiñe el fondo del menú. */
+#main-menu.mode-chosen {
+  background: radial-gradient(
+    ellipse at center,
+    color-mix(in srgb, var(--menu-accent) 22%, rgba(11, 26, 51, 0.92)),
+    rgba(6, 10, 20, 0.97)
+  );
+}
+
+.mode-grid {
+  display: flex;
+  gap: 14px;
+  margin: 8px 0 4px;
+}
+
+.mode-card {
+  --accent: #2f6bff;
+  flex: 1;
+  padding: 22px 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 2px solid #2d3850;
+  border-radius: 14px;
+  color: #e6e6e6;
+  font-size: 17px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.15s ease, border-color 0.15s ease,
+    box-shadow 0.2s ease, background 0.15s ease;
+}
+
+.mode-card:hover {
+  transform: translateY(-3px);
+  border-color: var(--accent);
+}
+
+.mode-card.selected {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  box-shadow: 0 0 24px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.mode-card-label {
+  display: block;
+}
+
+.mode-hint {
+  min-height: 42px;
+  font-size: 14px;
+  line-height: 1.4;
+  color: #8b97ad;
+  transition: color 0.2s ease;
+}
+
+.play-btn {
+  --accent: #2f6bff;
+  align-items: center;
+  text-align: center;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: 1px;
+}
+
+.play-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.play-btn:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 24%, rgba(255, 255, 255, 0.06));
+  border-color: var(--accent);
+  animation: playPulse 1.6s ease-in-out infinite;
+}
+
+.play-btn:not(:disabled):hover {
+  background: var(--accent);
+  color: #ffffff;
+}
+
+@keyframes playPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 50%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 22px 2px color-mix(in srgb, var(--accent) 45%, transparent);
+  }
+}
+
+/* Estilos de la página de Dummy del menú de pausa. */
+.pause-subtitle {
+  color: #9fb0cc;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin: 12px 4px 4px;
+}
+
+.pause-attackrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 8px;
+}
+
+.pause-dirbtns {
+  display: flex;
+  gap: 6px;
+}
+
+.pause-dirbtn {
+  width: 34px;
+  height: 34px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #e6e6e6;
+  border: 1px solid #2d3850;
+  border-radius: 8px;
+  font-size: 15px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.pause-dirbtn:hover {
+  background: #2f6bff;
+  border-color: #2f6bff;
+  color: #ffffff;
+}

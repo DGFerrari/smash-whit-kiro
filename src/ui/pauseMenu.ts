@@ -63,14 +63,6 @@ const DEV_TOGGLES: ToggleDef[] = [
   { key: "showFps", label: "FPS" },
 ];
 
-const DUMMY_TOGGLES: ToggleDef[] = [
-  {
-    key: "dummyPinned",
-    label: "Fijar dummy en su sitio",
-    hint: "Clavado e inmóvil, ignora el knockback. Desactívalo para poder empujarlo al vacío; reaparecerá como un jugador.",
-  },
-];
-
 export interface PauseMenuCallbacks {
   onOpen: () => void;
   onClose: () => void;
@@ -336,7 +328,7 @@ export class PauseMenu {
         this.fillToggles(body, DEV_TOGGLES);
         break;
       case "dummy":
-        this.fillToggles(body, DUMMY_TOGGLES);
+        this.fillDummy(body);
         break;
       case "controls":
         this.fillControls(body);
@@ -509,6 +501,111 @@ export class PauseMenu {
 
   private fillToggles(el: HTMLElement, defs: ToggleDef[]): void {
     for (const def of defs) el.appendChild(this.buildToggle(def));
+  }
+
+  /** Página del dummy: comportamiento + botones para ejecutar ataques. */
+  private fillDummy(el: HTMLElement): void {
+    // --- Comportamiento (radios) ---
+    const behTitle = document.createElement("div");
+    behTitle.className = "pause-subtitle";
+    behTitle.textContent = "Comportamiento";
+    el.appendChild(behTitle);
+
+    const behaviors: Array<{
+      value: DebugState["dummyBehavior"];
+      label: string;
+      hint: string;
+    }> = [
+      { value: "free", label: "Libre", hint: "Física normal, recibe golpes y knockback." },
+      {
+        value: "freeze",
+        label: "Congelar",
+        hint: "Se queda quieto en su posición actual, ignora el knockback.",
+      },
+      {
+        value: "reposition",
+        label: "Reposicionar",
+        hint: "Recibe golpes; si queda quieto unos segundos vuelve al centro.",
+      },
+    ];
+    for (const b of behaviors) {
+      el.appendChild(this.buildDummyRadio(b.value, b.label, b.hint));
+    }
+
+    // --- Ejecutar ataque ---
+    const atkTitle = document.createElement("div");
+    atkTitle.className = "pause-subtitle";
+    atkTitle.textContent = "Hacer que el dummy ataque";
+    el.appendChild(atkTitle);
+
+    el.appendChild(this.buildAttackRow("Ataque ligero", "light"));
+    el.appendChild(this.buildAttackRow("Ataque fuerte", "heavy"));
+  }
+
+  private buildDummyRadio(
+    value: DebugState["dummyBehavior"],
+    label: string,
+    hint: string,
+  ): HTMLElement {
+    const row = document.createElement("label");
+    row.className = "pause-row";
+
+    const radio = document.createElement("input");
+    radio.type = "radio";
+    radio.name = "dummy-behavior";
+    radio.checked = debug.dummyBehavior === value;
+    radio.addEventListener("change", () => {
+      if (radio.checked) debug.dummyBehavior = value;
+    });
+
+    const text = document.createElement("div");
+    text.className = "pause-text";
+    const name = document.createElement("span");
+    name.className = "pause-label";
+    name.textContent = label;
+    text.appendChild(name);
+    const h = document.createElement("span");
+    h.className = "pause-hint";
+    h.textContent = hint;
+    text.appendChild(h);
+
+    row.appendChild(radio);
+    row.appendChild(text);
+    return row;
+  }
+
+  /** Fila con un ataque y 4 botones de dirección que lo disparan en el dummy. */
+  private buildAttackRow(label: string, kind: "light" | "heavy"): HTMLElement {
+    const wrap = document.createElement("div");
+    wrap.className = "pause-attackrow";
+
+    const name = document.createElement("span");
+    name.className = "pause-label";
+    name.textContent = label;
+    wrap.appendChild(name);
+
+    const dirs: Array<{ dir: "neutral" | "side" | "up" | "down"; glyph: string }> = [
+      { dir: "neutral", glyph: "●" },
+      { dir: "side", glyph: "→" },
+      { dir: "up", glyph: "↑" },
+      { dir: "down", glyph: "↓" },
+    ];
+
+    const btns = document.createElement("div");
+    btns.className = "pause-dirbtns";
+    for (const d of dirs) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "pause-dirbtn";
+      b.textContent = d.glyph;
+      b.title = d.dir;
+      b.addEventListener("click", () => {
+        debug.dummyAction = { kind, dir: d.dir };
+      });
+      btns.appendChild(b);
+    }
+    wrap.appendChild(btns);
+    return wrap;
   }
 
   /** Resumen de controles de P1 (leído en vivo de los bindings) + la pausa. */

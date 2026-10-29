@@ -1,4 +1,4 @@
-import { BLAST_ZONE } from "../config.ts";
+import { BLAST_ZONE, WORLD } from "../config.ts";
 import type { Player } from "../entities/player.ts";
 import type { Platform } from "../physics/platform.ts";
 import type { Camera } from "./camera.ts";
@@ -61,11 +61,18 @@ export class Renderer {
     const h = this.cssHeight;
 
     this.updateFps();
-    this.background.draw(ctx, camera, w, h);
+    if (world.stage === "trainingGrid") {
+      this.drawTrainingBackground(ctx, camera, w, h);
+    } else {
+      this.background.draw(ctx, camera, w, h);
+    }
 
     // --- Mundo (afectado por la cámara) ---
     ctx.save();
     camera.apply(ctx);
+    // Rejilla y numeración de distancias del escenario de entrenamiento (en
+    // coords de mundo, para que los números midan distancia real).
+    if (world.stage === "trainingGrid") this.drawTrainingGrid(ctx, camera);
     this.drawPlatforms(ctx, world.platforms);
     // Plataformas temporales de reaparición (una por combatiente que acaba de
     // reaparecer): se dibujan distintas para comunicar que son efímeras.
@@ -100,6 +107,7 @@ export class Renderer {
       anim: f.hudAnim,
       fury: f.player.furyMeter,
       furyActive: f.player.furyActive,
+      furyRemaining: f.player.furyRemaining,
     }));
     drawPercentHud(ctx, entries, w, h);
 
@@ -134,6 +142,85 @@ export class Renderer {
     ctx.setLineDash([]);
     ctx.fillStyle = "rgba(255, 80, 80, 0.05)";
     ctx.fillRect(x, y, w, h);
+    ctx.restore();
+  }
+
+  /** Fondo plano blanco del escenario de entrenamiento (espacio de pantalla). */
+  private drawTrainingBackground(
+    ctx: CanvasRenderingContext2D,
+    _camera: Camera,
+    w: number,
+    h: number,
+  ): void {
+    ctx.fillStyle = "#f3f5f8";
+    ctx.fillRect(0, 0, w, h);
+  }
+
+  /**
+   * Rejilla cuadriculada + numeración de distancias del escenario de
+   * entrenamiento, en coords de MUNDO. La cuadrícula es cada GRID px; se marcan
+   * números cada LABEL px en X (sobre el suelo) y en Y (hacia arriba), tomando
+   * como origen (0, groundY) = centro del mapa a ras de suelo.
+   */
+  private drawTrainingGrid(ctx: CanvasRenderingContext2D, _camera: Camera): void {
+    const GRID = 100; // separación de líneas finas
+    const LABEL = 200; // cada cuántos px se escribe un número
+    const left = BLAST_ZONE.left;
+    const right = BLAST_ZONE.right;
+    const top = BLAST_ZONE.top;
+    const groundY = WORLD.groundY;
+
+    ctx.save();
+
+    // Líneas verticales.
+    for (let x = Math.ceil(left / GRID) * GRID; x <= right; x += GRID) {
+      const major = x % LABEL === 0;
+      ctx.strokeStyle = major ? "rgba(90,110,140,0.5)" : "rgba(150,165,190,0.35)";
+      ctx.lineWidth = major ? 1.6 : 0.8;
+      ctx.beginPath();
+      ctx.moveTo(x, top);
+      ctx.lineTo(x, groundY);
+      ctx.stroke();
+    }
+
+    // Líneas horizontales (desde el suelo hacia arriba).
+    for (let y = groundY; y >= top; y -= GRID) {
+      const dist = groundY - y;
+      const major = dist % LABEL === 0;
+      ctx.strokeStyle = major ? "rgba(90,110,140,0.5)" : "rgba(150,165,190,0.35)";
+      ctx.lineWidth = major ? 1.6 : 0.8;
+      ctx.beginPath();
+      ctx.moveTo(left, y);
+      ctx.lineTo(right, y);
+      ctx.stroke();
+    }
+
+    // Eje central (x = 0) marcado más fuerte.
+    ctx.strokeStyle = "rgba(60,80,120,0.7)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, top);
+    ctx.lineTo(0, groundY);
+    ctx.stroke();
+
+    // Números de distancia en X, justo encima del suelo.
+    ctx.fillStyle = "rgba(60,80,120,0.85)";
+    ctx.font = "16px ui-monospace, monospace";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "bottom";
+    for (let x = Math.ceil(left / LABEL) * LABEL; x <= right; x += LABEL) {
+      if (x === 0) continue;
+      ctx.fillText(String(Math.abs(x)), x, groundY - 6);
+    }
+
+    // Números de altura en Y, en la columna central.
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    for (let y = groundY - LABEL; y >= top; y -= LABEL) {
+      const dist = groundY - y;
+      ctx.fillText(String(dist), 8, y);
+    }
+
     ctx.restore();
   }
 

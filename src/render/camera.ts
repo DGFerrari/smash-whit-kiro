@@ -63,6 +63,15 @@ export class Camera {
     this.cinematic = { x, y, zoom };
   }
 
+  /**
+   * Congela la cámara EXACTAMENTE donde está ahora (foco y zoom actuales). Útil
+   * al morir alguien: mantenemos el encuadre previo a la muerte, para que el
+   * jugador vivo siga viendo su zona, en vez de saltar al punto del muerto.
+   */
+  freeze(): void {
+    this.cinematic = { x: this.focus.x, y: this.focus.y, zoom: this.zoom };
+  }
+
   clearCinematic(): void {
     this.cinematic = null;
   }

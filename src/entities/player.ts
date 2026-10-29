@@ -129,6 +129,10 @@ export class Player {
   get furyDamageMult(): number {
     return this.furyActive ? FURY.damageMult : 1;
   }
+  /** Fracción de furia restante mientras está activa [0..1] (1 = recién activada). */
+  get furyRemaining(): number {
+    return this.furyActive ? this.furyTimer / FURY.duration : 0;
+  }
 
   /** Dash en tierra: tiempo restante del impulso (s) y cooldown. */
   dashTimer = 0;
@@ -570,6 +574,21 @@ export class Player {
     const def = kind === "light" ? LIGHT_ATTACKS[dir] : HEAVY_ATTACKS[dir];
     // Iniciar un ataque cancela el recovery del anterior (encadenado).
     this.attack = new ActiveAttack(def, this.facing, charge01);
+  }
+
+  /**
+   * Lanza un ataque de forma programática (lo usa el dummy de entrenamiento al
+   * pulsar un botón del menú). Orienta el facing según la dirección lateral.
+   * El fuerte sale con una carga media para que se note.
+   */
+  forceAttack(kind: "light" | "heavy", dir: AttackDir): void {
+    if (this.stunned) return;
+    if (dir === "side") {
+      // Orienta hacia el lado del ataque (por defecto a la derecha).
+      this.facing = this.facing; // mantenemos el facing actual
+    }
+    const charge = kind === "heavy" ? 0.6 : 0;
+    this.startAttack(kind, dir, charge);
   }
 
   /**

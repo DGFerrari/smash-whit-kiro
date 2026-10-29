@@ -22,10 +22,12 @@ export interface PercentEntry {
    *   interpolan la caída/surgimiento. Por defecto 1.
    */
   anim?: number;
-  /** Carga de furia [0..1] para la barra. */
+  /** Carga de furia [0..1] (mientras se llena). */
   fury?: number;
-  /** ¿Modo furia activo? (barra brillando de colores). */
+  /** ¿Modo furia activo? (borde brillando de colores, vaciándose). */
   furyActive?: boolean;
+  /** Fracción de efecto de furia restante [0..1] mientras está activo. */
+  furyRemaining?: number;
 }
 
 export function drawPercentHud(
@@ -74,13 +76,17 @@ function drawBox(
   ctx.save();
   ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
 
-  // Fondo del recuadro con un borde del color del combatiente.
-  roundRect(ctx, x, y, w, h, 12);
+  // Fondo del recuadro.
+  const r = 12;
+  roundRect(ctx, x, y, w, h, r);
   ctx.fillStyle = "rgba(10, 14, 22, 0.85)";
   ctx.fill();
-  ctx.lineWidth = 3;
-  ctx.strokeStyle = e.color;
-  ctx.stroke();
+
+  // El BORDE de la tarjeta ES la barra de furia:
+  //  - sin furia: borde tenue del color del combatiente (como marco neutro).
+  //  - cargando: el borde se "llena" en el sentido del perímetro según fury.
+  //  - activa: borde arcoíris completo que se VACÍA según el efecto restante.
+  drawFuryBorder(ctx, e, x, y, w, h, r);
 
   // Etiqueta del combatiente.
   ctx.textAlign = "center";
@@ -101,49 +107,63 @@ function drawBox(
     drawLives(ctx, e.lives, e.color, x + w / 2, y + h - 16);
   }
 
-  // Barra de furia: franja fina en el borde inferior del recuadro.
-  drawFuryBar(ctx, e, x, y, w, h);
-
   ctx.restore();
 }
 
-/** Barra de furia en la base del recuadro (brilla de colores si está activa). */
-function drawFuryBar(
+/**
+ * Dibuja el BORDE de la tarjeta como barra de furia. Recorremos el perímetro
+ * redondeado y pintamos una fracción de él:
+ *  - sin furia: marco tenue completo.
+ *  - cargando (fury 0..1): se rellena el perímetro proporcionalmente.
+ *  - activa: perímetro completo arcoíris que decrece con furyRemaining.
+ */
+function drawFuryBorder(
   ctx: CanvasRenderingContext2D,
   e: PercentEntry,
   x: number,
   y: number,
   w: number,
   h: number,
+  r: number,
 ): void {
-  const fury = e.fury ?? 0;
-  if (fury <= 0 && !e.furyActive) return;
+  // Marco base tenue siempre (para que la tarjeta tenga contorno).
+  roundRect(ctx, x, y, w, h, r);
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = "rgba(255,255,255,0.12)";
+  ctx.stroke();
 
-  const pad = 10;
-  const barW = w - pad * 2;
-  const barH = 5;
-  const bx = x + pad;
-  const by = y + h - 6;
+  const active = !!e.furyActive;
+  const frac = active ? Math.max(0, Math.min(1, e.furyRemaining ?? 0)) : Math.max(0, Math.min(1, e.fury ?? 0));
+  if (frac <= 0) return;
 
-  // Fondo de la barra.
-  ctx.fillStyle = "rgba(255,255,255,0.12)";
-  ctx.fillRect(bx, by, barW, barH);
+  // Longitud aproximada del perímetro redondeado.
+  const perim = 2 * (w + h) - 8 * r + 2 * Math.PI * r;
+  const lit = perim * frac;
 
-  if (e.furyActive) {
-    // Furia activa: barra llena con un degradado arcoíris animado.
-    const t = performance.now() / 600;
-    const grad = ctx.createLinearGradient(bx, 0, bx + barW, 0);
+  ctx.save();
+  roundRect(ctx, x, y, w, h, r);
+  ctx.lineWidth = 3.5;
+  ctx.lineCap = "round";
+  // Trazamos solo la fracción encendida con un dash largo.
+  ctx.setLineDash([lit, perim]);
+  ctx.lineDashOffset = 0;
+
+  if (active) {
+    // Arcoíris animado alrededor del borde.
+    const t = performance.now() / 700;
+    const grad = ctx.createLinearGradient(x, y, x + w, y + h);
     for (let i = 0; i <= 6; i++) {
       const hue = (i / 6 + t) % 1;
-      grad.addColorStop(i / 6, `hsl(${hue * 360}, 95%, 60%)`);
+      grad.addColorStop(i / 6, `hsl(${hue * 360}, 95%, 62%)`);
     }
-    ctx.fillStyle = grad;
-    ctx.fillRect(bx, by, barW, barH);
+    ctx.strokeStyle = grad;
+    ctx.shadowColor = "rgba(255,255,255,0.5)";
+    ctx.shadowBlur = 8;
   } else {
-    // Cargando: barra proporcional en el color del combatiente.
-    ctx.fillStyle = e.color;
-    ctx.fillRect(bx, by, barW * fury, barH);
+    ctx.strokeStyle = e.color;
   }
+  ctx.stroke();
+  ctx.restore();
 }
 
 /** Dibuja `lives` iconos de vida centrados en (cx, y). */

@@ -12,8 +12,35 @@ export interface MainMenuCallbacks {
   onPlay: (mode: GameMode) => void;
 }
 
+interface ModeDef {
+  mode: GameMode;
+  label: string;
+  hint: string;
+  /** Color de acento del modo (botón seleccionado, fondo, descripción). */
+  accent: string;
+}
+
+const MODES: ModeDef[] = [
+  {
+    mode: "training",
+    label: "Entrenamiento",
+    hint: "Practica combos y recuperaciones contra un dummy configurable en un escenario con regla de distancias.",
+    accent: "#45c88a",
+  },
+  {
+    mode: "versus",
+    label: "Versus local",
+    hint: "Dos jugadores en el mismo teclado. Se pierde al quedarte sin vidas; gana el último en pie.",
+    accent: "#ff6a8b",
+  },
+];
+
 export class MainMenu {
   private readonly root: HTMLDivElement;
+  private readonly cards = new Map<GameMode, HTMLButtonElement>();
+  private readonly hintEl: HTMLParagraphElement;
+  private readonly playBtn: HTMLButtonElement;
+  private selected: GameMode | null = null;
 
   constructor(private readonly cb: MainMenuCallbacks) {
     this.root = document.createElement("div");
@@ -29,21 +56,35 @@ export class MainMenu {
 
     const subtitle = document.createElement("p");
     subtitle.className = "menu-subtitle";
-    subtitle.textContent = "Platform fighter 2D";
+    subtitle.textContent = "Platform fighter 2D — elige un modo";
     panel.appendChild(subtitle);
 
-    panel.appendChild(
-      this.menuButton("Entrenamiento", "Pega a un dummy para practicar.", () =>
-        this.cb.onPlay("training"),
-      ),
-    );
-    panel.appendChild(
-      this.menuButton(
-        "Versus local",
-        "Dos jugadores en el mismo teclado. Gana el último con vidas.",
-        () => this.cb.onPlay("versus"),
-      ),
-    );
+    // Tarjetas de modo (seleccionables, no arrancan la partida al pulsar).
+    const grid = document.createElement("div");
+    grid.className = "mode-grid";
+    for (const def of MODES) {
+      const card = this.buildModeCard(def);
+      this.cards.set(def.mode, card);
+      grid.appendChild(card);
+    }
+    panel.appendChild(grid);
+
+    // Descripción del modo seleccionado.
+    this.hintEl = document.createElement("p");
+    this.hintEl.className = "mode-hint";
+    this.hintEl.textContent = "Selecciona un modo para empezar.";
+    panel.appendChild(this.hintEl);
+
+    // Botón Jugar (deshabilitado hasta elegir modo).
+    this.playBtn = document.createElement("button");
+    this.playBtn.type = "button";
+    this.playBtn.className = "menu-btn play-btn";
+    this.playBtn.textContent = "Jugar";
+    this.playBtn.disabled = true;
+    this.playBtn.addEventListener("click", () => {
+      if (this.selected) this.cb.onPlay(this.selected);
+    });
+    panel.appendChild(this.playBtn);
 
     this.root.appendChild(panel);
     document.body.appendChild(this.root);
@@ -57,27 +98,34 @@ export class MainMenu {
     this.root.classList.remove("open");
   }
 
-  private menuButton(
-    label: string,
-    hint: string,
-    onClick: () => void,
-  ): HTMLButtonElement {
+  private buildModeCard(def: ModeDef): HTMLButtonElement {
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.className = "menu-btn";
+    btn.className = "mode-card";
+    btn.style.setProperty("--accent", def.accent);
 
     const name = document.createElement("span");
-    name.className = "menu-btn-label";
-    name.textContent = label;
+    name.className = "mode-card-label";
+    name.textContent = def.label;
     btn.appendChild(name);
 
-    const sub = document.createElement("span");
-    sub.className = "menu-btn-hint";
-    sub.textContent = hint;
-    btn.appendChild(sub);
-
-    btn.addEventListener("click", onClick);
+    btn.addEventListener("click", () => this.select(def));
     return btn;
+  }
+
+  private select(def: ModeDef): void {
+    this.selected = def.mode;
+    // Marca la tarjeta elegida y desmarca las demás.
+    for (const [mode, card] of this.cards) {
+      card.classList.toggle("selected", mode === def.mode);
+    }
+    // Acento del fondo y de la descripción según el modo.
+    this.root.style.setProperty("--menu-accent", def.accent);
+    this.root.classList.add("mode-chosen");
+    this.hintEl.textContent = def.hint;
+    this.hintEl.style.color = def.accent;
+    this.playBtn.disabled = false;
+    this.playBtn.style.setProperty("--accent", def.accent);
   }
 }
 

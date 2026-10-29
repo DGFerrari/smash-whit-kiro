@@ -8,6 +8,14 @@ import { debug } from "../debug/debugState.ts";
 /** Modo de juego. */
 export type GameMode = "training" | "versus";
 
+/**
+ * Escenario. Define la geometría del nivel y qué fondo dibuja el renderer.
+ *  - "island": isla flotante con plataformas (combate versus).
+ *  - "trainingGrid": plataforma de borde a borde con regla de distancias y
+ *    fondo blanco cuadriculado numerado (práctica de knockback).
+ */
+export type StageKind = "island" | "trainingGrid";
+
 /** Color identificativo de cada combatiente (para render y HUD). */
 export const FIGHTER_COLORS = ["#7fb2ff", "#c45b7a"] as const;
 export const FIGHTER_LABELS = ["P1", "P2"] as const;
@@ -70,6 +78,9 @@ export class Fighter {
    */
   hudAnim = 1;
 
+  /** Temporizador de "quieto en el suelo" para el modo reposicionar (s). */
+  idleStillTimer = 0;
+
   /**
    * ¿La plataforma temporal debe parpadear este frame? Parpadea más rápido
    * cuanto menos tiempo le queda, avisando de que va a desaparecer.
@@ -118,6 +129,7 @@ export class Fighter {
  */
 export class World {
   readonly mode: GameMode;
+  readonly stage: StageKind;
   readonly fighters: Fighter[] = [];
 
   /** Plataformas fijas del nivel (isla + flotantes). */
@@ -150,7 +162,9 @@ export class World {
 
   constructor(mode: GameMode = "training") {
     this.mode = mode;
-    this.buildIsland();
+    // Entrenamiento usa el escenario de práctica; versus, la isla.
+    this.stage = mode === "training" ? "trainingGrid" : "island";
+    this.buildStage();
 
     // Fighter 0: siempre el jugador humano principal.
     const p1 = new Player(RULES.respawnX - Player.halfWidth, RULES.respawnY);
@@ -177,7 +191,16 @@ export class World {
     return this.fighters[0].player;
   }
 
-  /** Construye una isla flotante centrada en x=0. */
+  /** Construye el escenario según `this.stage`. */
+  private buildStage(): void {
+    if (this.stage === "trainingGrid") {
+      this.buildTrainingGrid();
+    } else {
+      this.buildIsland();
+    }
+  }
+
+  /** Construye una isla flotante centrada en x=0 (versus). */
   private buildIsland(): void {
     const g = WORLD.groundY;
 
@@ -187,6 +210,20 @@ export class World {
     // Dos plataformas flotantes ATRAVESABLES (one-way).
     this.platforms.push(new Platform(-260, g - 150, 200, 20, true));
     this.platforms.push(new Platform(60, g - 250, 200, 20, true));
+  }
+
+  /**
+   * Escenario de ENTRENAMIENTO: una sola plataforma sólida que va de extremo a
+   * extremo del mapa (hasta las blast zones laterales), sin plataformas de
+   * apoyo extra. El fondo cuadriculado y la numeración de distancias los dibuja
+   * el renderer; aquí solo definimos la geometría física.
+   */
+  private buildTrainingGrid(): void {
+    const g = WORLD.groundY;
+    const left = BLAST_ZONE.left;
+    const width = BLAST_ZONE.right - BLAST_ZONE.left;
+    // Suelo de borde a borde; altura generosa para que no se caiga por debajo.
+    this.platforms.push(new Platform(left, g, width, 260));
   }
 
   /** Plataformas efectivas este paso: las fijas + las temporales de respawn. */
@@ -242,20 +279,74 @@ export class World {
     this.checkBlastZone(f);
   }
 
-  /** Dummy de entrenamiento: fijable o libre. */
+  /**
+   * Dummy de entrenamiento. Comportamiento según debug.dummyBehavior:
+   *  - freeze: clavado donde está, inmóvil (ignora knockback).
+   *  - reposition: física normal, pero vuelve al centro si queda quieto.
+   *  - free: física normal.
+   * Además ejecuta las acciones de ataque disparadas desde el menú.
+   */
   private updateDummy(f: Fighter, dt: number, platforms: Platform[]): void {
     const dummy = f.player;
-    if (debug.dummyPinned) {
-      const homeX = 220 - Player.halfWidth;
-      dummy.pos.x = homeX;
-      dummy.pos.y = WORLD.groundY - dummy.height;
+
+    // Acción de ataque pedida desde el menú (se consume una vez).
+    if (debug.dummyAction) {
+      dummy.forceAttack(debug.dummyAction.kind, debug.dummyAction.dir);
+      debug.dummyAction = null;
+    }
+
+    if (debug.dummyBehavior === "freeze") {
+      // Clavado en su posición actual (solo fijamos velocidad y prevPos).
+      dummy.vel.x = 0;
+      dummy.vel.y = 0;
       dummy.prevPos.x = dummy.pos.x;
       dummy.prevPos.y = dummy.pos.y;
+      // Dejamos avanzar el ataque en curso sin moverse.
+      dummy.fixedUpdate(this.dummyInput, platforms, dt);
+      // Reanclamos por si el ataque/gravedad lo movió un pelín.
       dummy.vel.x = 0;
       dummy.vel.y = 0;
       return;
     }
+
     dummy.fixedUpdate(this.dummyInput, platforms, dt);
+
+    if (debug.dummyBehavior === "reposition") {
+      this.repositionDummy(f, dt);
+    }
+  }
+
+  /**
+   * Modo reposicionar: si el dummy lleva unos segundos quieto en el suelo,
+   * vuelve despacio al centro del mapa para repetir pruebas desde el mismo
+   * sitio. "Quieto" = en el suelo y casi sin velocidad.
+   */
+  private repositionDummy(f: Fighter, dt: number): void {
+    const dummy = f.player;
+    const still =
+      dummy.onGround &&
+      Math.abs(dummy.vel.x) < 8 &&
+      Math.abs(dummy.vel.y) < 8 &&
+      dummy.attack === null;
+
+    if (still) {
+      f.idleStillTimer += dt;
+    } else {
+      f.idleStillTimer = 0;
+    }
+
+    if (f.idleStillTimer >= 1.2) {
+      // Centro de referencia del dummy.
+      const centerX = RULES.respawnX - Player.halfWidth;
+      const dx = centerX - dummy.pos.x;
+      if (Math.abs(dx) < 2) {
+        dummy.pos.x = centerX;
+        dummy.vel.x = 0;
+      } else {
+        // Vuelve deslizándose suave al centro.
+        dummy.pos.x += dx * Math.min(1, dt * 4);
+      }
+    }
   }
 
   /**

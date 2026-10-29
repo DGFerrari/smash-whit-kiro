@@ -24,10 +24,20 @@ export interface DebugState {
    */
   showStateColors: boolean;
   /**
-   * Fijar el dummy: se queda clavado en su posición, inmóvil, ignorando el
-   * knockback (útil para practicar combos siempre en el mismo sitio).
+   * Comportamiento del dummy de entrenamiento:
+   *  - "free": física normal, recibe golpes y knockback.
+   *  - "freeze": clavado donde está, inmóvil, ignora el knockback.
+   *  - "reposition": recibe golpes, pero si se queda quieto en el suelo unos
+   *    segundos vuelve solo al centro del mapa.
    */
-  dummyPinned: boolean;
+  dummyBehavior: "free" | "freeze" | "reposition";
+  /**
+   * Acción pendiente que el dummy debe EJECUTAR (la dispara un botón del menú y
+   * la consume el World en el siguiente paso). null = nada pendiente.
+   */
+  dummyAction:
+    | { kind: "light" | "heavy"; dir: "neutral" | "side" | "up" | "down" }
+    | null;
   /**
    * Avisar visualmente cuando un jugador se queda sin saltos o sin usos de
    * ataque fuerte en el aire.
@@ -49,7 +59,8 @@ export const debug: DebugState = {
   showFps: false,
   showStun: false,
   showStateColors: true,
-  dummyPinned: false,
+  dummyBehavior: "free",
+  dummyAction: null,
   showResources: false,
   povZoom: POV.default,
 };

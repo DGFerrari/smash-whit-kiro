@@ -222,12 +222,13 @@ export class GameLoop {
         this.cb.onDramaticKO?.(this.koVictim);
       }
 
-      // ¿Alguien murió? La cámara se queda enfocando el punto para ver el rayo.
+      // ¿Alguien murió? Congelamos la cámara en el encuadre que tenía JUSTO
+      // antes de la muerte (no saltamos al punto del muerto), para que el
+      // jugador vivo siga viendo su zona mientras se aprecia el rayo.
       if (this.world.pendingDeathFocus) {
-        const { x, y } = this.world.pendingDeathFocus;
         this.world.pendingDeathFocus = null;
-        this.camera.focusOn(x, y, 1.1);
-        this.deathFocusTimer = 2.2;
+        this.camera.freeze();
+        this.deathFocusTimer = 1.8;
       }
     }
 
