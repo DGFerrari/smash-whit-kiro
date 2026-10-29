@@ -207,6 +207,16 @@ export class CpuBrain {
     // Saltar hacia un rival por encima (umbral más bajo: también persigue a
     // quien está en una plataforma un poco elevada, no solo muy arriba).
     if (dy < -40) this.wantJumpToward(s, me);
+
+    // CRUZAR HUECOS: si vamos hacia el rival y justo delante no hay suelo (hueco
+    // interior, p. ej. isla Santuario), saltamos para cruzarlo en vez de caer.
+    if (me.onGround && s.moveX === dir) {
+      const aheadX = meCx + dir * 70;
+      if (!hasGroundBelow(safe, aheadX) && this.groundJumpCooldown === 0) {
+        this.startJump(s, 11);
+        this.groundJumpCooldown = 16;
+      }
+    }
     // SALTO OFENSIVO al mismo nivel: si está acercándose y ya casi pegado pero
     // el ataque en tierra no acaba de entrar, da un saltito hacia el rival para
     // romper el "empate" de estar pegados sin golpear. Solo si NO estamos cerca
@@ -332,8 +342,15 @@ export class CpuBrain {
    *   4) FUERTE-ARRIBA (resorte) como último recurso cuando no quedan saltos.
    */
   private recover(s: InputState, me: Player, meCx: number, safe: SafeZone): void {
-    const center = (safe.left + safe.right) / 2;
-    const toCenter: 1 | -1 = meCx < center ? 1 : -1;
+    // Objetivo horizontal: normalmente el centro, pero si el centro cae en un
+    // HUECO (sin suelo), apuntamos a la mitad sólida más cercana para no volver
+    // directos al vacío (p. ej. la isla Santuario, partida por el medio).
+    const geomCenter = (safe.left + safe.right) / 2;
+    const target =
+      hasGroundBelow(safe, geomCenter) || safe.solids.length === 0
+        ? geomCenter
+        : (nearestSolidCenter(safe, meCx) ?? geomCenter);
+    const toCenter: 1 | -1 = meCx < target ? 1 : -1;
 
     // === PRIORIDAD MÁXIMA: ¿pegados a una pared? ===
     // Si tocamos/deslizamos una pared, el salto se convierte en WALL JUMP, que
@@ -439,23 +456,54 @@ interface SafeZone {
   left: number;
   right: number;
   groundY: number;
+  /** Plataformas sólidas (para detectar huecos interiores entre ellas). */
+  solids: Platform[];
 }
 
 function safeZone(platforms: Platform[]): SafeZone {
   let left = Infinity;
   let right = -Infinity;
   let groundY = 0;
+  const solids: Platform[] = [];
   for (const p of platforms) {
     if (p.oneWay) continue;
+    solids.push(p);
     left = Math.min(left, p.box.x);
     right = Math.max(right, p.box.x + p.box.w);
     groundY = Math.max(groundY, p.box.y);
   }
   if (!Number.isFinite(left)) {
-    return { left: -300, right: 300, groundY: 360 };
+    return { left: -300, right: 300, groundY: 360, solids: [] };
   }
   const margin = 70;
-  return { left: left + margin, right: right - margin, groundY };
+  return { left: left + margin, right: right - margin, groundY, solids };
+}
+
+/**
+ * ¿Hay suelo sólido justo bajo esta X? Sirve para detectar HUECOS interiores
+ * (como el de la isla Santuario) y no confiar en que el tramo [left..right] sea
+ * continuo. Usa un pequeño margen para considerar "pisable".
+ */
+function hasGroundBelow(safe: SafeZone, x: number): boolean {
+  for (const p of safe.solids) {
+    if (x >= p.box.x - 10 && x <= p.box.x + p.box.w + 10) return true;
+  }
+  return false;
+}
+
+/** Centro de la mitad sólida más cercana a `x` (para esquivar un hueco). */
+function nearestSolidCenter(safe: SafeZone, x: number): number | null {
+  let best: number | null = null;
+  let bestD = Infinity;
+  for (const p of safe.solids) {
+    const c = p.box.x + p.box.w / 2;
+    const d = Math.abs(c - x);
+    if (d < bestD) {
+      bestD = d;
+      best = c;
+    }
+  }
+  return best;
 }
 
 function resetInput(s: InputState): InputState {
