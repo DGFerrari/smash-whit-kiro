@@ -62,21 +62,27 @@ class App {
   // Selección de personajes (batalla).
   private readonly charSelect = new CharacterSelect({
     onBack: () => {
-      this.charSelect.hide();
-      this.showMenu();
+      void this.transition(() => {
+        this.charSelect.hide();
+        this.mainMenu.show();
+      });
     },
     onConfirm: (characters) => {
       this.pendingConfig = { ...this.pendingConfig, characters };
-      this.charSelect.hide();
-      this.stageSelect.show();
+      void this.transition(() => {
+        this.charSelect.hide();
+        this.stageSelect.show();
+      });
     },
   });
 
   // Selección de escenario (batalla).
   private readonly stageSelect = new StageSelect({
     onBack: () => {
-      this.stageSelect.hide();
-      this.charSelect.show();
+      void this.transition(() => {
+        this.stageSelect.hide();
+        this.charSelect.show();
+      });
     },
     onConfirm: (stage) => {
       this.pendingConfig = { ...this.pendingConfig, stage };
@@ -117,9 +123,11 @@ class App {
    */
   private onPlay(mode: GameMode): void {
     if (mode === "versus") {
-      // Abrimos la selección sobre el menú (el fondo de replays sigue detrás).
-      this.mainMenu.hide();
-      this.charSelect.show();
+      // Transición de iris del menú a la selección de personajes.
+      void this.transition(() => {
+        this.mainMenu.hide();
+        this.charSelect.show();
+      });
     } else {
       // Entrenamiento: jugador azul contra el saco en el escenario de práctica.
       const config: MatchConfig = {
@@ -141,6 +149,19 @@ class App {
   private hideMenu(): void {
     this.mainMenu.hide();
     this.menuBg?.stop();
+  }
+
+  /**
+   * Transición de iris para cambiar de pantalla DENTRO de los menús (sin tocar
+   * el loop): cierra el iris, ejecuta `swap` (ocultar/mostrar overlays) y abre.
+   */
+  private async transition(swap: () => void): Promise<void> {
+    if (this.busy) return;
+    this.busy = true;
+    await this.loading.cover(320);
+    swap();
+    await this.loading.reveal(380);
+    this.busy = false;
   }
 
   /** Vuelve al menú principal con transición de iris de por medio. */

@@ -1179,7 +1179,28 @@ body {
   color: #06220f;
 }
 
-/* ===== Pantallas de selección (personajes / escenario) ===== */
+/* ===== Cursor personalizado (todo el juego) ===== */
+/* Un puntero con forma de "chevron" del color del juego, con un borde oscuro
+   para que destaque sobre cualquier fondo. Data-URI SVG, sin assets. */
+html,
+body {
+  cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'><path d='M4 2 L4 22 L10 16 L14 24 L18 22 L14 14 L22 14 Z' fill='%237fb2ff' stroke='%230b1220' stroke-width='1.6' stroke-linejoin='round'/></svg>") 3 2, auto;
+}
+
+/* Elementos interactivos: cursor con acento azul más vivo. */
+button,
+.mode-row,
+.portrait,
+.stage-cell,
+.char-cell,
+input[type="range"],
+input[type="checkbox"],
+label,
+.replay-btn {
+  cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='30' height='30' viewBox='0 0 28 28'><path d='M4 2 L4 22 L10 16 L14 24 L18 22 L14 14 L22 14 Z' fill='%232f6bff' stroke='%23ffffff' stroke-width='1.8' stroke-linejoin='round'/></svg>") 3 2, pointer;
+}
+
+/* ===== Pantallas de selección (personajes / escenario) estilo Smash ===== */
 .select-screen {
   position: fixed;
   inset: 0;
@@ -1188,11 +1209,11 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 24px;
+  gap: 20px;
   background: radial-gradient(
     ellipse at center,
-    rgba(6, 10, 20, 0.82),
-    rgba(6, 10, 20, 0.95)
+    rgba(6, 10, 20, 0.78),
+    rgba(6, 10, 20, 0.94)
   );
 }
 
@@ -1206,88 +1227,152 @@ body {
   font-weight: 800;
   letter-spacing: 1px;
   margin: 0;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.6);
 }
 
-.char-columns {
-  display: flex;
-  gap: 48px;
+.select-hint {
+  color: #8b97ad;
+  font-size: 13px;
+  margin: -6px 0 0;
 }
 
-.char-col {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
+/* Contenedor relativo donde flotan las fichas-cursor sobre la parrilla. */
+.css-stage {
+  position: relative;
 }
 
-.char-col-head {
-  color: #cdd6e4;
-  font-size: 18px;
-  font-weight: 800;
-  letter-spacing: 1px;
-}
-
-.char-grid {
+/* --- Parrilla de retratos de personaje --- */
+.portrait-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
+  grid-template-columns: repeat(4, 150px);
+  gap: 14px;
 }
 
-.char-cell {
+.portrait {
   --c: #7fb2ff;
   display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 170px;
-  padding: 12px 14px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 2px solid #2d3850;
+  flex-direction: column;
+  padding: 0;
+  background: #0d1420;
+  border: 3px solid #2d3850;
   border-radius: 12px;
-  color: #e6e6e6;
-  font-size: 15px;
-  font-weight: 700;
+  overflow: hidden;
   cursor: pointer;
   transition: transform 0.12s ease, border-color 0.15s ease,
-    box-shadow 0.2s ease, background 0.15s ease;
+    box-shadow 0.2s ease;
 }
 
-.char-cell:hover {
-  transform: translateY(-2px);
-}
-
-.char-cell.selected {
+.portrait:hover {
+  transform: translateY(-3px);
   border-color: var(--c);
-  background: color-mix(in srgb, var(--c) 22%, transparent);
   box-shadow: 0 0 22px color-mix(in srgb, var(--c) 45%, transparent);
 }
 
-.char-swatch {
-  width: 26px;
-  height: 26px;
-  border-radius: 6px;
-  border: 2px solid rgba(0, 0, 0, 0.35);
-  flex: none;
+.portrait-face {
+  position: relative;
+  height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.portrait-badge {
+  font-size: 54px;
+  font-weight: 900;
+  color: rgba(255, 255, 255, 0.85);
+  text-shadow: 0 3px 8px rgba(0, 0, 0, 0.45);
+}
+
+.portrait-name {
+  padding: 8px 6px;
+  background: rgba(10, 14, 22, 0.9);
+  color: #f1f4fa;
+  font-size: 15px;
+  font-weight: 800;
+  text-align: center;
+  letter-spacing: 0.5px;
+}
+
+/* Ficha-cursor (la "mano" de Smash) que flota sobre el retrato elegido. */
+.css-token {
+  --tc: #2f6bff;
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50% 50% 50% 4px; /* gota/ficha */
+  background: var(--tc);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 900;
+  border: 2px solid #fff;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+  z-index: 3;
+  /* El deslizamiento suave de la ficha al cambiar de celda. */
+  transition: left 0.22s cubic-bezier(0.22, 0.61, 0.36, 1),
+    top 0.22s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.stage-token {
+  border-radius: 50%;
+  font-size: 22px;
+  color: #ffd84d;
+  background: #1a2233;
+  border-color: #ffd84d;
+  width: 44px;
+  height: 44px;
+}
+
+/* --- Selección de escenario con vista previa --- */
+.stage-layout {
+  display: flex;
+  gap: 28px;
+  align-items: center;
+}
+
+.stage-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.stage-preview-thumb {
+  width: 320px;
+  height: 200px;
+  border-radius: 12px;
+  border: 2px solid #3a4560;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+.stage-preview-name {
+  color: #f1f4fa;
+  font-size: 20px;
+  font-weight: 800;
+  text-align: center;
 }
 
 .stage-grid {
-  display: flex;
-  gap: 18px;
-  flex-wrap: wrap;
-  justify-content: center;
-  max-width: 800px;
+  display: grid;
+  grid-template-columns: repeat(2, 150px);
+  gap: 12px;
 }
 
 .stage-cell {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 10px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 2px solid #2d3850;
-  border-radius: 12px;
+  gap: 6px;
+  padding: 8px;
+  background: #0d1420;
+  border: 3px solid #2d3850;
+  border-radius: 10px;
   color: #e6e6e6;
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 700;
   cursor: pointer;
   transition: transform 0.12s ease, border-color 0.15s ease,
@@ -1295,18 +1380,14 @@ body {
 }
 
 .stage-cell:hover {
-  transform: translateY(-3px);
-}
-
-.stage-cell.selected {
+  transform: translateY(-2px);
   border-color: #7fb2ff;
-  box-shadow: 0 0 24px rgba(127, 178, 255, 0.5);
 }
 
 .stage-thumb {
-  width: 200px;
-  height: 112px;
-  border-radius: 8px;
+  width: 134px;
+  height: 76px;
+  border-radius: 6px;
   border: 1px solid rgba(255, 255, 255, 0.15);
 }
 
