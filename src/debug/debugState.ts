@@ -49,6 +49,11 @@ export interface DebugState {
    * "debug", pero vive aquí porque es el estado global compartido con el render.
    */
   povZoom: number;
+  /**
+   * Mostrar la UI del juego (HUD de porcentajes/vidas/cronómetro). Se puede
+   * ocultar desde Opciones para ver el gameplay limpio (útil en replays).
+   */
+  showGameUi: boolean;
 }
 
 /** Instancia global del estado de debug. Todo apunta a este mismo objeto. */
@@ -63,4 +68,5 @@ export const debug: DebugState = {
   dummyAction: null,
   showResources: false,
   povZoom: POV.default,
+  showGameUi: true,
 };

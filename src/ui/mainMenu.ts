@@ -12,14 +12,14 @@ import type { GameMode } from "../game/world.ts";
  * terminada).
  */
 export interface MainMenuCallbacks {
-  /** Inicia una partida. `record` indica si hay que grabar el replay. */
-  onPlay: (mode: GameMode, record: boolean) => void;
+  /** Inicia una partida en el modo dado (siempre se graba el replay). */
+  onPlay: (mode: GameMode) => void;
   /** El usuario eligió un archivo de replay para reproducir. */
   onLoadReplay: (file: File) => void;
 }
 
-/** Valor de una opción del menú: un modo jugable o la opción no terminada. */
-type MenuOption = GameMode | "dev";
+/** Valor de una opción del menú: modo jugable, ver replay, o dev (no terminada). */
+type MenuOption = GameMode | "replay" | "dev";
 
 interface ModeDef {
   value: MenuOption;
@@ -47,6 +47,13 @@ const MODES: ModeDef[] = [
     accent: "#45c88a",
   },
   {
+    value: "replay",
+    label: "Replay",
+    hint: "Carga un archivo de replay y velo como un vídeo: pausa, velocidad, avance/retroceso y cámara libre.",
+    playable: true,
+    accent: "#f0b429",
+  },
+  {
     value: "dev",
     label: "dev",
     hint: "Herramientas de desarrollo. Opción no terminada todavía.",
@@ -62,7 +69,6 @@ export class MainMenu {
   private readonly rows = new Map<MenuOption, HTMLButtonElement>();
   private readonly hintEl: HTMLParagraphElement;
   private readonly playBtn: HTMLButtonElement;
-  private readonly recordChk: HTMLInputElement;
   private readonly fileInput: HTMLInputElement;
   /** Logo compartido entre fases: se desliza del centro a arriba-izquierda. */
   private readonly logo: HTMLHeadingElement;
@@ -110,26 +116,7 @@ export class MainMenu {
     this.hintEl.textContent = "Selecciona un modo.";
     this.selectPhase.appendChild(this.hintEl);
 
-    // Opciones de abajo a la derecha: grabar + cargar replay + jugar.
-    const extras = document.createElement("div");
-    extras.className = "menu-extras";
-
-    // Checkbox "Grabar partida".
-    const recLabel = document.createElement("label");
-    recLabel.className = "menu-record";
-    this.recordChk = document.createElement("input");
-    this.recordChk.type = "checkbox";
-    recLabel.appendChild(this.recordChk);
-    const recText = document.createElement("span");
-    recText.textContent = "Grabar partida";
-    recLabel.appendChild(recText);
-    extras.appendChild(recLabel);
-
-    // Botón "Cargar replay" (abre un selector de archivo).
-    const loadBtn = document.createElement("button");
-    loadBtn.type = "button";
-    loadBtn.className = "menu-btn menu-load-btn";
-    loadBtn.textContent = "Cargar replay";
+    // Selector de archivo oculto, para la opción "Replay".
     this.fileInput = document.createElement("input");
     this.fileInput.type = "file";
     this.fileInput.accept = "application/json,.json";
@@ -139,11 +126,7 @@ export class MainMenu {
       if (file) this.cb.onLoadReplay(file);
       this.fileInput.value = ""; // permite recargar el mismo archivo
     });
-    loadBtn.addEventListener("click", () => this.fileInput.click());
-    extras.appendChild(loadBtn);
-    extras.appendChild(this.fileInput);
-
-    this.selectPhase.appendChild(extras);
+    this.selectPhase.appendChild(this.fileInput);
 
     // Botón Jugar (abajo a la derecha).
     this.playBtn = document.createElement("button");
@@ -200,7 +183,12 @@ export class MainMenu {
     if (!this.selected) return;
     const def = MODES.find((m) => m.value === this.selected);
     if (!def || !def.playable) return; // dev no arranca
-    this.cb.onPlay(this.selected as GameMode, this.recordChk.checked);
+    if (this.selected === "replay") {
+      // La opción Replay abre el selector de archivo.
+      this.fileInput.click();
+      return;
+    }
+    this.cb.onPlay(this.selected as GameMode);
   }
 
   private buildModeRow(def: ModeDef): HTMLButtonElement {
@@ -259,6 +247,7 @@ export interface FighterResult {
 export interface MatchOverCallbacks {
   onRematch: () => void;
   onMenu: () => void;
+  onDownloadReplay: () => void;
 }
 
 export class MatchOverScreen {
@@ -302,6 +291,15 @@ export class MatchOverScreen {
       '<span class="result-btn-icon">↻</span><span class="result-btn-text">Revancha</span><span class="result-btn-sub">Misma config</span>';
     rematch.addEventListener("click", () => this.cb.onRematch());
     actions.appendChild(rematch);
+
+    // Descargar replay: acción terciaria (icono de descarga).
+    const download = document.createElement("button");
+    download.type = "button";
+    download.className = "result-btn result-btn-download";
+    download.innerHTML =
+      '<span class="result-btn-icon">⭳</span><span class="result-btn-text">Descargar replay</span><span class="result-btn-sub">Guarda esta partida</span>';
+    download.addEventListener("click", () => this.cb.onDownloadReplay());
+    actions.appendChild(download);
 
     // Menú: botón secundario (neutro, icono de casa).
     const menu = document.createElement("button");

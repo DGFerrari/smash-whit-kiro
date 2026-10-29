@@ -361,6 +361,14 @@ export class PauseMenu {
   /** Opciones del jugador: POV + acceso al remapeo de teclas. */
   private fillOptions(el: HTMLElement): void {
     el.appendChild(this.buildPovSlider());
+    // Mostrar/ocultar la UI del juego (HUD de %/vidas/cronómetro).
+    el.appendChild(
+      this.buildToggle({
+        key: "showGameUi",
+        label: "Mostrar UI del juego",
+        hint: "Oculta el HUD de porcentajes, vidas y cronómetro para ver el gameplay limpio.",
+      }),
+    );
     el.appendChild(
       this.menuButton("Cambiar teclas", () => this.goTo("keys")),
     );

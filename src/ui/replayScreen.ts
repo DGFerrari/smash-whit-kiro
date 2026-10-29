@@ -3,6 +3,7 @@ import { World } from "../game/world.ts";
 import type { Renderer } from "../render/renderer.ts";
 import type { Camera } from "../render/camera.ts";
 import { ReplayPlayer, type ReplayData } from "../game/replay.ts";
+import { PauseMenu } from "./pauseMenu.ts";
 
 /**
  * Reproductor de replays con controles tipo vídeo.
@@ -27,6 +28,11 @@ export class ReplayScreen {
   private readonly playPauseBtn: HTMLButtonElement;
   private readonly speedBtn: HTMLButtonElement;
   private readonly freeCamBtn: HTMLButtonElement;
+  /** Botón flotante para volver a mostrar la barra cuando está oculta. */
+  private readonly showBarBtn: HTMLButtonElement;
+  private pauseMenu: PauseMenu | null = null;
+  /** ¿Está el menú de pausa abierto? (congela la reproducción). */
+  private menuPaused = false;
 
   private player: ReplayPlayer | null = null;
   private world: World | null = null;
@@ -54,12 +60,13 @@ export class ReplayScreen {
     this.root = document.createElement("div");
     this.root.id = "replay-bar";
 
-    // Botón salir.
-    const exit = document.createElement("button");
-    exit.className = "replay-btn";
-    exit.textContent = "✕ Salir";
-    exit.addEventListener("click", () => this.exit());
-    this.root.appendChild(exit);
+    // Ocultar la barra (ver gameplay limpio). Reaparece con el botón flotante.
+    const hide = document.createElement("button");
+    hide.className = "replay-btn";
+    hide.textContent = "⤫ Ocultar";
+    hide.title = "Ocultar controles";
+    hide.addEventListener("click", () => this.setBarHidden(true));
+    this.root.appendChild(hide);
 
     // Retroceder un paso.
     const back = document.createElement("button");
@@ -116,6 +123,20 @@ export class ReplayScreen {
     this.root.appendChild(this.freeCamBtn);
 
     document.body.appendChild(this.root);
+
+    // Botón flotante (esquina) para volver a mostrar la barra oculta.
+    this.showBarBtn = document.createElement("button");
+    this.showBarBtn.id = "replay-show-bar";
+    this.showBarBtn.textContent = "⚙";
+    this.showBarBtn.title = "Mostrar controles";
+    this.showBarBtn.addEventListener("click", () => this.setBarHidden(false));
+    document.body.appendChild(this.showBarBtn);
+  }
+
+  /** Oculta/muestra la barra de controles (ver gameplay limpio). */
+  private setBarHidden(hidden: boolean): void {
+    this.root.classList.toggle("hidden", hidden);
+    this.showBarBtn.classList.toggle("visible", hidden);
   }
 
   /** Carga un replay y empieza a reproducir desde el principio. */
@@ -126,11 +147,26 @@ export class ReplayScreen {
     this.seek.max = String(Math.max(0, this.player.totalSteps - 1));
     this.seek.value = "0";
     this.playing = true;
+    this.menuPaused = false;
     this.updatePlayPause();
     this.disableFreeCam();
+    this.setBarHidden(false);
 
     this.root.classList.add("open");
     this.attachCamControls();
+
+    // Menú de pausa (Esc): reutilizamos el del juego. Al abrir, congelamos la
+    // reproducción; al cerrar, la reanudamos; "volver al menú" sale del replay.
+    this.pauseMenu = new PauseMenu({
+      mode: "versus", // oculta la página de Dummy (no aplica en replay)
+      onOpen: () => {
+        this.menuPaused = true;
+      },
+      onClose: () => {
+        this.menuPaused = false;
+      },
+      onQuitToMenu: () => this.exit(),
+    });
 
     this.lastTime = performance.now();
     this.accumulator = 0;
@@ -142,8 +178,13 @@ export class ReplayScreen {
     this.playing = false;
     cancelAnimationFrame(this.rafId);
     this.root.classList.remove("open");
+    this.setBarHidden(false);
     this.detachCamControls();
     this.camera.clearCinematic();
+    if (this.pauseMenu) {
+      this.pauseMenu.destroy();
+      this.pauseMenu = null;
+    }
     this.cb.onExit();
   }
 
@@ -178,7 +219,7 @@ export class ReplayScreen {
     if (frameTime > 0.25) frameTime = 0.25;
 
     if (this.player && this.world) {
-      if (this.playing) {
+      if (this.playing && !this.menuPaused) {
         this.accumulator += frameTime * this.speed;
         let guard = 0;
         while (this.accumulator >= FIXED_DT && guard < 600) {

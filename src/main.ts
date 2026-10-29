@@ -7,6 +7,7 @@ import { PauseMenu } from "./ui/pauseMenu.ts";
 import { MainMenu, MatchOverScreen, type FighterResult } from "./ui/mainMenu.ts";
 import { LoadingScreen, Countdown, KOFlash } from "./ui/overlays.ts";
 import { ReplayScreen } from "./ui/replayScreen.ts";
+import { MenuBackground } from "./ui/menuBackground.ts";
 import {
   ReplayRecorder,
   downloadReplay,
@@ -46,20 +47,23 @@ class App {
   private readonly koFlash = new KOFlash();
 
   private readonly mainMenu = new MainMenu({
-    onPlay: (mode, record) => void this.startMatch(mode, record),
+    onPlay: (mode) => void this.startMatch(mode),
     onLoadReplay: (file) => void this.openReplay(file),
   });
 
   private readonly matchOver = new MatchOverScreen({
     onRematch: () => {
       const mode = this.world?.mode ?? "versus";
-      const record = this.recorder !== null;
       this.matchOver.hide();
-      void this.startMatch(mode, record);
+      void this.startMatch(mode);
     },
     onMenu: () => {
       this.matchOver.hide();
       void this.toMenu();
+    },
+    // Descargar el replay de la partida recién jugada.
+    onDownloadReplay: () => {
+      if (this.lastReplay) downloadReplay(this.lastReplay);
     },
   });
 
@@ -67,8 +71,24 @@ class App {
     onExit: () => void this.toMenu(),
   });
 
+  /** Fondo animado del menú (replays en bucle). Se inicia perezosamente. */
+  private menuBg: MenuBackground | null = null;
+
   start(): void {
+    this.showMenu();
+  }
+
+  /** Muestra el menú y arranca el fondo de replays en bucle. */
+  private showMenu(): void {
     this.mainMenu.show();
+    if (!this.menuBg) this.menuBg = new MenuBackground(renderer, camera);
+    this.menuBg.start();
+  }
+
+  /** Oculta el menú y detiene el fondo de replays. */
+  private hideMenu(): void {
+    this.mainMenu.hide();
+    this.menuBg?.stop();
   }
 
   /** Vuelve al menú principal con transición de iris de por medio. */
@@ -78,7 +98,7 @@ class App {
     // Iris se cierra tapando la escena actual.
     await this.loading.cover();
     this.teardownMatch();
-    this.mainMenu.show();
+    this.showMenu();
     // Con la pantalla tapada, el anillo de carga se llena.
     await this.loading.fill(500);
     // Iris se abre revelando el menú.
@@ -86,23 +106,23 @@ class App {
     this.busy = false;
   }
 
-  private async startMatch(mode: GameMode, record: boolean): Promise<void> {
+  private async startMatch(mode: GameMode): Promise<void> {
     if (this.busy) return;
     this.busy = true;
 
     // Iris se cierra tapando el menú.
     await this.loading.cover();
-    this.mainMenu.hide();
+    this.hideMenu();
     this.teardownMatch();
     // Con la pantalla tapada, el anillo de carga se llena.
     await this.loading.fill(600);
 
     const world = new World(mode);
     this.world = world;
+    this.lastReplay = null;
 
-    // Grabación de replay: si se pidió, creamos el grabador con el seed del
-    // mundo (clave para que el replay reproduzca exactamente la misma partida).
-    this.recorder = record ? new ReplayRecorder(mode, world.seed) : null;
+    // Siempre grabamos (para poder ofrecer la descarga del replay al terminar).
+    this.recorder = new ReplayRecorder(mode, world.seed);
 
     camera.resize(renderer.cssWidth, renderer.cssHeight);
     camera.setPaused(false);
@@ -162,11 +182,9 @@ class App {
       isWinner: f.index === winnerIndex,
     }));
 
-    // Si se estaba grabando, finalizamos el replay y lo descargamos.
-    if (this.recorder && this.recorder.length > 0) {
-      this.lastReplay = this.recorder.build();
-      downloadReplay(this.lastReplay);
-    }
+    // Finalizamos el replay grabado (el podio ofrecerá descargarlo).
+    this.lastReplay =
+      this.recorder && this.recorder.length > 0 ? this.recorder.build() : null;
 
     this.teardownMatch();
     this.koFlash.set(0);
@@ -197,7 +215,7 @@ class App {
     try {
       const data = await loadReplayFile(file);
       await this.loading.cover();
-      this.mainMenu.hide();
+      this.hideMenu();
       this.teardownMatch();
       await this.loading.fill(500);
       this.replayScreen.start(data);
@@ -205,7 +223,7 @@ class App {
     } catch (err) {
       console.error(err);
       window.alert("No se pudo cargar el replay: archivo no válido.");
-      this.mainMenu.show();
+      this.showMenu();
     } finally {
       this.busy = false;
     }

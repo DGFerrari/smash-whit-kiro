@@ -110,7 +110,7 @@ export class Renderer {
     return window.innerHeight;
   }
 
-  render(world: World, camera: Camera, alpha: number): void {
+  render(world: World, camera: Camera, alpha: number, hideHud = false): void {
     const w = this.cssWidth;
     const h = this.cssHeight;
     this.updateFps();
@@ -130,25 +130,33 @@ export class Renderer {
 
     // --- HUD 2D superpuesto ---
     this.hud.clearRect(0, 0, w, h);
-    const entries: PercentEntry[] = world.fighters.map((f) => ({
-      label: f.label,
-      color: f.color,
-      damage: f.player.damage,
-      lives: Number.isFinite(f.lives) ? f.lives : -1,
-      anim: f.hudAnim,
-      fury: f.player.furyMeter,
-      furyActive: f.player.furyActive,
-      furyRemaining: f.player.furyRemaining,
-    }));
-    drawPercentHud(this.hud, entries, w, h);
 
-    // Cronómetro del 1vs1 (arriba centrado).
-    if (Number.isFinite(world.timeLeft)) {
-      this.drawTimer(this.hud, world.timeLeft, w);
+    // La UI del juego se oculta si lo pide el llamante (fondo del menú) o si el
+    // jugador la desactivó en Opciones.
+    const showUi = !hideHud && debug.showGameUi;
+    if (showUi) {
+      const entries: PercentEntry[] = world.fighters.map((f) => ({
+        label: f.label,
+        color: f.color,
+        damage: f.player.damage,
+        lives: Number.isFinite(f.lives) ? f.lives : -1,
+        anim: f.hudAnim,
+        fury: f.player.furyMeter,
+        furyActive: f.player.furyActive,
+        furyRemaining: f.player.furyRemaining,
+      }));
+      drawPercentHud(this.hud, entries, w, h);
+
+      // Cronómetro del 1vs1 (arriba centrado).
+      if (Number.isFinite(world.timeLeft)) {
+        this.drawTimer(this.hud, world.timeLeft, w);
+      }
     }
 
-    if (debug.showStats) this.drawStats(this.hud, world.player, camera);
-    if (debug.showFps) this.drawFps(this.hud);
+    // Stats/FPS son herramientas de dev: respetan sus propios toggles aunque la
+    // UI de juego esté oculta, salvo que el llamante fuerce hideHud (menú).
+    if (!hideHud && debug.showStats) this.drawStats(this.hud, world.player, camera);
+    if (!hideHud && debug.showFps) this.drawFps(this.hud);
   }
 
   /** Reloj mm:ss arriba centrado; se pone rojo en los últimos 10 s. */

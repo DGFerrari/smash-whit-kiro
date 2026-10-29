@@ -755,6 +755,8 @@ body {
 }
 
 /* ===== Menú principal (dos fases) ===== */
+/* Semi-transparente: deja ver el fondo de replays del juego por detrás, con un
+   oscurecido suave y una viñeta para que el texto se lea bien. */
 #main-menu {
   --menu-accent: #2f6bff;
   position: fixed;
@@ -763,8 +765,8 @@ body {
   display: none;
   background: radial-gradient(
     ellipse at center,
-    rgba(11, 26, 51, 0.92),
-    rgba(6, 10, 20, 0.97)
+    rgba(6, 10, 20, 0.35),
+    rgba(6, 10, 20, 0.72)
   );
   transition: background 0.4s ease;
 }
@@ -777,9 +779,24 @@ body {
 #main-menu.mode-chosen.in-select {
   background: radial-gradient(
     ellipse at center,
-    color-mix(in srgb, var(--menu-accent) 20%, rgba(11, 26, 51, 0.92)),
-    rgba(6, 10, 20, 0.97)
+    color-mix(in srgb, var(--menu-accent) 14%, rgba(6, 10, 20, 0.4)),
+    rgba(6, 10, 20, 0.75)
   );
+}
+
+/* Capa de fundido del fondo de replays del menú (entre un replay y otro). */
+#menu-bg-fade {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  background: #060a14;
+  opacity: 0;
+  pointer-events: none;
+  display: none;
+}
+
+#menu-bg-fade.active {
+  display: block;
 }
 
 /* Logo compartido entre fases. Se posiciona en el centro (título) o arriba a
@@ -1114,4 +1131,50 @@ body {
   font-variant-numeric: tabular-nums;
   min-width: 90px;
   text-align: center;
+}
+
+/* Barra de replay oculta (ver gameplay limpio). */
+#replay-bar.hidden {
+  display: none;
+}
+
+/* Botón flotante para volver a mostrar la barra oculta del replay. */
+#replay-show-bar {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 26;
+  display: none;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(10, 14, 22, 0.85);
+  border: 1px solid #2d3850;
+  color: #e6e6e6;
+  font-size: 20px;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+#replay-show-bar.visible {
+  display: block;
+}
+
+#replay-show-bar:hover {
+  background: #2f6bff;
+  border-color: #2f6bff;
+  color: #ffffff;
+}
+
+/* Botón de descargar replay en el podio (acción terciaria, verde). */
+.result-btn-download {
+  background: rgba(69, 200, 138, 0.14);
+  border-color: #45c88a;
+  color: #d6ffe9;
+}
+
+.result-btn-download:hover {
+  background: #45c88a;
+  color: #06220f;
 }
