@@ -263,15 +263,20 @@ export class CpuBrain {
     meCy: number,
     safe: SafeZone,
   ): boolean {
-    const outsideX = meCx < safe.left || meCx > safe.right;
+    // Fuera del tramo de suelo sólido (y en el aire).
+    const outsideX = (meCx < safe.left || meCx > safe.right) && !me.onGround;
+    // Por debajo del nivel del suelo sin pisar nada.
     const belowGround = meCy > safe.groundY + 20 && !me.onGround;
     const nearBottom = me.pos.y > BLAST_ZONE.bottom - 500;
-    // También es peligro si vamos lanzados hacia fuera cerca del borde.
+    // Lanzados hacia fuera cerca del borde (reaccionar PRONTO, con margen amplio).
     const flungOut =
       !me.onGround &&
-      ((meCx < safe.left + 40 && me.vel.x < 0) ||
-        (meCx > safe.right - 40 && me.vel.x > 0));
-    return (outsideX && !me.onGround) || belowGround || nearBottom || flungOut;
+      ((meCx < safe.left + 90 && me.vel.x < 0) ||
+        (meCx > safe.right - 90 && me.vel.x > 0));
+    // Pegados a una pared en el aire: SIEMPRE es situación de recuperación, para
+    // que el wall jump se dispare y no se quede deslizando.
+    const onWall = !me.onGround && me.touchingWall !== 0;
+    return outsideX || belowGround || nearBottom || flungOut || onWall;
   }
 
   /**
@@ -285,6 +290,33 @@ export class CpuBrain {
   private recover(s: InputState, me: Player, meCx: number, safe: SafeZone): void {
     const center = (safe.left + safe.right) / 2;
     const toCenter: 1 | -1 = meCx < center ? 1 : -1;
+
+    // === PRIORIDAD MÁXIMA: ¿pegados a una pared? ===
+    // Si tocamos/deslizamos una pared, el salto se convierte en WALL JUMP, que
+    // nos lanza en diagonal ALEJÁNDONOS de la pared (hacia el centro). Esto es
+    // lo que fallaba: antes la CPU empujaba contra la pared (activando el wall
+    // slide) y se quedaba enganchada deslizándose sin saltar nunca.
+    if (!me.onGround && me.touchingWall !== 0) {
+      // Para hacer wall jump hay que (a) estar en wall slide y (b) saltar. El
+      // wall slide requiere empujar HACIA la pared un frame; luego saltamos.
+      const wallDir = me.touchingWall; // -1 pared izq, +1 pared der
+      if (me.wallSliding) {
+        // Ya estamos agarrados: SALTAR (wall jump). No mantenemos: el impulso
+        // diagonal ya nos separa; el lock de wall jump protege el empuje.
+        s.jumpPressed = true;
+        s.jumpHeld = true;
+        this.jumpHoldSteps = 6;
+        this.usedDoubleJump = false; // el wall jump recupera saltos
+      } else {
+        // Tocamos pared pero aún no agarrados: empujar hacia la pared para
+        // activar el wall slide (y así poder wall-jumpear el siguiente frame).
+        s.moveX = wallDir;
+      }
+      me.facing = toCenter;
+      return;
+    }
+
+    // Movimiento horizontal por defecto: hacia el centro.
     s.moveX = toCenter;
     me.facing = toCenter;
 
