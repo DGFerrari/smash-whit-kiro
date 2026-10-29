@@ -1,0 +1,161 @@
+import { createInputState, type InputState } from "../core/input.ts";
+import type { GameMode } from "./world.ts";
+
+/**
+ * Sistema de REPLAY basado en determinismo.
+ *
+ * Como la simulación es determinista (timestep fijo + RNG sembrado + la física
+ * solo lee InputState), NO guardamos posiciones ni estados: basta con la
+ * SEMILLA, el MODO y la lista de inputs de cada paso de física. Para reproducir,
+ * re-ejecutamos el mismo World alimentándolo con esos inputs. Un replay de 5
+ * min son ~18000 pasos × 2 jugadores, pero cada input cabe en pocos bytes.
+ *
+ * Formato serializado (JSON): compacto pero legible. Cada InputState se empaqueta
+ * en un entero de bits + ejes, así el archivo es pequeño.
+ */
+
+export const REPLAY_VERSION = 1;
+
+export interface ReplayData {
+  version: number;
+  mode: GameMode;
+  seed: number;
+  /** Fecha ISO de grabación (informativo). */
+  recordedAt: string;
+  /** Nº de jugadores (2). */
+  players: number;
+  /** Pasos: cada uno es un array de inputs empaquetados (uno por jugador). */
+  steps: number[][];
+}
+
+// --- Empaquetado de un InputState en un entero ------------------------------
+// Bits: jumpHeld, jumpPressed, lightPressed, heavyHeld, heavyReleased,
+//       shieldHeld, shieldPressed, y moveX/moveY (2 bits con signo cada uno).
+
+const BIT = {
+  jumpHeld: 1 << 0,
+  jumpPressed: 1 << 1,
+  lightPressed: 1 << 2,
+  heavyHeld: 1 << 3,
+  heavyReleased: 1 << 4,
+  shieldHeld: 1 << 5,
+  shieldPressed: 1 << 6,
+} as const;
+
+/** Codifica -1/0/1 en 2 bits: 0->0, 1->1, -1->2. */
+function encAxis(v: number): number {
+  return v === 0 ? 0 : v > 0 ? 1 : 2;
+}
+function decAxis(code: number): number {
+  return code === 0 ? 0 : code === 1 ? 1 : -1;
+}
+
+export function packInput(s: InputState): number {
+  let bits = 0;
+  if (s.jumpHeld) bits |= BIT.jumpHeld;
+  if (s.jumpPressed) bits |= BIT.jumpPressed;
+  if (s.lightPressed) bits |= BIT.lightPressed;
+  if (s.heavyHeld) bits |= BIT.heavyHeld;
+  if (s.heavyReleased) bits |= BIT.heavyReleased;
+  if (s.shieldHeld) bits |= BIT.shieldHeld;
+  if (s.shieldPressed) bits |= BIT.shieldPressed;
+  // moveX en bits 7-8, moveY en bits 9-10.
+  bits |= encAxis(s.moveX) << 7;
+  bits |= encAxis(s.moveY) << 9;
+  return bits;
+}
+
+export function unpackInto(packed: number, out: InputState): void {
+  out.jumpHeld = (packed & BIT.jumpHeld) !== 0;
+  out.jumpPressed = (packed & BIT.jumpPressed) !== 0;
+  out.lightPressed = (packed & BIT.lightPressed) !== 0;
+  out.heavyHeld = (packed & BIT.heavyHeld) !== 0;
+  out.heavyReleased = (packed & BIT.heavyReleased) !== 0;
+  out.shieldHeld = (packed & BIT.shieldHeld) !== 0;
+  out.shieldPressed = (packed & BIT.shieldPressed) !== 0;
+  out.moveX = decAxis((packed >> 7) & 0b11);
+  out.moveY = decAxis((packed >> 9) & 0b11);
+}
+
+/**
+ * Grabador: acumula los inputs de cada paso de física. El loop le pasa los
+ * InputState ya muestreados en cada step mientras la grabación esté activa.
+ */
+export class ReplayRecorder {
+  private readonly steps: number[][] = [];
+
+  constructor(
+    private readonly mode: GameMode,
+    private readonly seed: number,
+  ) {}
+
+  record(inputs: InputState[]): void {
+    this.steps.push(inputs.map(packInput));
+  }
+
+  get length(): number {
+    return this.steps.length;
+  }
+
+  /** Construye el objeto serializable del replay. */
+  build(): ReplayData {
+    return {
+      version: REPLAY_VERSION,
+      mode: this.mode,
+      seed: this.seed,
+      recordedAt: new Date().toISOString(),
+      players: 2,
+      steps: this.steps,
+    };
+  }
+}
+
+/**
+ * Reproductor: entrega los inputs grabados paso a paso. Reutiliza dos
+ * InputState internos para no crear basura por frame.
+ */
+export class ReplayPlayer {
+  readonly totalSteps: number;
+  private readonly scratch: InputState[];
+
+  constructor(readonly data: ReplayData) {
+    this.totalSteps = data.steps.length;
+    this.scratch = [createInputState(), createInputState()];
+  }
+
+  /** Inputs del paso `index` (clamp a los límites). */
+  inputsAt(index: number): InputState[] {
+    const i = index < 0 ? 0 : index >= this.totalSteps ? this.totalSteps - 1 : index;
+    const packed = this.data.steps[i] ?? [];
+    for (let p = 0; p < this.scratch.length; p++) {
+      unpackInto(packed[p] ?? 0, this.scratch[p]);
+    }
+    return this.scratch;
+  }
+}
+
+/** Descarga un replay como archivo .json. */
+export function downloadReplay(data: ReplayData): void {
+  const blob = new Blob([JSON.stringify(data)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  const stamp = data.recordedAt.replace(/[:.]/g, "-");
+  a.download = `smashb-replay-${data.mode}-${stamp}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/** Lee y valida un replay desde un File (input type=file). */
+export async function loadReplayFile(file: File): Promise<ReplayData> {
+  const text = await file.text();
+  const data = JSON.parse(text) as ReplayData;
+  if (
+    typeof data.version !== "number" ||
+    typeof data.seed !== "number" ||
+    !Array.isArray(data.steps)
+  ) {
+    throw new Error("Archivo de replay no válido.");
+  }
+  return data;
+}

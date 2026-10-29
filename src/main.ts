@@ -6,6 +6,13 @@ import { GameLoop } from "./game/loop.ts";
 import { PauseMenu } from "./ui/pauseMenu.ts";
 import { MainMenu, MatchOverScreen, type FighterResult } from "./ui/mainMenu.ts";
 import { LoadingScreen, Countdown, KOFlash } from "./ui/overlays.ts";
+import { ReplayScreen } from "./ui/replayScreen.ts";
+import {
+  ReplayRecorder,
+  downloadReplay,
+  loadReplayFile,
+  type ReplayData,
+} from "./game/replay.ts";
 
 const canvas = document.querySelector<HTMLCanvasElement>("#game");
 if (!canvas) {
@@ -29,24 +36,35 @@ class App {
   private pauseMenu: PauseMenu | null = null;
   private busy = false;
 
+  /** Grabador activo de la partida actual (null si no se graba). */
+  private recorder: ReplayRecorder | null = null;
+  /** Replay grabado de la última partida (para ofrecer descargarlo al acabar). */
+  private lastReplay: ReplayData | null = null;
+
   private readonly loading = new LoadingScreen();
   private readonly countdown = new Countdown();
   private readonly koFlash = new KOFlash();
 
   private readonly mainMenu = new MainMenu({
-    onPlay: (mode) => this.startMatch(mode),
+    onPlay: (mode, record) => void this.startMatch(mode, record),
+    onLoadReplay: (file) => void this.openReplay(file),
   });
 
   private readonly matchOver = new MatchOverScreen({
     onRematch: () => {
       const mode = this.world?.mode ?? "versus";
+      const record = this.recorder !== null;
       this.matchOver.hide();
-      this.startMatch(mode);
+      void this.startMatch(mode, record);
     },
     onMenu: () => {
       this.matchOver.hide();
       void this.toMenu();
     },
+  });
+
+  private readonly replayScreen = new ReplayScreen(renderer, camera, {
+    onExit: () => void this.toMenu(),
   });
 
   start(): void {
@@ -68,7 +86,7 @@ class App {
     this.busy = false;
   }
 
-  private async startMatch(mode: GameMode): Promise<void> {
+  private async startMatch(mode: GameMode, record: boolean): Promise<void> {
     if (this.busy) return;
     this.busy = true;
 
@@ -81,6 +99,10 @@ class App {
 
     const world = new World(mode);
     this.world = world;
+
+    // Grabación de replay: si se pidió, creamos el grabador con el seed del
+    // mundo (clave para que el replay reproduzca exactamente la misma partida).
+    this.recorder = record ? new ReplayRecorder(mode, world.seed) : null;
 
     camera.resize(renderer.cssWidth, renderer.cssHeight);
     camera.setPaused(false);
@@ -96,6 +118,8 @@ class App {
       },
       // Al perder la última vida: "FINISH" durante la cámara lenta del remate.
       onFinish: () => this.matchOver.showFinish(),
+      // Grabación: registramos los inputs de cada paso.
+      onStep: (inputs) => this.recorder?.record(inputs),
     });
     this.loop = loop;
 
@@ -138,6 +162,12 @@ class App {
       isWinner: f.index === winnerIndex,
     }));
 
+    // Si se estaba grabando, finalizamos el replay y lo descargamos.
+    if (this.recorder && this.recorder.length > 0) {
+      this.lastReplay = this.recorder.build();
+      downloadReplay(this.lastReplay);
+    }
+
     this.teardownMatch();
     this.koFlash.set(0);
     this.countdown.set(null);
@@ -157,6 +187,28 @@ class App {
     this.countdown.set(null);
     this.koFlash.set(0);
     this.world = null;
+    this.recorder = null;
+  }
+
+  /** Carga un archivo de replay y lo reproduce en el ReplayScreen. */
+  private async openReplay(file: File): Promise<void> {
+    if (this.busy) return;
+    this.busy = true;
+    try {
+      const data = await loadReplayFile(file);
+      await this.loading.cover();
+      this.mainMenu.hide();
+      this.teardownMatch();
+      await this.loading.fill(500);
+      this.replayScreen.start(data);
+      await this.loading.reveal();
+    } catch (err) {
+      console.error(err);
+      window.alert("No se pudo cargar el replay: archivo no válido.");
+      this.mainMenu.show();
+    } finally {
+      this.busy = false;
+    }
   }
 
   onResize(): void {

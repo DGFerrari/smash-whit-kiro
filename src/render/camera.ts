@@ -68,6 +68,24 @@ export class Camera {
     this.cinematic = { x, y, zoom };
   }
 
+  /**
+   * Cámara libre del modo replay: fija foco y zoom directamente (sin suavizar)
+   * y se mantiene ahí hasta clearCinematic(). Pensado para arrastrar/zoom.
+   */
+  setManual(x: number, y: number, zoom: number): void {
+    this.cinematic = { x, y, zoom };
+    this.focus.x = x;
+    this.focus.y = y;
+    this.zoom = clamp(zoom, CAMERA.minZoom, CAMERA.maxZoom);
+    this.targetZoom = this.zoom;
+    this.applyToThree();
+  }
+
+  /** ¿Hay un override activo (cinemático/manual)? */
+  get hasCinematic(): boolean {
+    return this.cinematic !== null;
+  }
+
   /** Congela la cámara donde está (foco y zoom actuales). */
   freeze(): void {
     this.cinematic = { x: this.focus.x, y: this.focus.y, zoom: this.zoom };

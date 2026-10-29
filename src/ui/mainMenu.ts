@@ -12,7 +12,10 @@ import type { GameMode } from "../game/world.ts";
  * terminada).
  */
 export interface MainMenuCallbacks {
-  onPlay: (mode: GameMode) => void;
+  /** Inicia una partida. `record` indica si hay que grabar el replay. */
+  onPlay: (mode: GameMode, record: boolean) => void;
+  /** El usuario eligió un archivo de replay para reproducir. */
+  onLoadReplay: (file: File) => void;
 }
 
 /** Valor de una opción del menú: un modo jugable o la opción no terminada. */
@@ -59,6 +62,8 @@ export class MainMenu {
   private readonly rows = new Map<MenuOption, HTMLButtonElement>();
   private readonly hintEl: HTMLParagraphElement;
   private readonly playBtn: HTMLButtonElement;
+  private readonly recordChk: HTMLInputElement;
+  private readonly fileInput: HTMLInputElement;
   /** Logo compartido entre fases: se desliza del centro a arriba-izquierda. */
   private readonly logo: HTMLHeadingElement;
   private selected: MenuOption | null = null;
@@ -104,6 +109,41 @@ export class MainMenu {
     this.hintEl.className = "mode-hint";
     this.hintEl.textContent = "Selecciona un modo.";
     this.selectPhase.appendChild(this.hintEl);
+
+    // Opciones de abajo a la derecha: grabar + cargar replay + jugar.
+    const extras = document.createElement("div");
+    extras.className = "menu-extras";
+
+    // Checkbox "Grabar partida".
+    const recLabel = document.createElement("label");
+    recLabel.className = "menu-record";
+    this.recordChk = document.createElement("input");
+    this.recordChk.type = "checkbox";
+    recLabel.appendChild(this.recordChk);
+    const recText = document.createElement("span");
+    recText.textContent = "Grabar partida";
+    recLabel.appendChild(recText);
+    extras.appendChild(recLabel);
+
+    // Botón "Cargar replay" (abre un selector de archivo).
+    const loadBtn = document.createElement("button");
+    loadBtn.type = "button";
+    loadBtn.className = "menu-btn menu-load-btn";
+    loadBtn.textContent = "Cargar replay";
+    this.fileInput = document.createElement("input");
+    this.fileInput.type = "file";
+    this.fileInput.accept = "application/json,.json";
+    this.fileInput.style.display = "none";
+    this.fileInput.addEventListener("change", () => {
+      const file = this.fileInput.files?.[0];
+      if (file) this.cb.onLoadReplay(file);
+      this.fileInput.value = ""; // permite recargar el mismo archivo
+    });
+    loadBtn.addEventListener("click", () => this.fileInput.click());
+    extras.appendChild(loadBtn);
+    extras.appendChild(this.fileInput);
+
+    this.selectPhase.appendChild(extras);
 
     // Botón Jugar (abajo a la derecha).
     this.playBtn = document.createElement("button");
@@ -160,7 +200,7 @@ export class MainMenu {
     if (!this.selected) return;
     const def = MODES.find((m) => m.value === this.selected);
     if (!def || !def.playable) return; // dev no arranca
-    this.cb.onPlay(this.selected as GameMode);
+    this.cb.onPlay(this.selected as GameMode, this.recordChk.checked);
   }
 
   private buildModeRow(def: ModeDef): HTMLButtonElement {

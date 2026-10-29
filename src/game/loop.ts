@@ -16,6 +16,8 @@ export interface LoopCallbacks {
   onKOFlash?: (intensity: number) => void;
   /** La partida acaba de terminar: mostrar "FINISH" (empieza la cámara lenta). */
   onFinish?: () => void;
+  /** Se llama tras muestrear los inputs de cada paso (para grabar el replay). */
+  onStep?: (inputs: InputState[]) => void;
 }
 
 /** Fases de una partida gestionadas por el loop. */
@@ -220,6 +222,8 @@ export class GameLoop {
       for (let i = 0; i < this.inputs.length; i++) {
         this.inputs[i].sample(this.inputStates[i]);
       }
+      // Grabación de replay: registramos los inputs de ESTE paso antes de usarlos.
+      this.cb.onStep?.(this.inputStates);
       this.world.step(this.inputStates, FIXED_DT);
       steps++;
       this.accumulator -= FIXED_DT;
