@@ -38,29 +38,30 @@ interface DifficultyProfile {
 }
 
 const PROFILES: Record<CpuDifficulty, DifficultyProfile> = {
-  // Fácil: se defiende bien, pero ataca poco y despacio. No acosa.
+  // Fácil: se defiende bien, pero ataca poco y despacio. No acosa. Aun así se
+  // acerca de verdad al rival (antes se quedaba plantada sin llegar a pegar).
   easy: {
-    aggression: 0.35,
+    aggression: 0.45,
     defense: 0.85,
-    engageRange: 90,
+    engageRange: 220,
     heavyDamageThreshold: 90,
-    attackCooldown: 34,
+    attackCooldown: 30,
     edgeguard: false,
   },
-  // Normal: equilibrada.
+  // Normal: equilibrada, persigue bien.
   normal: {
-    aggression: 0.7,
+    aggression: 0.75,
     defense: 0.6,
-    engageRange: 150,
+    engageRange: 300,
     heavyDamageThreshold: 60,
-    attackCooldown: 18,
+    attackCooldown: 16,
     edgeguard: false,
   },
   // Difícil: agresiva, te busca, remata y persigue al borde.
   hard: {
     aggression: 0.95,
     defense: 0.55,
-    engageRange: 320,
+    engageRange: 460,
     heavyDamageThreshold: 35,
     attackCooldown: 10,
     edgeguard: true,
@@ -159,7 +160,9 @@ export class CpuBrain {
     }
 
     // --- 3) Ataque a rango ---
-    const inRange = adx < 74 && ady < 72;
+    // Rango de golpeo un poco más generoso en horizontal para que no se quede
+    // a un pelo sin llegar. Vertical algo más alto para encadenar en saltitos.
+    const inRange = adx < 88 && ady < 84;
     if (inRange) {
       me.facing = dir;
       if (dy < -40) s.moveY = -1;
@@ -184,9 +187,10 @@ export class CpuBrain {
 
     // --- 4) Acercarse / merodear (según agresividad/alcance del perfil) ---
     this.holdingHeavy = 0;
-    // Distancia de "pegado" un poco distinta por CPU, para no apilarse todas en
-    // el mismo punto haciendo lo mismo.
-    const keepDist = 56 + (this.variation % 3) * 16;
+    // Distancia a la que deja de empujar: claramente DENTRO del rango de golpeo
+    // (inRange usa adx<88), para que se meta a pegar y no se plante fuera. Un
+    // pelín distinta por CPU para que no se apilen todas en el mismo punto.
+    const keepDist = 40 + (this.variation % 3) * 8;
     const shouldEngage = adx < this.prof.engageRange || this.prof.edgeguard;
     if (shouldEngage && adx > keepDist) {
       s.moveX = dir;
@@ -200,8 +204,27 @@ export class CpuBrain {
       s.moveX = this.wanderDir(dir);
     }
 
-    // Saltar hacia un rival por encima.
-    if (dy < -70) this.wantJumpToward(s, me);
+    // Saltar hacia un rival por encima (umbral más bajo: también persigue a
+    // quien está en una plataforma un poco elevada, no solo muy arriba).
+    if (dy < -40) this.wantJumpToward(s, me);
+    // SALTO OFENSIVO al mismo nivel: si está acercándose y ya casi pegado pero
+    // el ataque en tierra no acaba de entrar, da un saltito hacia el rival para
+    // romper el "empate" de estar pegados sin golpear. Solo si NO estamos cerca
+    // de un borde (para no tirarnos al vacío) y de forma intermitente.
+    const nearEdge = meCx < safe.left + 70 || meCx > safe.right - 70;
+    const wantHop =
+      me.onGround &&
+      ady < 40 &&
+      adx > 44 &&
+      adx < this.prof.engageRange &&
+      !nearEdge &&
+      this.groundJumpCooldown === 0 &&
+      (this.tick + this.variation) % 48 < 6;
+    if (wantHop) {
+      this.startJump(s, 8); // salto corto para no pasarse de largo
+      this.groundJumpCooldown = 24;
+      s.moveX = dir; // avanza mientras salta, para acercarse de verdad
+    }
     // Rival claramente por DEBAJO y estamos en el suelo: intentar bajar a través
     // de una plataforma one-way pulsando abajo (si no hay, no pasa nada).
     if (dy > 90 && me.onGround && adx < 120) {

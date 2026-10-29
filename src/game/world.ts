@@ -286,16 +286,45 @@ export class World {
     }
   }
 
-  /** Construye una isla flotante centrada en x=0 (versus). */
+  /**
+   * Construye una isla flotante centrada en x=0 (versus). Cada escenario tiene
+   * AHORA su propia geometría (ya no comparten layout):
+   *  - neonIsland: plataforma grande + dos plataformas pequeñas arriba.
+   *  - sunsetIsland (Pradera): una plataforma MÁS LARGA, sin plataformas
+   *    pequeñas arriba.
+   *  - voidIsland (Santuario): una plataforma larga PARTIDA EN DOS por un hueco
+   *    central, con una plataforma pequeña arriba en medio (sobre el hueco).
+   */
   private buildIsland(): void {
     const g = WORLD.groundY;
 
-    // Plataforma principal (la isla): ancha, con paredes altas a los lados.
-    this.platforms.push(new Platform(-440, g, 880, 220));
-
-    // Dos plataformas flotantes ATRAVESABLES (one-way).
-    this.platforms.push(new Platform(-260, g - 150, 200, 20, true));
-    this.platforms.push(new Platform(60, g - 250, 200, 20, true));
+    switch (this.stageId) {
+      case "sunsetIsland": {
+        // Plataforma única, más larga y sin plataformas de apoyo.
+        this.platforms.push(new Platform(-560, g, 1120, 220));
+        break;
+      }
+      case "voidIsland": {
+        // Dos mitades sólidas con un hueco central (por el que se puede caer al
+        // vacío) y una plataforma pequeña atravesable arriba, sobre el hueco.
+        // El hueco (±60) es más estrecho que el reparto de apariciones (los
+        // luchadores salen a ±75 o más), así nadie aparece cayéndose por él.
+        const gap = 120; // ancho del hueco central
+        const halfW = 440; // ancho de cada mitad sólida
+        this.platforms.push(new Platform(-(gap / 2) - halfW, g, halfW, 220));
+        this.platforms.push(new Platform(gap / 2, g, halfW, 220));
+        this.platforms.push(new Platform(-110, g - 170, 220, 20, true));
+        break;
+      }
+      case "neonIsland":
+      default: {
+        // Layout clásico: plataforma grande + dos plataformas pequeñas arriba.
+        this.platforms.push(new Platform(-440, g, 880, 220));
+        this.platforms.push(new Platform(-260, g - 150, 200, 20, true));
+        this.platforms.push(new Platform(60, g - 250, 200, 20, true));
+        break;
+      }
+    }
   }
 
   /**
