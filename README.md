@@ -4,6 +4,8 @@ Juego de peleas de plataformas **2D** para navegador (estilo Smash Bros /
 Brawlhalla): se **simula en 2D** de forma determinista, pero se **renderiza en
 3D (2.5D)** con Three.js. Hecho con TypeScript + Vite.
 
+### ▶ [Jugar ahora](https://dgferrari.github.io/smash-whit-kiro/)
+
 > Proyecto de portafolio / para jugar con amigos. Hoja de ruta (puntos, gachas,
 > rankings, online) en [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
