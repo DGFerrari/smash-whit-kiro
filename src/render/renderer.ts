@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { BLAST_ZONE, DEPTH, TEXTURES, WORLD, type SurfaceTexture } from "../config.ts";
 import type { Player } from "../entities/player.ts";
 import type { Platform } from "../physics/platform.ts";
@@ -47,11 +48,14 @@ export class Renderer {
   /** Reutilizamos geometrías/materiales base para no recrearlos por frame. */
   private readonly boxGeo = new THREE.BoxGeometry(1, 1, 1);
   private readonly sphereGeo = new THREE.SphereGeometry(1, 20, 16);
+  /** Caja redondeada (unidad) para el cuerpo del combatiente: menos "cubo". */
+  private readonly roundedGeo = new RoundedBoxGeometry(1, 1, 1, 4, 0.18);
 
   constructor(canvas: HTMLCanvasElement) {
     // Marcamos las geometrías compartidas para que clearGroup no las libere.
     markShared(this.boxGeo);
     markShared(this.sphereGeo);
+    markShared(this.roundedGeo);
 
     this.three = new THREE.WebGLRenderer({
       canvas,
@@ -59,6 +63,12 @@ export class Renderer {
       alpha: false,
     });
     this.three.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    // Sombras suaves + tono-mapeo cinematográfico + color correcto.
+    this.three.shadowMap.enabled = true;
+    this.three.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.three.toneMapping = THREE.ACESFilmicToneMapping;
+    this.three.toneMappingExposure = 1.05;
+    this.three.outputColorSpace = THREE.SRGBColorSpace;
 
     this.scene = new THREE.Scene();
     this.scene.add(this.dynamicGroup);
@@ -78,15 +88,41 @@ export class Renderer {
     this.resize();
   }
 
+  /** Luz clave (proyecta sombras) para seguir a la acción. */
+  private keyLight!: THREE.DirectionalLight;
+
   private setupLights(): void {
-    // Luz ambiental suave + direccional para dar volumen a las cajas.
-    this.scene.add(new THREE.AmbientLight(0xffffff, 0.75));
-    const key = new THREE.DirectionalLight(0xffffff, 0.9);
-    key.position.set(-300, 600, 800);
+    // Hemisférica: cielo azulado arriba, rebote cálido abajo (ambiente rico).
+    const hemi = new THREE.HemisphereLight(0xbcd3ff, 0x2a2436, 0.65);
+    this.scene.add(hemi);
+
+    // Luz CLAVE direccional que proyecta sombras sobre el escenario.
+    const key = new THREE.DirectionalLight(0xfff2e0, 1.15);
+    key.position.set(-260, 620, 760);
+    key.castShadow = true;
+    key.shadow.mapSize.set(2048, 2048);
+    key.shadow.bias = -0.0005;
+    // Volumen ortográfico amplio para cubrir el escenario.
+    const cam = key.shadow.camera as THREE.OrthographicCamera;
+    cam.left = -1200;
+    cam.right = 1200;
+    cam.top = 1200;
+    cam.bottom = -1200;
+    cam.near = 1;
+    cam.far = 3000;
     this.scene.add(key);
-    const fill = new THREE.DirectionalLight(0x88aaff, 0.35);
-    fill.position.set(400, -200, 500);
+    this.scene.add(key.target);
+    this.keyLight = key;
+
+    // Relleno frío sin sombra, para que las zonas oscuras no queden planas.
+    const fill = new THREE.DirectionalLight(0x8fb6ff, 0.4);
+    fill.position.set(500, -120, 500);
     this.scene.add(fill);
+
+    // Luz de contra (rim) sutil desde detrás para recortar las siluetas.
+    const rim = new THREE.DirectionalLight(0xffffff, 0.3);
+    rim.position.set(0, 300, -600);
+    this.scene.add(rim);
   }
 
   resize(): void {
@@ -122,6 +158,14 @@ export class Renderer {
     this.background.setBackdrop(stageDef.backdrop);
     this.background.update(camera);
     this.scene.background = new THREE.Color(stageDef.theme.background);
+
+    // La luz clave apunta al foco de la cámara para que las sombras sigan la
+    // acción (y su "sol" se mantiene relativo a ese punto).
+    const fx = camera.focusX;
+    const fy = -camera.focusY;
+    this.keyLight.target.position.set(fx, fy, 0);
+    this.keyLight.position.set(fx - 260, fy + 620, 760);
+    this.keyLight.target.updateMatrixWorld();
 
     // Reconstruimos los objetos dinámicos (combatientes, ataques, efectos).
     this.rebuildDynamic(world, alpha);
@@ -359,6 +403,8 @@ export class Renderer {
       const mesh = new THREE.Mesh(this.boxGeo, mat);
       mesh.scale.set(w, h, depth);
       mesh.position.set(cx, -(y + h / 2), zBack);
+      mesh.receiveShadow = true;
+      mesh.castShadow = true;
       this.stageGroup.add(mesh);
       return;
     }
@@ -381,6 +427,8 @@ export class Renderer {
     const body = new THREE.Mesh(this.boxGeo, bodyMat);
     body.scale.set(w, bodyH, depth);
     body.position.set(cx, -(y + capH + bodyH / 2), zBack);
+    body.receiveShadow = true;
+    body.castShadow = true;
     this.stageGroup.add(body);
 
     // Tapa superior (donde te apoyas). Ocupa solo la franja superior.
@@ -395,6 +443,8 @@ export class Renderer {
     const cap = new THREE.Mesh(this.boxGeo, capMat);
     cap.scale.set(w, capH, depth + 0.5);
     cap.position.set(cx, -(y + capH / 2), zBack);
+    cap.receiveShadow = true;
+    cap.castShadow = true;
     this.stageGroup.add(cap);
   }
 
@@ -574,9 +624,11 @@ export class Renderer {
       mat.map = getTexture(tex);
       mat.color.set(0xffffff);
     }
-    const mesh = new THREE.Mesh(this.boxGeo, mat);
+    const mesh = new THREE.Mesh(this.roundedGeo, mat);
     mesh.scale.set(player.width, player.height, DEPTH.fighter);
     mesh.position.set(cx, cy, 0);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
     this.dynamicGroup.add(mesh);
 
     // "Ojo" que marca el facing: una pequeña caja oscura al frente.
