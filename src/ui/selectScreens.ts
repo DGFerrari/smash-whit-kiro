@@ -97,7 +97,7 @@ export class CharacterSelect {
     const hint = document.createElement("p");
     hint.className = "select-hint";
     hint.textContent =
-      "Arrastra la ficha de cada jugador activo sobre un personaje (mínimo 2)";
+      "Haz clic en la ficha de cada jugador activo y clic sobre un personaje (mínimo 2)";
     this.root.appendChild(hint);
 
     this.stage = document.createElement("div");
@@ -221,7 +221,7 @@ export class CharacterSelect {
 
     const slotHint = document.createElement("div");
     slotHint.className = "player-card-slot";
-    slotHint.textContent = "arrastra →";
+    slotHint.textContent = "clic para coger →";
     card.appendChild(slotHint);
 
     // Cualquier slot (incluido P1) puede ser Jugador / CPU / Deshabilitado.
@@ -498,7 +498,7 @@ export class StageSelect {
 
     const hint = document.createElement("p");
     hint.className = "select-hint";
-    hint.textContent = "Arrastra la ficha sobre un escenario";
+    hint.textContent = "Haz clic en la ficha y clic sobre un escenario";
     this.root.appendChild(hint);
 
     const layout = document.createElement("div");
