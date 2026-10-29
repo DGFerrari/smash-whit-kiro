@@ -141,9 +141,16 @@ export const RULES = {
  */
 export const DEPTH = {
   fighter: 40, // grosor del cuerpo del combatiente
-  platformSolid: 180, // grosor de la isla/suelo
+  platformSolid: 120, // grosor de la isla/suelo
   platformOneWay: 60, // grosor de las plataformas atravesables
   attack: 30, // grosor de la hitbox de ataque
+  /**
+   * Cuánto se retranquea la plataforma en Z (hacia el fondo). Así su cara
+   * frontal queda DETRÁS del jugador (que está en Z=0) y no lo tapa al trepar
+   * por las paredes. Con platformSolid=120 y back=70, la cara frontal queda en
+   * Z≈-10, por detrás del frente del jugador (Z≈+20).
+   */
+  platformBack: 70,
 } as const;
 
 /**

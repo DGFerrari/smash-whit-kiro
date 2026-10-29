@@ -1,5 +1,7 @@
 import { createInputState, type InputState } from "../core/input.ts";
 import type { GameMode } from "./world.ts";
+import type { CharacterId } from "./characters.ts";
+import type { StageId } from "./stages.ts";
 
 /**
  * Sistema de REPLAY basado en determinismo.
@@ -14,12 +16,17 @@ import type { GameMode } from "./world.ts";
  * en un entero de bits + ejes, así el archivo es pequeño.
  */
 
-export const REPLAY_VERSION = 1;
+/** v2 añade personajes + escenario. v1 (sin ellos) se sigue pudiendo cargar. */
+export const REPLAY_VERSION = 2;
 
 export interface ReplayData {
   version: number;
   mode: GameMode;
   seed: number;
+  /** Personajes de cada jugador (v2+). Opcional por compat con v1. */
+  characters?: CharacterId[];
+  /** Escenario de la partida (v2+). Opcional por compat con v1. */
+  stage?: StageId;
   /** Fecha ISO de grabación (informativo). */
   recordedAt: string;
   /** Nº de jugadores (2). */
@@ -87,6 +94,8 @@ export class ReplayRecorder {
   constructor(
     private readonly mode: GameMode,
     private readonly seed: number,
+    private readonly characters: CharacterId[],
+    private readonly stage: StageId,
   ) {}
 
   record(inputs: InputState[]): void {
@@ -103,6 +112,8 @@ export class ReplayRecorder {
       version: REPLAY_VERSION,
       mode: this.mode,
       seed: this.seed,
+      characters: this.characters,
+      stage: this.stage,
       recordedAt: new Date().toISOString(),
       players: 2,
       steps: this.steps,

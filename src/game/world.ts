@@ -5,21 +5,22 @@ import { overlaps } from "../physics/aabb.ts";
 import { createInputState, type InputState } from "../core/input.ts";
 import { debug } from "../debug/debugState.ts";
 import { Rng, randomSeed } from "../core/rng.ts";
+import { getCharacter, type CharacterId } from "./characters.ts";
+import { getStage, type StageId, type StageKind } from "./stages.ts";
 
 /** Modo de juego. */
 export type GameMode = "training" | "versus";
 
-/**
- * Escenario. Define la geometría del nivel y qué fondo dibuja el renderer.
- *  - "island": isla flotante con plataformas (combate versus).
- *  - "trainingGrid": plataforma de borde a borde con regla de distancias y
- *    fondo blanco cuadriculado numerado (práctica de knockback).
- */
-export type StageKind = "island" | "trainingGrid";
+export type { StageKind } from "./stages.ts";
 
-/** Color identificativo de cada combatiente (para render y HUD). */
-export const FIGHTER_COLORS = ["#7fb2ff", "#c45b7a"] as const;
+/** Etiquetas de combatiente por índice (P1/P2). El color lo da el personaje. */
 export const FIGHTER_LABELS = ["P1", "P2"] as const;
+
+/** Configuración de una partida: qué personajes y en qué escenario. */
+export interface MatchConfig {
+  characters: CharacterId[];
+  stage: StageId;
+}
 
 /**
  * Efecto visual de muerte: un RAYO estilo Smash que cae sobre el punto donde el
@@ -58,6 +59,10 @@ export class Fighter {
     readonly color: string,
     readonly label: string,
     startingLives: number,
+    /** Personaje que encarna este combatiente (para ataques futuros/render). */
+    readonly characterId: CharacterId,
+    /** ¿Es el saco de entrenamiento? */
+    readonly sandbag: boolean,
   ) {
     this.lives = startingLives;
   }
@@ -130,7 +135,12 @@ export class Fighter {
  */
 export class World {
   readonly mode: GameMode;
+  /** Geometría del escenario (isla / rejilla de entrenamiento). */
   readonly stage: StageKind;
+  /** Id del escenario elegido (para render de tema/fondo y para el replay). */
+  readonly stageId: StageId;
+  /** Personajes de cada combatiente (para render y el replay). */
+  readonly characters: CharacterId[];
   readonly fighters: Fighter[] = [];
 
   /** Plataformas fijas del nivel (isla + flotantes). */
@@ -170,32 +180,55 @@ export class World {
   readonly seed: number;
   private readonly rng: Rng;
 
-  constructor(mode: GameMode = "training", seed: number = randomSeed()) {
+  /**
+   * @param mode training/versus.
+   * @param seed semilla determinista (para replays idénticos).
+   * @param config personajes y escenario elegidos. Si falta, se usan valores
+   *   por defecto según el modo (azul vs rojo en isla neón; azul vs saco en
+   *   entrenamiento).
+   */
+  constructor(
+    mode: GameMode = "training",
+    seed: number = randomSeed(),
+    config?: Partial<MatchConfig>,
+  ) {
     this.mode = mode;
     this.seed = seed;
     this.rng = new Rng(seed);
     // Solo el 1vs1 tiene límite de tiempo; entrenamiento es ilimitado.
     this.timeLeft = mode === "versus" ? RULES.matchTimeLimit : Infinity;
-    // Entrenamiento usa el escenario de práctica; versus, la isla.
-    this.stage = mode === "training" ? "trainingGrid" : "island";
+
+    // Personajes: por defecto azul vs (rojo | saco según modo).
+    const defChars: CharacterId[] =
+      mode === "training" ? ["blue", "sandbag"] : ["blue", "red"];
+    this.characters = config?.characters ?? defChars;
+
+    // Escenario: por defecto training-grid en entrenamiento; isla neón en versus.
+    this.stageId = config?.stage ?? (mode === "training" ? "training" : "neonIsland");
+    this.stage = getStage(this.stageId).kind;
     this.buildStage();
 
     // Fighter 0: siempre el jugador humano principal.
+    const c0 = getCharacter(this.characters[0]);
     const p1 = new Player(RULES.respawnX - Player.halfWidth, RULES.respawnY);
     this.fighters.push(
-      new Fighter(0, p1, FIGHTER_COLORS[0], FIGHTER_LABELS[0], RULES.startingLives),
+      new Fighter(0, p1, c0.color, FIGHTER_LABELS[0], RULES.startingLives, c0.id, !!c0.sandbag),
     );
 
-    // Fighter 1: en versus es P2 humano; en entrenamiento es el dummy.
-    const startX = mode === "versus" ? 220 : 220;
+    // Fighter 1: en versus es P2 humano; en entrenamiento es el dummy/saco.
+    const c1 = getCharacter(this.characters[1]);
+    const startX = 220;
     const p2 = new Player(startX - Player.halfWidth, WORLD.groundY - 100);
+    const label1 = c1.sandbag ? "SACO" : FIGHTER_LABELS[1];
     this.fighters.push(
       new Fighter(
         1,
         p2,
-        FIGHTER_COLORS[1],
-        mode === "versus" ? FIGHTER_LABELS[1] : "DUMMY",
+        c1.color,
+        label1,
         mode === "versus" ? RULES.startingLives : Infinity,
+        c1.id,
+        !!c1.sandbag,
       ),
     );
   }
@@ -292,8 +325,8 @@ export class World {
       return;
     }
 
-    // Entrenamiento: el fighter 1 es el dummy.
-    if (this.mode === "training" && f.index === 1) {
+    // El saco de entrenamiento se controla con su propia lógica (no input).
+    if (f.sandbag) {
       this.updateDummy(f, dt, platforms);
     } else {
       f.player.fixedUpdate(input ?? this.dummyInput, platforms, dt);

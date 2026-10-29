@@ -34,8 +34,8 @@ interface ModeDef {
 const MODES: ModeDef[] = [
   {
     value: "versus",
-    label: "1vs1",
-    hint: "Dos jugadores en el mismo teclado. Se pierde al quedarte sin vidas; gana el último en pie.",
+    label: "Batalla",
+    hint: "Dos jugadores en el mismo teclado. Elige personajes y escenario; gana el último en pie.",
     playable: true,
     accent: "#ff6a8b",
   },

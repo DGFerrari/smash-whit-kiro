@@ -63,7 +63,10 @@ export class MenuBackground {
   private loadCurrent(): void {
     const data = MENU_REPLAYS[this.index % MENU_REPLAYS.length];
     this.player = new ReplayPlayer(data);
-    this.world = new World(data.mode, data.seed);
+    this.world = new World(data.mode, data.seed, {
+      characters: data.characters,
+      stage: data.stage,
+    });
     this.step = 0;
     this.phase = "in";
     this.fadeValue = 1; // arranca en negro y aparece (fade-in)

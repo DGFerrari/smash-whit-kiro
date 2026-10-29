@@ -234,6 +234,32 @@ export class Camera {
   get focusY(): number {
     return this.focus.y;
   }
+
+  /**
+   * Proyecta un punto de MUNDO 2D (x, y con Y hacia abajo) a coordenadas de
+   * PANTALLA en píxeles CSS, usando la cámara 3D. Devuelve también si el punto
+   * cae dentro del viewport. Lo usa el HUD para la flecha indicadora.
+   */
+  project(worldX: number, worldY: number): {
+    sx: number;
+    sy: number;
+    onScreen: boolean;
+  } {
+    // (x, -y, 0) en escena, proyectado por la cámara 3D a NDC [-1..1].
+    this.ndc.set(worldX, -worldY, 0).project(this.three);
+    const sx = (this.ndc.x * 0.5 + 0.5) * this.screenW;
+    const sy = (-this.ndc.y * 0.5 + 0.5) * this.screenH;
+    const onScreen =
+      this.ndc.x >= -1 &&
+      this.ndc.x <= 1 &&
+      this.ndc.y >= -1 &&
+      this.ndc.y <= 1 &&
+      this.ndc.z < 1;
+    return { sx, sy, onScreen };
+  }
+
+  /** Vector reutilizable para proyección (evita basura por frame). */
+  private readonly ndc = new THREE.Vector3();
 }
 
 function clamp(v: number, min: number, max: number): number {

@@ -191,7 +191,10 @@ export class ReplayScreen {
   /** Re-crea el mundo con la semilla/modo del replay (estado inicial). */
   private rebuildWorld(): void {
     if (!this.player) return;
-    this.world = new World(this.player.data.mode, this.player.data.seed);
+    this.world = new World(this.player.data.mode, this.player.data.seed, {
+      characters: this.player.data.characters,
+      stage: this.player.data.stage,
+    });
     this.camera.clearCinematic();
     this.camera.resize(this.renderer.cssWidth, this.renderer.cssHeight);
     this.camera.snapTo(this.world);

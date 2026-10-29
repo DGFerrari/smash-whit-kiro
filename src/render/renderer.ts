@@ -4,6 +4,7 @@ import type { Player } from "../entities/player.ts";
 import type { Platform } from "../physics/platform.ts";
 import { Camera } from "./camera.ts";
 import type { World, DeathEffect } from "../game/world.ts";
+import { getStage, type StageTheme } from "../game/stages.ts";
 import { debug } from "../debug/debugState.ts";
 import { drawPercentHud, type PercentEntry } from "../ui/percentHud.ts";
 import { Background3D } from "./background.ts";
@@ -115,13 +116,12 @@ export class Renderer {
     const h = this.cssHeight;
     this.updateFps();
 
-    // Escenario + fondo según el modo (se construye una vez por mundo).
+    // Escenario + fondo según el ESCENARIO elegido (tema + backdrop).
+    const stageDef = getStage(world.stageId);
     this.ensureStage(world);
-    this.background.setMode(world.stage);
+    this.background.setBackdrop(stageDef.backdrop);
     this.background.update(camera);
-    this.scene.background = new THREE.Color(
-      world.stage === "trainingGrid" ? 0xf3f5f8 : 0x0a0f24,
-    );
+    this.scene.background = new THREE.Color(stageDef.theme.background);
 
     // Reconstruimos los objetos dinámicos (combatientes, ataques, efectos).
     this.rebuildDynamic(world, alpha);
@@ -153,10 +153,130 @@ export class Renderer {
       }
     }
 
+    // Flechas indicadoras de cada jugador (siempre por encima de todo). No se
+    // dibujan en el fondo del menú (hideHud).
+    if (!hideHud) this.drawFighterIndicators(this.hud, world, camera, alpha, w, h);
+
     // Stats/FPS son herramientas de dev: respetan sus propios toggles aunque la
     // UI de juego esté oculta, salvo que el llamante fuerce hideHud (menú).
     if (!hideHud && debug.showStats) this.drawStats(this.hud, world.player, camera);
     if (!hideHud && debug.showFps) this.drawFps(this.hud);
+  }
+
+  /**
+   * Flecha/indicador por jugador, dibujada en el HUD (siempre por encima):
+   *  - Si el jugador está EN pantalla: un pequeño triángulo sobre su cabeza con
+   *    su color (para localizarlo aunque algo lo tape).
+   *  - Si está FUERA de pantalla: una flecha pegada al borde, apuntando hacia
+   *    él, para saber por dónde se fue.
+   */
+  private drawFighterIndicators(
+    ctx: CanvasRenderingContext2D,
+    world: World,
+    camera: Camera,
+    alpha: number,
+    w: number,
+    h: number,
+  ): void {
+    const margin = 36;
+    for (const f of world.fighters) {
+      if (!f.alive || f.isDead) continue;
+      const p = f.player;
+      const wx = lerp(p.prevPos.x, p.pos.x, alpha) + p.width / 2;
+      const wyHead = lerp(p.prevPos.y, p.pos.y, alpha) - 6; // justo sobre la cabeza
+      const wyCenter = lerp(p.prevPos.y, p.pos.y, alpha) + p.height / 2;
+
+      const head = camera.project(wx, wyHead);
+      if (head.onScreen) {
+        this.drawHeadMarker(ctx, head.sx, head.sy, f.color);
+        continue;
+      }
+
+      // Fuera de pantalla: proyectamos el centro y, aunque caiga fuera, usamos
+      // su dirección respecto al centro de pantalla para clavar la flecha al
+      // borde apuntando hacia el jugador.
+      const c = camera.project(wx, wyCenter);
+      const cxp = w / 2;
+      const cyp = h / 2;
+      let dx = c.sx - cxp;
+      let dy = c.sy - cyp;
+      // Si el punto quedó "detrás" de la cámara, invertimos para que apunte bien.
+      if (c.sy === 0 && c.sx === 0) {
+        dx = 0;
+        dy = -1;
+      }
+      const len = Math.hypot(dx, dy) || 1;
+      dx /= len;
+      dy /= len;
+      // Clamp a un rectángulo interior (con margen) en la dirección (dx,dy).
+      const halfW = w / 2 - margin;
+      const halfH = h / 2 - margin;
+      const scale = Math.min(
+        halfW / Math.max(1e-3, Math.abs(dx)),
+        halfH / Math.max(1e-3, Math.abs(dy)),
+      );
+      const ex = cxp + dx * scale;
+      const ey = cyp + dy * scale;
+      this.drawEdgeArrow(ctx, ex, ey, Math.atan2(dy, dx), f.color, f.label);
+    }
+  }
+
+  /** Triángulo pequeño sobre la cabeza del jugador (en pantalla). */
+  private drawHeadMarker(
+    ctx: CanvasRenderingContext2D,
+    sx: number,
+    sy: number,
+    color: string,
+  ): void {
+    const size = 11;
+    const y = sy - 14;
+    ctx.save();
+    ctx.globalAlpha = 0.9;
+    ctx.fillStyle = color;
+    ctx.strokeStyle = "rgba(0,0,0,0.5)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(sx, y + size); // punta hacia abajo
+    ctx.lineTo(sx - size, y - size);
+    ctx.lineTo(sx + size, y - size);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  /** Flecha pegada al borde apuntando hacia un jugador fuera de pantalla. */
+  private drawEdgeArrow(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    angle: number,
+    color: string,
+    label: string,
+  ): void {
+    ctx.save();
+    ctx.translate(x, y);
+    // Etiqueta del jugador junto a la flecha (sin rotar).
+    ctx.fillStyle = color;
+    ctx.font = "700 13px system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(label, -Math.cos(angle) * 26, -Math.sin(angle) * 26);
+    // Flecha (triángulo) apuntando en 'angle'.
+    ctx.rotate(angle);
+    ctx.globalAlpha = 0.95;
+    ctx.fillStyle = color;
+    ctx.strokeStyle = "rgba(0,0,0,0.5)";
+    ctx.lineWidth = 2;
+    const s = 16;
+    ctx.beginPath();
+    ctx.moveTo(s, 0);
+    ctx.lineTo(-s, -s * 0.7);
+    ctx.lineTo(-s, s * 0.7);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
   }
 
   /** Reloj mm:ss arriba centrado; se pone rojo en los últimos 10 s. */
@@ -212,20 +332,24 @@ export class Renderer {
     this.stageBuiltFor = world;
     this.clearGroup(this.stageGroup);
 
-    for (const p of world.platforms) this.addPlatformMesh(p);
+    const theme = getStage(world.stageId).theme;
+    for (const p of world.platforms) this.addPlatformMesh(p, theme);
 
     if (world.stage === "trainingGrid") this.addTrainingGrid();
   }
 
-  private addPlatformMesh(p: Platform): void {
+  private addPlatformMesh(p: Platform, theme: StageTheme): void {
     const { x, y, w, h } = p.box;
     const depth = p.oneWay ? DEPTH.platformOneWay : DEPTH.platformSolid;
     const cx = x + w / 2;
+    // Desplazamos la plataforma HACIA ATRÁS en Z para que su cara frontal no
+    // quede delante del jugador (que vive en Z=0) al trepar por las paredes.
+    const zBack = -DEPTH.platformBack;
 
     if (p.oneWay) {
       // Plataforma atravesable: una sola caja (sin tapa superpuesta).
       const mat = this.surfaceMaterial({
-        color: 0x7fb2ff,
+        color: theme.oneWay,
         texture: TEXTURES.oneWay,
         surfaceW: w,
         surfaceH: h,
@@ -234,7 +358,7 @@ export class Renderer {
       });
       const mesh = new THREE.Mesh(this.boxGeo, mat);
       mesh.scale.set(w, h, depth);
-      mesh.position.set(cx, -(y + h / 2), 0);
+      mesh.position.set(cx, -(y + h / 2), zBack);
       this.stageGroup.add(mesh);
       return;
     }
@@ -247,7 +371,7 @@ export class Renderer {
 
     // Cuerpo (laterales).
     const bodyMat = this.surfaceMaterial({
-      color: 0x3a4a66,
+      color: theme.solidSide,
       texture: TEXTURES.solidSide,
       surfaceW: w,
       surfaceH: bodyH,
@@ -256,23 +380,21 @@ export class Renderer {
     });
     const body = new THREE.Mesh(this.boxGeo, bodyMat);
     body.scale.set(w, bodyH, depth);
-    // El cuerpo empieza justo DEBAJO de la tapa.
-    body.position.set(cx, -(y + capH + bodyH / 2), 0);
+    body.position.set(cx, -(y + capH + bodyH / 2), zBack);
     this.stageGroup.add(body);
 
     // Tapa superior (donde te apoyas). Ocupa solo la franja superior.
     const capMat = this.surfaceMaterial({
-      color: 0x5b7fa6,
+      color: theme.solidTop,
       texture: TEXTURES.solidTop,
       surfaceW: w,
-      surfaceH: depth, // la cara superior mira a w x depth
+      surfaceH: depth,
       roughness: 0.9,
       metalness: 0.05,
     });
     const cap = new THREE.Mesh(this.boxGeo, capMat);
-    // Un pelín MÁS ancha en Z para que no coincida el borde con el cuerpo.
     cap.scale.set(w, capH, depth + 0.5);
-    cap.position.set(cx, -(y + capH / 2), 0);
+    cap.position.set(cx, -(y + capH / 2), zBack);
     this.stageGroup.add(cap);
   }
 

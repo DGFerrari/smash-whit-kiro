@@ -1,5 +1,6 @@
 import "./style.css";
-import { World, FIGHTER_COLORS, FIGHTER_LABELS, type GameMode } from "./game/world.ts";
+import { World, type GameMode, type MatchConfig } from "./game/world.ts";
+import { CharacterSelect, StageSelect } from "./ui/selectScreens.ts";
 import { Renderer } from "./render/renderer.ts";
 import { Camera } from "./render/camera.ts";
 import { GameLoop } from "./game/loop.ts";
@@ -42,20 +43,52 @@ class App {
   /** Replay grabado de la última partida (para ofrecer descargarlo al acabar). */
   private lastReplay: ReplayData | null = null;
 
+  /** Config elegida de la partida en curso (para grabación y revancha). */
+  private pendingMode: GameMode = "versus";
+  private pendingConfig: MatchConfig = {
+    characters: ["blue", "red"],
+    stage: "neonIsland",
+  };
+
   private readonly loading = new LoadingScreen();
   private readonly countdown = new Countdown();
   private readonly koFlash = new KOFlash();
 
   private readonly mainMenu = new MainMenu({
-    onPlay: (mode) => void this.startMatch(mode),
+    onPlay: (mode) => this.onPlay(mode),
     onLoadReplay: (file) => void this.openReplay(file),
+  });
+
+  // Selección de personajes (batalla).
+  private readonly charSelect = new CharacterSelect({
+    onBack: () => {
+      this.charSelect.hide();
+      this.showMenu();
+    },
+    onConfirm: (characters) => {
+      this.pendingConfig = { ...this.pendingConfig, characters };
+      this.charSelect.hide();
+      this.stageSelect.show();
+    },
+  });
+
+  // Selección de escenario (batalla).
+  private readonly stageSelect = new StageSelect({
+    onBack: () => {
+      this.stageSelect.hide();
+      this.charSelect.show();
+    },
+    onConfirm: (stage) => {
+      this.pendingConfig = { ...this.pendingConfig, stage };
+      this.stageSelect.hide();
+      void this.startMatch("versus", this.pendingConfig);
+    },
   });
 
   private readonly matchOver = new MatchOverScreen({
     onRematch: () => {
-      const mode = this.world?.mode ?? "versus";
       this.matchOver.hide();
-      void this.startMatch(mode);
+      void this.startMatch(this.pendingMode, this.pendingConfig);
     },
     onMenu: () => {
       this.matchOver.hide();
@@ -76,6 +109,25 @@ class App {
 
   start(): void {
     this.showMenu();
+  }
+
+  /**
+   * El menú pidió jugar un modo. Batalla pasa por selección de personajes y
+   * escenario; entrenamiento arranca directo con su config por defecto.
+   */
+  private onPlay(mode: GameMode): void {
+    if (mode === "versus") {
+      // Abrimos la selección sobre el menú (el fondo de replays sigue detrás).
+      this.mainMenu.hide();
+      this.charSelect.show();
+    } else {
+      // Entrenamiento: jugador azul contra el saco en el escenario de práctica.
+      const config: MatchConfig = {
+        characters: ["blue", "sandbag"],
+        stage: "training",
+      };
+      void this.startMatch("training", config);
+    }
   }
 
   /** Muestra el menú y arranca el fondo de replays en bucle. */
@@ -106,23 +158,29 @@ class App {
     this.busy = false;
   }
 
-  private async startMatch(mode: GameMode): Promise<void> {
+  private async startMatch(mode: GameMode, config: MatchConfig): Promise<void> {
     if (this.busy) return;
     this.busy = true;
 
-    // Iris se cierra tapando el menú.
+    // Recordamos la config para la grabación y la revancha.
+    this.pendingMode = mode;
+    this.pendingConfig = config;
+
+    // Iris se cierra tapando el menú/selección.
     await this.loading.cover();
     this.hideMenu();
+    this.charSelect.hide();
+    this.stageSelect.hide();
     this.teardownMatch();
     // Con la pantalla tapada, el anillo de carga se llena.
     await this.loading.fill(600);
 
-    const world = new World(mode);
+    const world = new World(mode, undefined, config);
     this.world = world;
     this.lastReplay = null;
 
     // Siempre grabamos (para poder ofrecer la descarga del replay al terminar).
-    this.recorder = new ReplayRecorder(mode, world.seed);
+    this.recorder = new ReplayRecorder(mode, world.seed, config.characters, config.stage);
 
     camera.resize(renderer.cssWidth, renderer.cssHeight);
     camera.setPaused(false);
@@ -159,16 +217,10 @@ class App {
   private onGameOver(winnerIndex: number): void {
     const world = this.world;
     const isDraw = world?.draw ?? winnerIndex < 0;
-    const label = isDraw
-      ? "Empate"
-      : winnerIndex >= 0
-        ? FIGHTER_LABELS[winnerIndex]
-        : "nadie";
-    const color = isDraw
-      ? "#f1f4fa"
-      : winnerIndex >= 0
-        ? FIGHTER_COLORS[winnerIndex]
-        : "#f1f4fa";
+    const winner =
+      winnerIndex >= 0 ? world?.fighters[winnerIndex] : undefined;
+    const label = isDraw ? "Empate" : winner?.label ?? "nadie";
+    const color = isDraw ? "#f1f4fa" : winner?.color ?? "#f1f4fa";
 
     // Recogemos las calificaciones ANTES de destruir el mundo.
     const results: FighterResult[] = (world?.fighters ?? []).map((f) => ({

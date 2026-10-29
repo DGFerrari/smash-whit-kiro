@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import type { Camera } from "./camera.ts";
-import type { StageKind } from "../game/world.ts";
+import type { StageBackdrop } from "../game/stages.ts";
 
 /**
  * Fondo de ciudad neón por CAPAS en 3D. En vez de simular el parallax a mano,
@@ -32,10 +32,18 @@ const LAYERS: LayerDef[] = [
   { z: -800, base: "#202a4d", neon: "#ff3d8b", heightFrac: 0.9, seed: 83 },
 ];
 
+/** Tinte por backdrop para diferenciar visualmente las variantes de escenario. */
+const BACKDROP_TINT: Record<StageBackdrop, number> = {
+  neonCity: 0xffffff, // sin tinte (colores originales)
+  sunset: 0xffb27a, // cálido anaranjado
+  void: 0x5fe8c8, // frío verde-azulado tenue
+  grid: 0xffffff, // no se usa (grid oculta el fondo)
+};
+
 export class Background3D {
   private readonly group = new THREE.Group();
   private readonly planes: THREE.Mesh[] = [];
-  private mode: StageKind = "island";
+  private backdrop: StageBackdrop = "neonCity";
 
   constructor(private readonly scene: THREE.Scene) {
     for (const def of LAYERS) {
@@ -46,9 +54,16 @@ export class Background3D {
     this.scene.add(this.group);
   }
 
-  setMode(mode: StageKind): void {
-    this.mode = mode;
-    this.group.visible = mode !== "trainingGrid";
+  /** Elige el estilo de fondo. "grid" lo oculta; el resto tiñe las capas. */
+  setBackdrop(backdrop: StageBackdrop): void {
+    this.backdrop = backdrop;
+    const visible = backdrop !== "grid";
+    this.group.visible = visible;
+    const tint = BACKDROP_TINT[backdrop];
+    for (const plane of this.planes) {
+      const mat = plane.material as THREE.MeshBasicMaterial;
+      mat.color.setHex(tint);
+    }
   }
 
   /**
@@ -57,7 +72,7 @@ export class Background3D {
    * distancia para llenar el encuadre.
    */
   update(camera: Camera): void {
-    if (this.mode === "trainingGrid") return;
+    if (this.backdrop === "grid") return;
     const fx = camera.focusX;
     const fy = -camera.focusY; // a coords de escena
     for (const plane of this.planes) {
