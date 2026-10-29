@@ -142,6 +142,33 @@ export const DEPTH = {
   attack: 30, // grosor de la hitbox de ataque
 } as const;
 
+/**
+ * Texturas opcionales de las superficies 3D. Cada entrada es `null` (usa solo
+ * el color base) o una URL con tiling opcional. Coloca las imágenes en
+ * `public/textures/` y pon aquí la ruta (p. ej. "/textures/suelo.png").
+ *
+ * `repeat` es cuántas veces se repite la imagen a lo largo de la superficie;
+ * para suelos grandes conviene un tiling alto (p. ej. [12, 2]) para que no se
+ * vea estirada. Si la imagen no existe, la superficie usa su color base.
+ */
+export interface SurfaceTexture {
+  url: string;
+  repeat?: [number, number];
+  pixelated?: boolean;
+}
+
+export const TEXTURES: {
+  solidTop: SurfaceTexture | null; // cara superior de la isla (donde pisas)
+  solidSide: SurfaceTexture | null; // cuerpo/laterales de la isla
+  oneWay: SurfaceTexture | null; // plataformas atravesables
+  fighters: Array<SurfaceTexture | null>; // una por combatiente (P1, P2)
+} = {
+  solidTop: null,
+  solidSide: null,
+  oneWay: null,
+  fighters: [null, null],
+};
+
 /** Simulación con timestep fijo. 60 Hz es el estándar para un fighter. */
 export const FIXED_HZ = 60;
 export const FIXED_DT = 1 / FIXED_HZ; // segundos por paso de física

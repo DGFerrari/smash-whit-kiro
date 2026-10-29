@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { BLAST_ZONE, DEPTH, WORLD } from "../config.ts";
+import { BLAST_ZONE, DEPTH, TEXTURES, WORLD, type SurfaceTexture } from "../config.ts";
 import type { Player } from "../entities/player.ts";
 import type { Platform } from "../physics/platform.ts";
 import { Camera } from "./camera.ts";
@@ -7,6 +7,7 @@ import type { World, DeathEffect } from "../game/world.ts";
 import { debug } from "../debug/debugState.ts";
 import { drawPercentHud, type PercentEntry } from "../ui/percentHud.ts";
 import { Background3D } from "./background.ts";
+import { getTexture } from "./textures.ts";
 
 /**
  * Renderer 3D (Three.js / WebGL).
@@ -162,27 +163,99 @@ export class Renderer {
   private addPlatformMesh(p: Platform): void {
     const { x, y, w, h } = p.box;
     const depth = p.oneWay ? DEPTH.platformOneWay : DEPTH.platformSolid;
-    const color = p.oneWay ? 0x7fb2ff : 0x3a4a66;
-    const mat = new THREE.MeshStandardMaterial({
-      color,
-      transparent: p.oneWay,
-      opacity: p.oneWay ? 0.55 : 1,
-      roughness: 0.8,
+    const cx = x + w / 2;
+
+    if (p.oneWay) {
+      // Plataforma atravesable: una sola caja (sin tapa superpuesta).
+      const mat = this.surfaceMaterial({
+        color: 0x7fb2ff,
+        texture: TEXTURES.oneWay,
+        surfaceW: w,
+        surfaceH: h,
+        transparent: true,
+        opacity: 0.55,
+      });
+      const mesh = new THREE.Mesh(this.boxGeo, mat);
+      mesh.scale.set(w, h, depth);
+      mesh.position.set(cx, -(y + h / 2), 0);
+      this.stageGroup.add(mesh);
+      return;
+    }
+
+    // Isla sólida: dividimos en CUERPO y TAPA, SIN solaparse (cada una ocupa su
+    // franja de altura). Antes la tapa se dibujaba encima del cuerpo casi en el
+    // mismo plano y eso causaba el z-fighting (franjas parpadeantes).
+    const capH = 8; // alto de la tapa superior (hierba/borde donde pisas)
+    const bodyH = h - capH;
+
+    // Cuerpo (laterales).
+    const bodyMat = this.surfaceMaterial({
+      color: 0x3a4a66,
+      texture: TEXTURES.solidSide,
+      surfaceW: w,
+      surfaceH: bodyH,
+      roughness: 0.85,
       metalness: 0.1,
     });
-    const mesh = new THREE.Mesh(this.boxGeo, mat);
-    mesh.scale.set(w, h, depth);
-    mesh.position.set(x + w / 2, -(y + h / 2), 0);
-    this.stageGroup.add(mesh);
+    const body = new THREE.Mesh(this.boxGeo, bodyMat);
+    body.scale.set(w, bodyH, depth);
+    // El cuerpo empieza justo DEBAJO de la tapa.
+    body.position.set(cx, -(y + capH + bodyH / 2), 0);
+    this.stageGroup.add(body);
 
-    // Borde superior de color (donde te apoyas), como una fina losa encima.
-    const topMat = new THREE.MeshStandardMaterial({
-      color: p.oneWay ? 0x7fb2ff : 0x5b7fa6,
+    // Tapa superior (donde te apoyas). Ocupa solo la franja superior.
+    const capMat = this.surfaceMaterial({
+      color: 0x5b7fa6,
+      texture: TEXTURES.solidTop,
+      surfaceW: w,
+      surfaceH: depth, // la cara superior mira a w x depth
+      roughness: 0.9,
+      metalness: 0.05,
     });
-    const top = new THREE.Mesh(this.boxGeo, topMat);
-    top.scale.set(w, 6, depth + 2);
-    top.position.set(x + w / 2, -(y + 3), 0);
-    this.stageGroup.add(top);
+    const cap = new THREE.Mesh(this.boxGeo, capMat);
+    // Un pelín MÁS ancha en Z para que no coincida el borde con el cuerpo.
+    cap.scale.set(w, capH, depth + 0.5);
+    cap.position.set(cx, -(y + capH / 2), 0);
+    this.stageGroup.add(cap);
+  }
+
+  /**
+   * Crea un material de superficie con color base y, si se indica, textura.
+   * Añade polygonOffset como red de seguridad anti z-fighting entre superficies
+   * contiguas (cuerpo/tapa), y configura el tiling de la textura.
+   */
+  private surfaceMaterial(opts: {
+    color: number;
+    texture: SurfaceTexture | null;
+    surfaceW: number;
+    surfaceH: number;
+    roughness?: number;
+    metalness?: number;
+    transparent?: boolean;
+    opacity?: number;
+  }): THREE.MeshStandardMaterial {
+    const mat = new THREE.MeshStandardMaterial({
+      color: opts.color,
+      roughness: opts.roughness ?? 0.8,
+      metalness: opts.metalness ?? 0.1,
+      transparent: opts.transparent ?? false,
+      opacity: opts.opacity ?? 1,
+      // Red de seguridad: empuja ligeramente la profundidad de este polígono.
+      polygonOffset: true,
+      polygonOffsetFactor: 1,
+      polygonOffsetUnits: 1,
+    });
+    if (opts.texture) {
+      // Si no se especifica repeat, derivamos un tiling de la textura a partir
+      // del tamaño de la superficie para que no salga estirada.
+      const repeat =
+        opts.texture.repeat ??
+        ([Math.max(1, Math.round(opts.surfaceW / 128)), Math.max(1, Math.round(opts.surfaceH / 128))] as [number, number]);
+      mat.map = getTexture({ ...opts.texture, repeat });
+      // Con textura, el color base multiplica; lo dejamos blanco para no teñir.
+      mat.color.set(0xffffff);
+    }
+    return mat;
   }
 
   /**
@@ -267,7 +340,7 @@ export class Renderer {
     // Combatientes vivos + ataques + escudos.
     for (const f of world.fighters) {
       if (!f.alive || f.isDead) continue;
-      this.addFighter(f.player, alpha, f.color);
+      this.addFighter(f.player, alpha, f.color, f.index);
       this.addShield(f.player, alpha);
       this.addAttack(f.player);
     }
@@ -276,7 +349,12 @@ export class Renderer {
     for (const e of world.deathEffects) this.addDeathEffect(e);
   }
 
-  private addFighter(player: Player, alpha: number, baseColor: string): void {
+  private addFighter(
+    player: Player,
+    alpha: number,
+    baseColor: string,
+    index: number,
+  ): void {
     const rx = lerp(player.prevPos.x, player.pos.x, alpha);
     const ry = lerp(player.prevPos.y, player.pos.y, alpha);
     const cx = rx + player.width / 2;
@@ -308,6 +386,15 @@ export class Renderer {
       transparent: player.dodging,
       opacity: player.dodging ? 0.55 : 1,
     });
+    // Textura opcional del combatiente (solo cuando no hay tinte de estado que
+    // deba dominar: furia/flash/esquiva usan color plano para leerse bien).
+    const tex = TEXTURES.fighters[index];
+    const plainState =
+      !player.furyActive && !player.dodging && player.hitFlash <= 0;
+    if (tex && plainState) {
+      mat.map = getTexture(tex);
+      mat.color.set(0xffffff);
+    }
     const mesh = new THREE.Mesh(this.boxGeo, mat);
     mesh.scale.set(player.width, player.height, DEPTH.fighter);
     mesh.position.set(cx, cy, 0);
