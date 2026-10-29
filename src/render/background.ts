@@ -1,186 +1,146 @@
+import * as THREE from "three";
 import type { Camera } from "./camera.ts";
+import type { StageKind } from "../game/world.ts";
 
 /**
- * Fondo de ciudad neón por CAPAS con parallax, para dar sensación de 3D al
- * mover la cámara. Cada capa se dibuja en espacio de PANTALLA y se desplaza una
- * fracción del movimiento de la cámara: las capas lejanas se mueven poco (factor
- * bajo) y las cercanas mucho (factor alto). Es puramente visual.
+ * Fondo de ciudad neón por CAPAS en 3D. En vez de simular el parallax a mano,
+ * colocamos planos con siluetas de edificios a distintas PROFUNDIDADES (Z) y
+ * dejamos que la perspectiva de la cámara genere el parallax automáticamente:
+ * las capas lejanas (Z muy negativa) se mueven poco; las cercanas, más.
  *
- * Las capas son procedurales (siluetas de edificios generadas con una semilla
- * estable), así no necesitamos assets. Colores apagados para "no chillar".
+ * Cada capa es un plano grande con una textura generada (canvas) de siluetas y
+ * ventanas de neón. Los planos siguen a la cámara en X/Y (para cubrir siempre
+ * la vista) pero mantienen su Z, de modo que el desplazamiento relativo entre
+ * capas da el efecto 3D.
+ *
+ * En el modo "trainingGrid" el fondo se oculta (la escena usa un color plano
+ * blanco y la rejilla la dibuja el renderer).
  */
 
-interface Building {
-  x: number; // posición en el "mundo" de la capa (px)
-  w: number;
-  h: number;
-  /** Ventanas encendidas: columnas x filas con un patrón estable. */
-  litSeed: number;
+interface LayerDef {
+  z: number; // profundidad (más negativo = más lejos)
+  base: string; // color de las siluetas
+  neon: string; // color de ventanas/bordes
+  heightFrac: number; // altura máx de edificios respecto a la textura
+  seed: number;
 }
 
-interface Layer {
-  /** Fracción del desplazamiento de cámara (0 = fijo, 1 = igual que el mundo). */
-  parallax: number;
-  /** Color base de las siluetas de esta capa. */
-  color: string;
-  /** Color del neón (bordes/ventanas) de esta capa. */
-  neon: string;
-  /** Altura base de los edificios (fracción de la pantalla desde abajo). */
-  baseHeight: number;
-  /** Separación horizontal del patrón que se repite (px). */
-  tile: number;
-  buildings: Building[];
-}
+const LAYERS: LayerDef[] = [
+  { z: -2600, base: "#121a33", neon: "#26407a", heightFrac: 0.45, seed: 11 },
+  { z: -1900, base: "#16203f", neon: "#2f5bd0", heightFrac: 0.6, seed: 29 },
+  { z: -1300, base: "#1b2650", neon: "#8a3df0", heightFrac: 0.75, seed: 47 },
+  { z: -800, base: "#202a4d", neon: "#ff3d8b", heightFrac: 0.9, seed: 83 },
+];
 
-export class Background {
-  private readonly layers: Layer[];
+export class Background3D {
+  private readonly group = new THREE.Group();
+  private readonly planes: THREE.Mesh[] = [];
+  private mode: StageKind = "island";
 
-  constructor() {
-    // De lejos (arriba, tenue) a cerca (abajo, saturado).
-    this.layers = [
-      this.makeLayer(0.08, "#121a33", "#26407a", 0.28, 520, 11),
-      this.makeLayer(0.16, "#16203f", "#2f5bd0", 0.4, 460, 29),
-      this.makeLayer(0.3, "#1b2650", "#8a3df0", 0.55, 400, 47),
-      this.makeLayer(0.5, "#202a4d", "#ff3d8b", 0.7, 360, 83),
-    ];
+  constructor(private readonly scene: THREE.Scene) {
+    for (const def of LAYERS) {
+      const plane = this.buildLayer(def);
+      this.planes.push(plane);
+      this.group.add(plane);
+    }
+    this.scene.add(this.group);
   }
 
-  private makeLayer(
-    parallax: number,
-    color: string,
-    neon: string,
-    baseHeight: number,
-    tile: number,
-    seed: number,
-  ): Layer {
-    // Generamos una tira ancha de edificios que luego repetimos (tiling).
-    const buildings: Building[] = [];
+  setMode(mode: StageKind): void {
+    this.mode = mode;
+    this.group.visible = mode !== "trainingGrid";
+  }
+
+  /**
+   * Coloca las capas centradas en la X/Y de la cámara (para cubrir la vista),
+   * manteniendo su Z. El tamaño de cada plano es grande y proporcional a su
+   * distancia para llenar el encuadre.
+   */
+  update(camera: Camera): void {
+    if (this.mode === "trainingGrid") return;
+    const fx = camera.focusX;
+    const fy = -camera.focusY; // a coords de escena
+    for (const plane of this.planes) {
+      plane.position.x = fx;
+      plane.position.y = fy;
+    }
+  }
+
+  private buildLayer(def: LayerDef): THREE.Mesh {
+    const tex = this.makeTexture(def);
+    // El plano se dimensiona según su distancia para cubrir sobradamente la
+    // vista; cuanto más lejos, más grande para no quedarse corto.
+    const dist = Math.abs(def.z);
+    const w = dist * 3.2;
+    const h = dist * 1.9;
+    const geo = new THREE.PlaneGeometry(w, h);
+    const mat = new THREE.MeshBasicMaterial({
+      map: tex,
+      transparent: true,
+      depthWrite: false,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.z = def.z;
+    mesh.renderOrder = -10; // detrás de todo
+    return mesh;
+  }
+
+  /** Genera la textura de una capa (siluetas de edificios + ventanas neón). */
+  private makeTexture(def: LayerDef): THREE.CanvasTexture {
+    const W = 1024;
+    const H = 512;
+    const canvas = document.createElement("canvas");
+    canvas.width = W;
+    canvas.height = H;
+    const ctx = canvas.getContext("2d")!;
+
+    // Cielo con un leve degradado (transparente arriba para fundir con la
+    // escena; el color de fondo lo pone la escena).
+    const sky = ctx.createLinearGradient(0, 0, 0, H);
+    sky.addColorStop(0, "rgba(10,15,36,0)");
+    sky.addColorStop(1, "rgba(20,14,43,0.4)");
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, W, H);
+
+    // PRNG estable.
+    let s = def.seed;
+    const rand = (): number => {
+      s = (s * 1103515245 + 12345) & 0x7fffffff;
+      return s / 0x7fffffff;
+    };
+
+    // Edificios desde la base (abajo) hacia arriba.
     let x = 0;
-    const span = tile;
-    let s = seed;
-    const rand = (): number => {
-      // PRNG simple y estable (LCG) para siluetas reproducibles.
-      s = (s * 1103515245 + 12345) & 0x7fffffff;
-      return s / 0x7fffffff;
-    };
-    while (x < span) {
-      const w = 40 + rand() * 90;
-      const h = 60 + rand() * 220;
-      buildings.push({ x, w, h, litSeed: Math.floor(rand() * 10000) });
-      x += w + 10 + rand() * 40;
-    }
-    return { parallax, color, neon, baseHeight, tile: x, buildings };
-  }
+    while (x < W) {
+      const bw = 40 + rand() * 100;
+      const bh = (0.25 + rand() * def.heightFrac) * H;
+      const top = H - bh;
 
-  /** Dibuja el cielo y todas las capas de edificios con parallax. */
-  draw(ctx: CanvasRenderingContext2D, camera: Camera, w: number, h: number): void {
-    this.drawSky(ctx, w, h);
+      ctx.fillStyle = def.base;
+      ctx.fillRect(x, top, bw, bh);
+      ctx.fillStyle = def.neon;
+      ctx.globalAlpha = 0.6;
+      ctx.fillRect(x, top, bw, 3);
+      ctx.globalAlpha = 1;
 
-    for (const layer of this.layers) {
-      this.drawLayer(ctx, layer, camera, w, h);
-    }
-
-    // Veladura inferior para fundir el fondo con la zona de juego.
-    const grad = ctx.createLinearGradient(0, h * 0.55, 0, h);
-    grad.addColorStop(0, "rgba(6,10,20,0)");
-    grad.addColorStop(1, "rgba(6,10,20,0.75)");
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, h * 0.55, w, h * 0.45);
-  }
-
-  private drawSky(ctx: CanvasRenderingContext2D, w: number, h: number): void {
-    const grad = ctx.createLinearGradient(0, 0, 0, h);
-    grad.addColorStop(0, "#0a0f24");
-    grad.addColorStop(0.5, "#141033");
-    grad.addColorStop(1, "#1a0e2b");
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, w, h);
-
-    // Un resplandor suave de ciudad en el horizonte.
-    const glow = ctx.createRadialGradient(
-      w * 0.5,
-      h * 0.72,
-      0,
-      w * 0.5,
-      h * 0.72,
-      w * 0.6,
-    );
-    glow.addColorStop(0, "rgba(120, 60, 180, 0.18)");
-    glow.addColorStop(1, "rgba(120, 60, 180, 0)");
-    ctx.fillStyle = glow;
-    ctx.fillRect(0, 0, w, h);
-  }
-
-  private drawLayer(
-    ctx: CanvasRenderingContext2D,
-    layer: Layer,
-    camera: Camera,
-    w: number,
-    h: number,
-  ): void {
-    // Desplazamiento de parallax a partir del foco de la cámara. Dividimos para
-    // convertir el movimiento de mundo en un desplazamiento suave de pantalla.
-    const offX = -camera.focusX * layer.parallax * 0.5;
-    // Un poco de parallax vertical también (más sutil).
-    const offY = (camera.focusY - 200) * layer.parallax * 0.12;
-
-    const baseY = h - h * (layer.baseHeight * 0.5) + offY;
-
-    ctx.save();
-    // Repetimos el patrón de edificios para cubrir toda la pantalla.
-    const tile = layer.tile;
-    // Normalizamos el offset al rango del tile para no dibujar de más.
-    let startX = (offX % tile) - tile;
-
-    for (let tx = startX; tx < w + tile; tx += tile) {
-      for (const b of layer.buildings) {
-        const bx = tx + b.x;
-        if (bx + b.w < 0 || bx > w) continue;
-        this.drawBuilding(ctx, layer, b, bx, baseY, h);
-      }
-    }
-    ctx.restore();
-  }
-
-  private drawBuilding(
-    ctx: CanvasRenderingContext2D,
-    layer: Layer,
-    b: Building,
-    bx: number,
-    baseY: number,
-    h: number,
-  ): void {
-    const top = baseY - b.h;
-
-    // Silueta.
-    ctx.fillStyle = layer.color;
-    ctx.fillRect(bx, top, b.w, h - top);
-
-    // Borde neón superior.
-    ctx.fillStyle = layer.neon;
-    ctx.globalAlpha = 0.55;
-    ctx.fillRect(bx, top, b.w, 2);
-    ctx.globalAlpha = 1;
-
-    // Ventanas encendidas (patrón estable por semilla).
-    const cols = Math.max(1, Math.floor(b.w / 12));
-    const rows = Math.max(1, Math.floor(b.h / 16));
-    let s = b.litSeed;
-    const rand = (): number => {
-      s = (s * 1103515245 + 12345) & 0x7fffffff;
-      return s / 0x7fffffff;
-    };
-    ctx.fillStyle = layer.neon;
-    for (let c = 0; c < cols; c++) {
-      for (let r = 0; r < rows; r++) {
-        if (rand() > 0.72) {
-          const wx = bx + 4 + c * 12;
-          const wy = top + 6 + r * 16;
-          ctx.globalAlpha = 0.35 + rand() * 0.4;
-          ctx.fillRect(wx, wy, 5, 7);
+      // Ventanas.
+      const cols = Math.max(1, Math.floor(bw / 14));
+      const rows = Math.max(1, Math.floor(bh / 18));
+      ctx.fillStyle = def.neon;
+      for (let c = 0; c < cols; c++) {
+        for (let r = 0; r < rows; r++) {
+          if (rand() > 0.74) {
+            ctx.globalAlpha = 0.35 + rand() * 0.45;
+            ctx.fillRect(x + 5 + c * 14, top + 8 + r * 18, 6, 9);
+          }
         }
       }
+      ctx.globalAlpha = 1;
+      x += bw + 8 + rand() * 36;
     }
-    ctx.globalAlpha = 1;
+
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.minFilter = THREE.LinearFilter;
+    return tex;
   }
 }

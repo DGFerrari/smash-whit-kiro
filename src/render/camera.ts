@@ -1,73 +1,74 @@
+import * as THREE from "three";
 import { CAMERA, VIEW, WORLD } from "../config.ts";
 import { debug } from "../debug/debugState.ts";
 import type { World } from "../game/world.ts";
 
 /**
- * Cámara 2D de encuadre estilo Smash.
+ * Cámara de encuadre estilo Smash, ahora en 3D (perspectiva) sobre Three.js.
  *
- * Cada frame construye una caja objetivo (en coords de mundo) que contiene:
- *   - el encuadre base centrado en la isla, y
- *   - al jugador,
- * con un margen alrededor. Luego elige el centro (el de esa caja) y el zoom
- * necesario para que la caja quepa justo en el viewport. Así:
- *   - sobre la isla la cámara está "en reposo" (encuadre base),
- *   - al alejarte, la caja crece hacia ti -> el centro se desplaza un poco y el
- *     zoom baja, dejándote al filo de la pantalla cuando tocas la blast zone.
+ * La LÓGICA de encuadre es idéntica a la versión 2D: cada frame calculamos una
+ * caja objetivo (en coords de MUNDO 2D) que contiene el encuadre base y a los
+ * combatientes, y de ahí sacamos un centro (cx, cy) y un "zoom". La diferencia
+ * es cómo se traduce eso a una cámara 3D:
  *
- * El viewport lógico es VIEW.width x VIEW.height; el canvas real (pantalla
- * completa) se escala para encajarlo.
+ *  - El mundo 2D tiene Y hacia ABAJO; en 3D usamos Y hacia ARRIBA. La
+ *    conversión es (x, y) mundo -> (x, -y) en 3D. Esta clase expone
+ *    `worldToSceneY` para que el renderer coloque todo coherentemente.
+ *  - El "ancho visible" que antes daba el zoom se mantiene: colocamos la
+ *    PerspectiveCamera a la distancia necesaria para que ese ancho encaje en el
+ *    FOV, y la elevamos/retranqueamos un poco para dar perspectiva (2.5D).
  */
+
+/** Grados a radianes. */
+const DEG = Math.PI / 180;
+
 export class Camera {
-  /** Centro de la cámara, en coordenadas de mundo (suavizado). */
+  readonly three: THREE.PerspectiveCamera;
+
+  /** Centro de la cámara, en coordenadas de MUNDO 2D (suavizado). */
   private readonly focus: { x: number; y: number } = {
     x: WORLD.centerX,
     y: WORLD.groundY,
   };
-  /** Zoom actual (suavizado) y objetivo. */
-  private zoom: number = 1;
-  private targetZoom: number = 1;
+  /** Zoom actual (suavizado) y objetivo. Misma semántica que la versión 2D. */
+  private zoom = 1;
+  private targetZoom = 1;
 
-  /** Boost de zoom de pausa (1 = sin boost). Se suaviza aparte. */
   private pauseBoost = 1;
   private targetPauseBoost = 1;
-
-  /** ¿Pausado? En pausa el foco se desplaza hacia el jugador. */
   private paused = false;
 
-  /** Tamaño real del canvas en píxeles de pantalla. */
   private screenW: number = VIEW.width;
   private screenH: number = VIEW.height;
-  /** Escala para encajar el viewport lógico en el canvas real. */
-  private fit = 1;
+
+  private cinematic: { x: number; y: number; zoom: number } | null = null;
+
+  constructor() {
+    this.three = new THREE.PerspectiveCamera(CAMERA.fov3d, 1, 1, 20000);
+  }
+
+  /** Convierte una Y de mundo (abajo+) a Y de escena 3D (arriba+). */
+  static worldToSceneY(worldY: number): number {
+    return -worldY;
+  }
 
   resize(screenW: number, screenH: number): void {
     this.screenW = screenW;
     this.screenH = screenH;
-    this.fit = Math.min(screenW / VIEW.width, screenH / VIEW.height);
+    this.three.aspect = screenW / Math.max(1, screenH);
+    this.three.updateProjectionMatrix();
   }
 
-  /** Activa/desactiva el zoom extra de pausa y el reencuadre hacia el jugador. */
   setPaused(paused: boolean): void {
     this.paused = paused;
     this.targetPauseBoost = paused ? CAMERA.pauseZoomBoost : 1;
   }
 
-  /**
-   * Override cinemático: en vez del encuadre automático, la cámara persigue
-   * (suavizado) un punto de mundo y un zoom concretos. Lo usa la intro para
-   * recorrer a los jugadores. Llamar a clearCinematic() para volver al auto.
-   */
-  private cinematic: { x: number; y: number; zoom: number } | null = null;
-
   focusOn(x: number, y: number, zoom: number): void {
     this.cinematic = { x, y, zoom };
   }
 
-  /**
-   * Congela la cámara EXACTAMENTE donde está ahora (foco y zoom actuales). Útil
-   * al morir alguien: mantenemos el encuadre previo a la muerte, para que el
-   * jugador vivo siga viendo su zona, en vez de saltar al punto del muerto.
-   */
+  /** Congela la cámara donde está (foco y zoom actuales). */
   freeze(): void {
     this.cinematic = { x: this.focus.x, y: this.focus.y, zoom: this.zoom };
   }
@@ -76,8 +77,7 @@ export class Camera {
     this.cinematic = null;
   }
 
-  /** Avanza solo el suavizado del override cinemático (sin tocar el auto). */
-  updateCinematic(): void {
+  private updateCinematic(): void {
     if (!this.cinematic) return;
     this.focus.x += (this.cinematic.x - this.focus.x) * CAMERA.smooth;
     this.focus.y += (this.cinematic.y - this.focus.y) * CAMERA.smooth;
@@ -86,32 +86,26 @@ export class Camera {
     this.pauseBoost += (1 - this.pauseBoost) * 0.12;
   }
 
-  /**
-   * Coloca la cámara directamente en su objetivo (sin suavizar), útil al
-   * iniciar para no ver un "viaje" de la cámara en el primer frame.
-   */
+  /** Coloca la cámara directamente en su objetivo (sin suavizar). */
   snapTo(world: World): void {
     const box = this.computeTargetBox(world);
     this.focus.x = box.cx;
     this.focus.y = box.cy;
     this.zoom = this.zoomForBox(box.halfW, box.halfH);
     this.targetZoom = this.zoom;
+    this.applyToThree();
   }
 
-  /**
-   * Actualiza la cámara (una vez por frame de render; es puramente visual).
-   */
+  /** Actualiza la cámara (una vez por frame de render; puramente visual). */
   follow(world: World): void {
-    // Durante un override cinemático, la intro conduce la cámara.
     if (this.cinematic) {
       this.updateCinematic();
+      this.applyToThree();
       return;
     }
 
     const box = this.computeTargetBox(world);
 
-    // Centro objetivo. Al pausar lo desplazamos hacia el jugador principal
-    // (reencuadre); al despausar vuelve al centro del encuadre normal.
     let targetX = box.cx;
     let targetY = box.cy;
     if (this.paused) {
@@ -123,23 +117,50 @@ export class Camera {
       targetY = box.cy + (py - box.cy) * t;
     }
 
-    // Suavizado de posición hacia el centro objetivo.
     this.focus.x += (targetX - this.focus.x) * CAMERA.smooth;
     this.focus.y += (targetY - this.focus.y) * CAMERA.smooth;
 
-    // Zoom objetivo: el que hace que la caja quepa justo en pantalla.
     this.targetZoom = this.zoomForBox(box.halfW, box.halfH);
     this.zoom += (this.targetZoom - this.zoom) * CAMERA.zoomSmooth;
 
-    // Boost de pausa suavizado.
     this.pauseBoost += (this.targetPauseBoost - this.pauseBoost) * 0.12;
+
+    this.applyToThree();
   }
 
   /**
-   * Caja objetivo en mundo: centro (cx, cy) y semiejes (halfW, halfH) que
-   * contienen el encuadre base de la isla y a TODOS los combatientes vivos,
-   * con margen. Así en versus la cámara encuadra a ambos jugadores.
+   * Traduce el estado de encuadre (foco + zoom) a la PerspectiveCamera 3D.
+   *
+   * "Ancho visible" del mundo = VIEW.width / (zoom · pauseBoost · pov). A partir
+   * de ahí, la distancia de cámara es la que hace que ese ancho llene el FOV
+   * horizontal. Añadimos un retranqueo + elevación fijos para el toque 2.5D, y
+   * apuntamos a un punto ligeramente por encima del foco.
    */
+  private applyToThree(): void {
+    const effZoom = this.zoom * this.pauseBoost * debug.povZoom;
+    const visibleWidth = VIEW.width / effZoom;
+
+    // FOV horizontal a partir del vertical y el aspecto.
+    const vFov = this.three.fov * DEG;
+    const hFov = 2 * Math.atan(Math.tan(vFov / 2) * this.three.aspect);
+    // Distancia para que `visibleWidth` quepa en el FOV horizontal.
+    const dist = visibleWidth / 2 / Math.tan(hFov / 2);
+
+    // Punto objetivo en escena (recuerda: Y de mundo va hacia abajo).
+    const targetX = this.focus.x;
+    const targetY = -this.focus.y;
+    const targetZ = 0;
+
+    // Retranqueo (profundidad) y una ligera elevación para la perspectiva.
+    const pitch = CAMERA.pitch3d * DEG;
+    const camZ = dist * Math.cos(pitch);
+    const camY = targetY + dist * Math.sin(pitch);
+
+    this.three.position.set(targetX, camY, camZ);
+    this.three.lookAt(targetX, targetY, targetZ);
+    this.three.updateMatrixWorld();
+  }
+
   private computeTargetBox(world: World): {
     cx: number;
     cy: number;
@@ -149,13 +170,11 @@ export class Camera {
     const baseCx = WORLD.centerX;
     const baseCy = WORLD.groundY + CAMERA.baseCenterOffsetY;
 
-    // Bordes del encuadre base (isla en reposo).
     let left = baseCx - CAMERA.baseHalfWidth;
     let right = baseCx + CAMERA.baseHalfWidth;
     let top = baseCy - CAMERA.baseHalfHeight;
     let bottom = baseCy + CAMERA.baseHalfHeight;
 
-    // Expandimos la caja para incluir a cada combatiente vivo (su centro).
     for (const f of world.fighters) {
       if (!f.alive || f.isDead) continue;
       const p = f.player;
@@ -175,27 +194,11 @@ export class Camera {
     };
   }
 
-  /**
-   * Zoom que hace que una caja de semiejes (halfW, halfH) quepa justo en el
-   * viewport lógico. Tomamos el eje más restrictivo y aplicamos topes.
-   */
   private zoomForBox(halfW: number, halfH: number): number {
     const zx = VIEW.width / 2 / halfW;
     const zy = VIEW.height / 2 / halfH;
     const z = Math.min(zx, zy);
     return clamp(z, CAMERA.minZoom, CAMERA.maxZoom);
-  }
-
-  /**
-   * Aplica la transformación de cámara al contexto. Tras esto, dibujar en
-   * coordenadas de mundo aparece bien colocado. El llamante hace save/restore.
-   */
-  apply(ctx: CanvasRenderingContext2D): void {
-    // povZoom es el ajuste del jugador en Opciones (multiplicador global).
-    const scale = this.fit * this.zoom * this.pauseBoost * debug.povZoom;
-    ctx.translate(this.screenW / 2, this.screenH / 2);
-    ctx.scale(scale, scale);
-    ctx.translate(-this.focus.x, -this.focus.y);
   }
 
   get screenWidth(): number {
@@ -204,20 +207,14 @@ export class Camera {
   get screenHeight(): number {
     return this.screenH;
   }
-  /** Zoom lógico actual (sin el factor de encaje a pantalla ni pausa). */
   get currentZoom(): number {
     return this.zoom;
   }
-  /** Centro de la cámara en coords de mundo (para el parallax del fondo). */
   get focusX(): number {
     return this.focus.x;
   }
   get focusY(): number {
     return this.focus.y;
-  }
-  /** Escala efectiva aplicada al dibujar el mundo (fit·zoom·pausa·pov). */
-  get worldScale(): number {
-    return this.fit * this.zoom * this.pauseBoost;
   }
 }
 

@@ -13,13 +13,24 @@ body {
   font-family: system-ui, sans-serif;
 }
 
-/* El canvas ocupa toda la ventana. */
+/* El canvas 3D ocupa toda la ventana. */
 #game {
   display: block;
   position: fixed;
   inset: 0;
   width: 100vw;
   height: 100vh;
+}
+
+/* El canvas 2D del HUD va justo encima del 3D, sin capturar eventos. */
+#hud {
+  display: block;
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 10;
+  pointer-events: none;
 }
 
 /* Fila de control dentro del menú de pausa. */

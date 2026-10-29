@@ -80,6 +80,17 @@ export const CAMERA = {
    * al encuadre normal de la isla.
    */
   pauseFocusLerp: 0.85,
+
+  /**
+   * Parámetros de la cámara 3D (perspectiva).
+   *  - fov3d: campo de visión vertical en grados. Más bajo = menos distorsión
+   *    de perspectiva (más plano, más fiel al 2D); más alto = más "3D".
+   *  - pitch3d: inclinación en grados hacia abajo desde la horizontal. 0 = de
+   *    frente puro; un valor pequeño da el toque 2.5D (mira el plano algo desde
+   *    arriba) sin cambiar la jugabilidad.
+   */
+  fov3d: 42,
+  pitch3d: 8,
 } as const;
 
 /**
@@ -118,6 +129,17 @@ export const RULES = {
    * agotarse este tiempo de seguridad).
    */
   respawnPlatformMaxTime: 4, // s de cortesía antes de desaparecer sola
+} as const;
+
+/**
+ * Profundidades (eje Z) para el render 3D. La jugabilidad es 2D en el plano
+ * Z=0; estas profundidades solo dan volumen a las cajas para que se vean en 3D.
+ */
+export const DEPTH = {
+  fighter: 40, // grosor del cuerpo del combatiente
+  platformSolid: 180, // grosor de la isla/suelo
+  platformOneWay: 60, // grosor de las plataformas atravesables
+  attack: 30, // grosor de la hitbox de ataque
 } as const;
 
 /** Simulación con timestep fijo. 60 Hz es el estándar para un fighter. */

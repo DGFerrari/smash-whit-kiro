@@ -1,51 +1,105 @@
-import { BLAST_ZONE, WORLD } from "../config.ts";
+import * as THREE from "three";
+import { BLAST_ZONE, DEPTH, WORLD } from "../config.ts";
 import type { Player } from "../entities/player.ts";
 import type { Platform } from "../physics/platform.ts";
-import type { Camera } from "./camera.ts";
+import { Camera } from "./camera.ts";
 import type { World, DeathEffect } from "../game/world.ts";
 import { debug } from "../debug/debugState.ts";
 import { drawPercentHud, type PercentEntry } from "../ui/percentHud.ts";
-import { Background } from "./background.ts";
+import { Background3D } from "./background.ts";
 
 /**
- * Dibuja el estado del juego en el canvas 2D a pantalla completa.
+ * Renderer 3D (Three.js / WebGL).
  *
- * El flujo es:
- *   1. Pintar el fondo (en espacio de pantalla, no se mueve con la cámara).
- *   2. Aplicar la cámara y dibujar el mundo (isla + jugador) en coords de mundo.
- *   3. Pintar el HUD encima (espacio de pantalla).
+ * La jugabilidad sigue siendo 2D en el plano Z=0; aquí solo DIBUJAMOS en 3D:
+ * cada entidad 2D (rectángulo) se representa con una caja con algo de
+ * profundidad, y la cámara en perspectiva da el efecto 2.5D.
  *
- * `alpha` es el factor de interpolación [0..1] entre el paso de física anterior
- * y el actual, para que el movimiento se vea suave a cualquier tasa de refresco.
+ * Conversión de coordenadas: el mundo 2D tiene Y hacia ABAJO, la escena 3D
+ * hacia ARRIBA, así que `sceneY = -worldY` (via Camera.worldToSceneY). X y
+ * tamaños se mantienen 1:1 con las unidades de física.
+ *
+ * El HUD, los stats y el FPS se dibujan en un CANVAS 2D superpuesto (#hud),
+ * reutilizando el código 2D existente; el canvas 3D (#game) solo lleva el mundo.
  */
 export class Renderer {
-  private readonly ctx: CanvasRenderingContext2D;
+  private readonly three: THREE.WebGLRenderer;
+  private readonly scene: THREE.Scene;
 
-  /** Medición de FPS: media móvil del tiempo entre frames. */
+  /** Canvas 2D superpuesto para HUD/overlays y su contexto. */
+  private readonly hudCanvas: HTMLCanvasElement;
+  private readonly hud: CanvasRenderingContext2D;
+
   private fps = 0;
   private lastFrameTime = performance.now();
 
-  /** Fondo de ciudad neón por capas con parallax. */
-  private readonly background = new Background();
+  /** Fondo neón por capas (planos a distintas Z) y grupo de escena. */
+  private readonly background: Background3D;
 
-  constructor(private readonly canvas: HTMLCanvasElement) {
-    const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("No se pudo obtener el contexto 2D del canvas");
-    this.ctx = ctx;
+  /** Contenedores que se reconstruyen por frame (dinámicos). */
+  private readonly dynamicGroup = new THREE.Group();
+  /** Escenario (plataformas/suelo + grid de training); se rehace por mundo. */
+  private readonly stageGroup = new THREE.Group();
+  private stageBuiltFor: World | null = null;
+
+  /** Reutilizamos geometrías/materiales base para no recrearlos por frame. */
+  private readonly boxGeo = new THREE.BoxGeometry(1, 1, 1);
+  private readonly sphereGeo = new THREE.SphereGeometry(1, 20, 16);
+
+  constructor(canvas: HTMLCanvasElement) {
+    // Marcamos las geometrías compartidas para que clearGroup no las libere.
+    markShared(this.boxGeo);
+    markShared(this.sphereGeo);
+
+    this.three = new THREE.WebGLRenderer({
+      canvas,
+      antialias: true,
+      alpha: false,
+    });
+    this.three.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+
+    this.scene = new THREE.Scene();
+    this.scene.add(this.dynamicGroup);
+    this.scene.add(this.stageGroup);
+
+    this.setupLights();
+    this.background = new Background3D(this.scene);
+
+    // Canvas 2D del HUD.
+    const hudCanvas = document.querySelector<HTMLCanvasElement>("#hud");
+    if (!hudCanvas) throw new Error("No se encontró el canvas #hud en el HTML");
+    this.hudCanvas = hudCanvas;
+    const hudCtx = hudCanvas.getContext("2d");
+    if (!hudCtx) throw new Error("No se pudo obtener el contexto 2D del HUD");
+    this.hud = hudCtx;
+
     this.resize();
   }
 
-  /** Ajusta el canvas al tamaño de la ventana (con densidad de píxeles). */
+  private setupLights(): void {
+    // Luz ambiental suave + direccional para dar volumen a las cajas.
+    this.scene.add(new THREE.AmbientLight(0xffffff, 0.75));
+    const key = new THREE.DirectionalLight(0xffffff, 0.9);
+    key.position.set(-300, 600, 800);
+    this.scene.add(key);
+    const fill = new THREE.DirectionalLight(0x88aaff, 0.35);
+    fill.position.set(400, -200, 500);
+    this.scene.add(fill);
+  }
+
   resize(): void {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const w = window.innerWidth;
     const h = window.innerHeight;
-    this.canvas.width = Math.floor(w * dpr);
-    this.canvas.height = Math.floor(h * dpr);
-    this.canvas.style.width = w + "px";
-    this.canvas.style.height = h + "px";
-    // Trabajamos en píxeles CSS; el dpr lo absorbe esta escala base.
-    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    this.three.setPixelRatio(dpr);
+    this.three.setSize(w, h, false);
+
+    // El canvas HUD se dimensiona por píxeles reales y trabajamos en CSS px.
+    this.hudCanvas.width = Math.floor(w * dpr);
+    this.hudCanvas.height = Math.floor(h * dpr);
+    this.hudCanvas.style.width = w + "px";
+    this.hudCanvas.style.height = h + "px";
+    this.hud.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
   get cssWidth(): number {
@@ -56,64 +110,436 @@ export class Renderer {
   }
 
   render(world: World, camera: Camera, alpha: number): void {
-    const ctx = this.ctx;
     const w = this.cssWidth;
     const h = this.cssHeight;
-
     this.updateFps();
-    if (world.stage === "trainingGrid") {
-      this.drawTrainingBackground(ctx, camera, w, h);
-    } else {
-      this.background.draw(ctx, camera, w, h);
-    }
 
-    // --- Mundo (afectado por la cámara) ---
-    ctx.save();
-    camera.apply(ctx);
-    // Rejilla y numeración de distancias del escenario de entrenamiento (en
-    // coords de mundo, para que los números midan distancia real).
-    if (world.stage === "trainingGrid") this.drawTrainingGrid(ctx, camera);
-    this.drawPlatforms(ctx, world.platforms);
-    // Plataformas temporales de reaparición (una por combatiente que acaba de
-    // reaparecer): se dibujan distintas para comunicar que son efímeras.
-    for (const f of world.fighters) {
-      if (f.respawnPlatform && f.respawnPlatformBlinkOn) {
-        this.drawRespawnPlatform(ctx, f.respawnPlatform);
-      }
-    }
-    if (debug.showBlastZone) this.drawBlastZone(ctx);
+    // Escenario + fondo según el modo (se construye una vez por mundo).
+    this.ensureStage(world);
+    this.background.setMode(world.stage);
+    this.background.update(camera);
+    this.scene.background = new THREE.Color(
+      world.stage === "trainingGrid" ? 0xf3f5f8 : 0x0a0f24,
+    );
 
-    // Combatientes vivos y sus ataques/escudos.
-    for (const f of world.fighters) {
-      if (!f.alive || f.isDead) continue;
-      this.drawShield(ctx, f.player, alpha);
-      this.drawFighter(ctx, f.player, alpha, f.color);
-      this.drawAttack(ctx, f.player);
-      if (debug.showHitboxes) this.drawHitbox(ctx, f.player, alpha);
-    }
+    // Reconstruimos los objetos dinámicos (combatientes, ataques, efectos).
+    this.rebuildDynamic(world, alpha);
 
-    // Efectos de muerte encima de todo (en coords de mundo).
-    for (const e of world.deathEffects) this.drawDeathEffect(ctx, e);
+    this.three.render(this.scene, camera.three);
 
-    ctx.restore();
-
-    // --- HUD y overlays de debug (espacio de pantalla) ---
+    // --- HUD 2D superpuesto ---
+    this.hud.clearRect(0, 0, w, h);
     const entries: PercentEntry[] = world.fighters.map((f) => ({
       label: f.label,
       color: f.color,
       damage: f.player.damage,
-      // Vidas infinitas (dummy) -> -1 oculta el medidor.
       lives: Number.isFinite(f.lives) ? f.lives : -1,
       anim: f.hudAnim,
       fury: f.player.furyMeter,
       furyActive: f.player.furyActive,
       furyRemaining: f.player.furyRemaining,
     }));
-    drawPercentHud(ctx, entries, w, h);
+    drawPercentHud(this.hud, entries, w, h);
 
-    if (debug.showStats) this.drawStats(ctx, world.player, camera);
-    if (debug.showFps) this.drawFps(ctx);
+    if (debug.showStats) this.drawStats(this.hud, world.player, camera);
+    if (debug.showFps) this.drawFps(this.hud);
   }
+
+  // ---------------------------------------------------------------------------
+  // Escenario (estático por mundo)
+  // ---------------------------------------------------------------------------
+
+  private ensureStage(world: World): void {
+    if (this.stageBuiltFor === world) return;
+    this.stageBuiltFor = world;
+    this.clearGroup(this.stageGroup);
+
+    for (const p of world.platforms) this.addPlatformMesh(p);
+
+    if (world.stage === "trainingGrid") this.addTrainingGrid();
+  }
+
+  private addPlatformMesh(p: Platform): void {
+    const { x, y, w, h } = p.box;
+    const depth = p.oneWay ? DEPTH.platformOneWay : DEPTH.platformSolid;
+    const color = p.oneWay ? 0x7fb2ff : 0x3a4a66;
+    const mat = new THREE.MeshStandardMaterial({
+      color,
+      transparent: p.oneWay,
+      opacity: p.oneWay ? 0.55 : 1,
+      roughness: 0.8,
+      metalness: 0.1,
+    });
+    const mesh = new THREE.Mesh(this.boxGeo, mat);
+    mesh.scale.set(w, h, depth);
+    mesh.position.set(x + w / 2, -(y + h / 2), 0);
+    this.stageGroup.add(mesh);
+
+    // Borde superior de color (donde te apoyas), como una fina losa encima.
+    const topMat = new THREE.MeshStandardMaterial({
+      color: p.oneWay ? 0x7fb2ff : 0x5b7fa6,
+    });
+    const top = new THREE.Mesh(this.boxGeo, topMat);
+    top.scale.set(w, 6, depth + 2);
+    top.position.set(x + w / 2, -(y + 3), 0);
+    this.stageGroup.add(top);
+  }
+
+  /**
+   * Rejilla + numeración de distancias del escenario de entrenamiento, en 3D
+   * sobre el plano Z=0. Usamos LineSegments para la cuadrícula y sprites de
+   * texto para los números.
+   */
+  private addTrainingGrid(): void {
+    const GRID = 100;
+    const LABEL = 200;
+    const left = BLAST_ZONE.left;
+    const right = BLAST_ZONE.right;
+    const top = BLAST_ZONE.top;
+    const groundY = WORLD.groundY;
+    const z = -10; // ligeramente detrás del plano de juego
+
+    const minor: number[] = [];
+    const major: number[] = [];
+
+    const sy = (wy: number): number => -wy;
+
+    for (let x = Math.ceil(left / GRID) * GRID; x <= right; x += GRID) {
+      const arr = x % LABEL === 0 ? major : minor;
+      arr.push(x, sy(top), z, x, sy(groundY), z);
+    }
+    for (let y = groundY; y >= top; y -= GRID) {
+      const dist = groundY - y;
+      const arr = dist % LABEL === 0 ? major : minor;
+      arr.push(left, sy(y), z, right, sy(y), z);
+    }
+
+    this.stageGroup.add(this.lineSegments(minor, 0x9aa5be, 0.35));
+    this.stageGroup.add(this.lineSegments(major, 0x5a6e8c, 0.6));
+
+    // Eje central (x = 0).
+    this.stageGroup.add(
+      this.lineSegments([0, sy(top), z, 0, sy(groundY), z], 0x3c5078, 0.8),
+    );
+
+    // Números de distancia en X (sobre el suelo).
+    for (let x = Math.ceil(left / LABEL) * LABEL; x <= right; x += LABEL) {
+      if (x === 0) continue;
+      this.stageGroup.add(
+        this.textSprite(String(Math.abs(x)), x, sy(groundY) + 22, z + 1),
+      );
+    }
+    // Números de altura en Y (columna central).
+    for (let y = groundY - LABEL; y >= top; y -= LABEL) {
+      const dist = groundY - y;
+      this.stageGroup.add(this.textSprite(String(dist), 34, sy(y), z + 1));
+    }
+  }
+
+  private lineSegments(
+    verts: number[],
+    color: number,
+    opacity: number,
+  ): THREE.LineSegments {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(verts, 3));
+    const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity });
+    return new THREE.LineSegments(geo, mat);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Objetos dinámicos (por frame)
+  // ---------------------------------------------------------------------------
+
+  private rebuildDynamic(world: World, alpha: number): void {
+    this.clearGroup(this.dynamicGroup);
+
+    // Plataformas temporales de reaparición (parpadean).
+    for (const f of world.fighters) {
+      if (f.respawnPlatform && f.respawnPlatformBlinkOn) {
+        this.addRespawnPlatform(f.respawnPlatform);
+      }
+    }
+
+    // Blast zone (debug): marco de líneas.
+    if (debug.showBlastZone) this.addBlastZone();
+
+    // Combatientes vivos + ataques + escudos.
+    for (const f of world.fighters) {
+      if (!f.alive || f.isDead) continue;
+      this.addFighter(f.player, alpha, f.color);
+      this.addShield(f.player, alpha);
+      this.addAttack(f.player);
+    }
+
+    // Efectos de muerte (rayos).
+    for (const e of world.deathEffects) this.addDeathEffect(e);
+  }
+
+  private addFighter(player: Player, alpha: number, baseColor: string): void {
+    const rx = lerp(player.prevPos.x, player.pos.x, alpha);
+    const ry = lerp(player.prevPos.y, player.pos.y, alpha);
+    const cx = rx + player.width / 2;
+    const cy = -(ry + player.height / 2);
+
+    // Color según estado (mismas reglas que la versión 2D).
+    let colorHex: string;
+    let emissive = 0x000000;
+    if (player.furyActive) {
+      const hue = ((performance.now() / 1000) * 0.9) % 1;
+      colorHex = hslHex(hue, 0.95, 0.62);
+      emissive = Number("0x" + hslHex(hue, 0.9, 0.4).slice(1));
+    } else if (player.dodging) {
+      colorHex = "#c8e6ff";
+    } else if (player.hitFlash > 0) {
+      colorHex = "#ffffff";
+    } else if (debug.showStateColors && player.wallSliding) {
+      colorHex = "#6bffb0";
+    } else {
+      colorHex = baseColor;
+    }
+
+    const mat = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(colorHex),
+      emissive: new THREE.Color(emissive),
+      emissiveIntensity: player.furyActive ? 0.8 : 0,
+      roughness: 0.45,
+      metalness: 0.15,
+      transparent: player.dodging,
+      opacity: player.dodging ? 0.55 : 1,
+    });
+    const mesh = new THREE.Mesh(this.boxGeo, mat);
+    mesh.scale.set(player.width, player.height, DEPTH.fighter);
+    mesh.position.set(cx, cy, 0);
+    this.dynamicGroup.add(mesh);
+
+    // "Ojo" que marca el facing: una pequeña caja oscura al frente.
+    const eyeMat = new THREE.MeshBasicMaterial({ color: 0x0d1017 });
+    const eye = new THREE.Mesh(this.boxGeo, eyeMat);
+    eye.scale.set(6, 6, 4);
+    const eyeX =
+      player.facing === 1 ? rx + player.width - 9 : rx + 9;
+    eye.position.set(eyeX, -(ry + 15), DEPTH.fighter / 2 + 1);
+    this.dynamicGroup.add(eye);
+
+    // Barra de carga del fuerte sobre la cabeza (dos cajas finas).
+    if (player.charging) {
+      const ratio = player.chargeRatio;
+      const barW = player.width;
+      const by = -(ry - 14 + 3);
+      const bg = new THREE.Mesh(
+        this.boxGeo,
+        new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.5 }),
+      );
+      bg.scale.set(barW, 6, 2);
+      bg.position.set(rx + barW / 2, by, DEPTH.fighter / 2 + 2);
+      this.dynamicGroup.add(bg);
+
+      const fg = new THREE.Mesh(
+        this.boxGeo,
+        new THREE.MeshBasicMaterial({ color: new THREE.Color(chargeColor(ratio)) }),
+      );
+      fg.scale.set(Math.max(0.01, barW * ratio), 6, 3);
+      fg.position.set(rx + (barW * ratio) / 2, by, DEPTH.fighter / 2 + 3);
+      this.dynamicGroup.add(fg);
+    }
+
+    // Etiquetas de dev (stun / recursos) como sprites.
+    if (debug.showStun && (player.stunned || player.attacking)) {
+      const label = player.stunned ? "STUN" : "ATK";
+      const col = player.stunned ? "#ff53d0" : "#ffd84d";
+      this.dynamicGroup.add(
+        this.textSprite(label, cx, -(ry - 12), DEPTH.fighter / 2 + 2, col),
+      );
+    }
+    if (debug.showResources && (player.outOfJumps || player.outOfHeavy)) {
+      const labels: string[] = [];
+      if (player.outOfJumps) labels.push("SIN SALTO");
+      if (player.outOfHeavy) labels.push("SIN FUERTE");
+      labels.forEach((t, i) => {
+        this.dynamicGroup.add(
+          this.textSprite(
+            t,
+            cx,
+            -(ry + player.height + 16 + i * 16),
+            DEPTH.fighter / 2 + 2,
+            "#ff6b6b",
+          ),
+        );
+      });
+    }
+
+    if (debug.showHitboxes) {
+      const edges = new THREE.LineSegments(
+        new THREE.EdgesGeometry(this.boxGeo),
+        new THREE.LineBasicMaterial({ color: 0x50ff8c }),
+      );
+      edges.scale.set(player.width, player.height, DEPTH.fighter);
+      edges.position.set(cx, cy, 0);
+      this.dynamicGroup.add(edges);
+    }
+  }
+
+  private addShield(player: Player, alpha: number): void {
+    const radius = player.shieldRadius;
+    if (radius <= 0) return;
+    const cx = lerp(player.prevPos.x, player.pos.x, alpha) + player.width / 2;
+    const cy = -(lerp(player.prevPos.y, player.pos.y, alpha) + player.height / 2);
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0x78c8ff,
+      transparent: true,
+      opacity: 0.32,
+      roughness: 0.2,
+      metalness: 0.4,
+    });
+    const mesh = new THREE.Mesh(this.sphereGeo, mat);
+    mesh.scale.setScalar(radius);
+    mesh.position.set(cx, cy, 0);
+    this.dynamicGroup.add(mesh);
+  }
+
+  private addAttack(player: Player): void {
+    const atk = player.attack;
+    if (!atk || !atk.hitbox) return;
+    const { x, y, w, h } = atk.hitbox;
+    const color = atk.def.kind === "light" ? "#7df9ff" : chargeColor(atk.charge);
+    const mat = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(color),
+      emissive: new THREE.Color(color),
+      emissiveIntensity: 0.6,
+      transparent: true,
+      opacity: 0.85,
+    });
+    const mesh = new THREE.Mesh(this.boxGeo, mat);
+    mesh.scale.set(w, h, DEPTH.attack);
+    mesh.position.set(x + w / 2, -(y + h / 2), 0);
+    this.dynamicGroup.add(mesh);
+  }
+
+  private addRespawnPlatform(p: Platform): void {
+    const { x, y, w, h } = p.box;
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0xb4d2ff,
+      transparent: true,
+      opacity: 0.4,
+    });
+    const mesh = new THREE.Mesh(this.boxGeo, mat);
+    mesh.scale.set(w, h, DEPTH.platformOneWay);
+    mesh.position.set(x + w / 2, -(y + h / 2), 0);
+    this.dynamicGroup.add(mesh);
+  }
+
+  private addBlastZone(): void {
+    const x = BLAST_ZONE.left;
+    const y = BLAST_ZONE.top;
+    const w = BLAST_ZONE.right - BLAST_ZONE.left;
+    const h = BLAST_ZONE.bottom - BLAST_ZONE.top;
+    const edges = new THREE.LineSegments(
+      new THREE.EdgesGeometry(this.boxGeo),
+      new THREE.LineBasicMaterial({ color: 0xff5050, transparent: true, opacity: 0.85 }),
+    );
+    edges.scale.set(w, h, 1);
+    edges.position.set(x + w / 2, -(y + h / 2), 0);
+    this.dynamicGroup.add(edges);
+  }
+
+  /** Rayo de muerte: polilínea en zigzag que cae sobre el punto, en 3D. */
+  private addDeathEffect(e: DeathEffect): void {
+    const prog = 1 - e.life / e.maxLife;
+    const fall = Math.min(1, prog / 0.35);
+    const fade = prog < 0.35 ? 1 : 1 - (prog - 0.35) / 0.65;
+
+    const topWY = e.y - 620;
+    const tipWY = topWY + (e.y - topWY) * easeOut(fall);
+
+    const segments = 14;
+    const verts: number[] = [];
+    for (let i = 0; i <= segments; i++) {
+      const s = i / segments;
+      const wy = topWY + (tipWY - topWY) * s;
+      const amp = 26 * (1 - s) + 6;
+      const jitter = Math.sin((i * 12.9898 + e.seed) * 43.233);
+      const x = e.x + (jitter - Math.trunc(jitter)) * 2 * amp - amp;
+      verts.push(x, -wy, 5);
+    }
+
+    // Halo de color (grueso aproximado con línea) + núcleo blanco.
+    this.dynamicGroup.add(this.polyline(verts, e.color, fade * 0.6));
+    this.dynamicGroup.add(this.polyline(verts, "#ffffff", fade));
+
+    // Destello en el impacto.
+    if (fall >= 1) {
+      const flashR = 46 * easeOut(Math.min(1, (prog - 0.35) / 0.4));
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(flashR * 0.85, flashR, 24),
+        new THREE.MeshBasicMaterial({
+          color: new THREE.Color(e.color),
+          transparent: true,
+          opacity: fade,
+          side: THREE.DoubleSide,
+        }),
+      );
+      ring.position.set(e.x, -e.y, 6);
+      this.dynamicGroup.add(ring);
+
+      const core = new THREE.Mesh(
+        this.sphereGeo,
+        new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: fade }),
+      );
+      core.scale.setScalar(14 * fade);
+      core.position.set(e.x, -e.y, 6);
+      this.dynamicGroup.add(core);
+    }
+  }
+
+  private polyline(verts: number[], color: string, opacity: number): THREE.Line {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(verts, 3));
+    const mat = new THREE.LineBasicMaterial({
+      color: new THREE.Color(color),
+      transparent: true,
+      opacity,
+    });
+    return new THREE.Line(geo, mat);
+  }
+
+  /** Crea un sprite de texto (números del grid, etiquetas de dev). */
+  private textSprite(
+    text: string,
+    x: number,
+    y: number,
+    z: number,
+    color = "#3c5078",
+  ): THREE.Sprite {
+    const canvas = document.createElement("canvas");
+    canvas.width = 128;
+    canvas.height = 64;
+    const ctx = canvas.getContext("2d")!;
+    ctx.fillStyle = color;
+    ctx.font = "bold 40px ui-monospace, monospace";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, 64, 32);
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.minFilter = THREE.LinearFilter;
+    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true });
+    const sprite = new THREE.Sprite(mat);
+    sprite.position.set(x, y, z);
+    sprite.scale.set(64, 32, 1);
+    return sprite;
+  }
+
+  private clearGroup(group: THREE.Group): void {
+    for (let i = group.children.length - 1; i >= 0; i--) {
+      const child = group.children[i];
+      group.remove(child);
+      disposeObject(child);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // HUD 2D (canvas superpuesto) — reutiliza el código 2D de siempre
+  // ---------------------------------------------------------------------------
 
   private updateFps(): void {
     const now = performance.now();
@@ -121,125 +547,8 @@ export class Renderer {
     this.lastFrameTime = now;
     if (dt > 0) {
       const instant = 1000 / dt;
-      // Media móvil exponencial para que el número no baile.
       this.fps = this.fps === 0 ? instant : this.fps * 0.9 + instant * 0.1;
     }
-  }
-
-  /** Dibuja el rectángulo de la blast zone en coords de mundo. */
-  private drawBlastZone(ctx: CanvasRenderingContext2D): void {
-    const x = BLAST_ZONE.left;
-    const y = BLAST_ZONE.top;
-    const w = BLAST_ZONE.right - BLAST_ZONE.left;
-    const h = BLAST_ZONE.bottom - BLAST_ZONE.top;
-
-    ctx.save();
-    ctx.lineWidth = 3;
-    ctx.setLineDash([16, 10]);
-    ctx.strokeStyle = "rgba(255, 80, 80, 0.85)";
-    ctx.strokeRect(x, y, w, h);
-    // Relleno muy tenue fuera de la zona segura para dar idea del límite.
-    ctx.setLineDash([]);
-    ctx.fillStyle = "rgba(255, 80, 80, 0.05)";
-    ctx.fillRect(x, y, w, h);
-    ctx.restore();
-  }
-
-  /** Fondo plano blanco del escenario de entrenamiento (espacio de pantalla). */
-  private drawTrainingBackground(
-    ctx: CanvasRenderingContext2D,
-    _camera: Camera,
-    w: number,
-    h: number,
-  ): void {
-    ctx.fillStyle = "#f3f5f8";
-    ctx.fillRect(0, 0, w, h);
-  }
-
-  /**
-   * Rejilla cuadriculada + numeración de distancias del escenario de
-   * entrenamiento, en coords de MUNDO. La cuadrícula es cada GRID px; se marcan
-   * números cada LABEL px en X (sobre el suelo) y en Y (hacia arriba), tomando
-   * como origen (0, groundY) = centro del mapa a ras de suelo.
-   */
-  private drawTrainingGrid(ctx: CanvasRenderingContext2D, _camera: Camera): void {
-    const GRID = 100; // separación de líneas finas
-    const LABEL = 200; // cada cuántos px se escribe un número
-    const left = BLAST_ZONE.left;
-    const right = BLAST_ZONE.right;
-    const top = BLAST_ZONE.top;
-    const groundY = WORLD.groundY;
-
-    ctx.save();
-
-    // Líneas verticales.
-    for (let x = Math.ceil(left / GRID) * GRID; x <= right; x += GRID) {
-      const major = x % LABEL === 0;
-      ctx.strokeStyle = major ? "rgba(90,110,140,0.5)" : "rgba(150,165,190,0.35)";
-      ctx.lineWidth = major ? 1.6 : 0.8;
-      ctx.beginPath();
-      ctx.moveTo(x, top);
-      ctx.lineTo(x, groundY);
-      ctx.stroke();
-    }
-
-    // Líneas horizontales (desde el suelo hacia arriba).
-    for (let y = groundY; y >= top; y -= GRID) {
-      const dist = groundY - y;
-      const major = dist % LABEL === 0;
-      ctx.strokeStyle = major ? "rgba(90,110,140,0.5)" : "rgba(150,165,190,0.35)";
-      ctx.lineWidth = major ? 1.6 : 0.8;
-      ctx.beginPath();
-      ctx.moveTo(left, y);
-      ctx.lineTo(right, y);
-      ctx.stroke();
-    }
-
-    // Eje central (x = 0) marcado más fuerte.
-    ctx.strokeStyle = "rgba(60,80,120,0.7)";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(0, top);
-    ctx.lineTo(0, groundY);
-    ctx.stroke();
-
-    // Números de distancia en X, justo encima del suelo.
-    ctx.fillStyle = "rgba(60,80,120,0.85)";
-    ctx.font = "16px ui-monospace, monospace";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "bottom";
-    for (let x = Math.ceil(left / LABEL) * LABEL; x <= right; x += LABEL) {
-      if (x === 0) continue;
-      ctx.fillText(String(Math.abs(x)), x, groundY - 6);
-    }
-
-    // Números de altura en Y, en la columna central.
-    ctx.textAlign = "left";
-    ctx.textBaseline = "middle";
-    for (let y = groundY - LABEL; y >= top; y -= LABEL) {
-      const dist = groundY - y;
-      ctx.fillText(String(dist), 8, y);
-    }
-
-    ctx.restore();
-  }
-
-  /** Dibuja el contorno de la caja de colisión del jugador. */
-  private drawHitbox(
-    ctx: CanvasRenderingContext2D,
-    player: Player,
-    alpha: number,
-  ): void {
-    const rx = lerp(player.prevPos.x, player.pos.x, alpha);
-    const ry = lerp(player.prevPos.y, player.pos.y, alpha);
-    ctx.save();
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = "rgba(80, 255, 140, 0.95)";
-    ctx.strokeRect(rx, ry, player.width, player.height);
-    // Punto central.
-    ctx.fillStyle = "rgba(80, 255, 140, 0.95)";
-    ctx.fillRect(rx + player.width / 2 - 1, ry + player.height / 2 - 1, 2, 2);
-    ctx.restore();
   }
 
   private drawStats(
@@ -255,7 +564,6 @@ export class Renderer {
       }`,
       `zoom: ${camera.currentZoom.toFixed(2)}`,
     ];
-
     ctx.save();
     ctx.font = "13px ui-monospace, monospace";
     ctx.textBaseline = "top";
@@ -265,13 +573,10 @@ export class Renderer {
     const boxH = pad * 2 + lines.length * lineH;
     const x = 16;
     const y = 68;
-
     ctx.fillStyle = "rgba(0,0,0,0.5)";
     ctx.fillRect(x, y, boxW, boxH);
     ctx.fillStyle = "#9ed8a0";
-    lines.forEach((line, i) => {
-      ctx.fillText(line, x + pad, y + pad + i * lineH);
-    });
+    lines.forEach((line, i) => ctx.fillText(line, x + pad, y + pad + i * lineH));
     ctx.restore();
   }
 
@@ -288,321 +593,69 @@ export class Renderer {
     ctx.fillText(text, x + 8, 21);
     ctx.restore();
   }
-
-  private drawPlatforms(
-    ctx: CanvasRenderingContext2D,
-    platforms: Platform[],
-  ): void {
-    for (const p of platforms) {
-      const { x, y, w, h } = p.box;
-      if (p.oneWay) {
-        // Plataforma atravesable: barra fina y semitransparente, para
-        // comunicar que solo sostiene desde arriba.
-        ctx.fillStyle = "rgba(127, 178, 255, 0.35)";
-        ctx.fillRect(x, y, w, h);
-        ctx.fillStyle = "#7fb2ff";
-        ctx.fillRect(x, y, w, 4); // borde superior sólido (donde te apoyas)
-      } else {
-        // Isla sólida.
-        ctx.fillStyle = "#3a4a66";
-        ctx.fillRect(x, y, w, h);
-        ctx.fillStyle = "#5b7fa6";
-        ctx.fillRect(x, y, w, 6); // césped
-        ctx.fillStyle = "rgba(0,0,0,0.25)";
-        ctx.fillRect(x, y + h - 10, w, 10); // sombra inferior
-      }
-    }
-  }
-
-  /**
-   * Dibuja un combatiente (jugador o dummy; ambos son Player). `baseColor` es
-   * su color identificativo; se tiñe de blanco al recibir golpe y cambia con
-   * el estado (agarre a pared / aire).
-   */
-  private drawFighter(
-    ctx: CanvasRenderingContext2D,
-    fighter: Player,
-    alpha: number,
-    baseColor: string,
-  ): void {
-    const rx = lerp(fighter.prevPos.x, fighter.pos.x, alpha);
-    const ry = lerp(fighter.prevPos.y, fighter.pos.y, alpha);
-
-    // Modo furia: aura y cuerpo brillando de colores (arcoíris animado).
-    if (fighter.furyActive) {
-      const t = performance.now() / 1000;
-      const hue = (t * 0.9) % 1;
-      ctx.save();
-      ctx.shadowColor = `hsl(${hue * 360}, 95%, 60%)`;
-      ctx.shadowBlur = 24;
-      ctx.fillStyle = `hsl(${hue * 360}, 90%, 62%)`;
-      ctx.fillRect(rx - 3, ry - 3, fighter.width + 6, fighter.height + 6);
-      ctx.restore();
-    }
-
-    // Color del cuerpo. El flash de golpe siempre manda. Los colores de estado
-    // (suelo/aire/pared) solo si el toggle de dev tools está activo.
-    let color: string;
-    if (fighter.furyActive) {
-      const hue = ((performance.now() / 1000) * 0.9) % 1;
-      color = `hsl(${hue * 360}, 95%, 70%)`;
-    } else if (fighter.dodging) {
-      color = "rgba(200, 230, 255, 0.55)"; // esquiva: translúcido (invulnerable)
-    } else if (fighter.hitFlash > 0) {
-      color = "#ffffff";
-    } else if (debug.showStateColors && fighter.wallSliding) {
-      color = "#6bffb0"; // pared
-    } else if (debug.showStateColors && !fighter.onGround) {
-      color = shade(baseColor, 0.85); // aire (algo más oscuro)
-    } else {
-      color = baseColor; // suelo / sin colores de estado
-    }
-    ctx.fillStyle = color;
-    ctx.fillRect(rx, ry, fighter.width, fighter.height);
-
-    // Contorno para dar definición.
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = "rgba(0,0,0,0.35)";
-    ctx.strokeRect(rx, ry, fighter.width, fighter.height);
-
-    // Marca de aturdimiento (dev): aro amarillo si ataca, magenta si golpeado.
-    if (debug.showStun && (fighter.stunned || fighter.attacking)) {
-      ctx.save();
-      ctx.lineWidth = 3;
-      ctx.strokeStyle = fighter.stunned ? "#ff53d0" : "#ffd84d";
-      ctx.strokeRect(rx - 4, ry - 4, fighter.width + 8, fighter.height + 8);
-      // Etiqueta corta encima.
-      ctx.font = "700 12px ui-monospace, monospace";
-      ctx.textAlign = "center";
-      ctx.fillStyle = fighter.stunned ? "#ff53d0" : "#ffd84d";
-      ctx.fillText(
-        fighter.stunned ? "STUN" : "ATK",
-        rx + fighter.width / 2,
-        ry - 10,
-      );
-      ctx.restore();
-    }
-
-    // Recursos agotados (dev): avisa si se quedó sin saltos o sin fuerte aéreo.
-    if (debug.showResources && (fighter.outOfJumps || fighter.outOfHeavy)) {
-      ctx.save();
-      ctx.font = "700 11px ui-monospace, monospace";
-      ctx.textAlign = "center";
-      const labels: string[] = [];
-      if (fighter.outOfJumps) labels.push("SIN SALTO");
-      if (fighter.outOfHeavy) labels.push("SIN FUERTE");
-      ctx.fillStyle = "#ff6b6b";
-      labels.forEach((t, i) => {
-        ctx.fillText(
-          t,
-          rx + fighter.width / 2,
-          ry + fighter.height + 16 + i * 14,
-        );
-      });
-      ctx.restore();
-    }
-
-    // Ojo que marca hacia dónde mira.
-    ctx.fillStyle = "#0d1017";
-    const eyeW = 6;
-    const eyeX =
-      fighter.facing === 1 ? rx + fighter.width - eyeW - 6 : rx + 6;
-    ctx.fillRect(eyeX, ry + 12, eyeW, 6);
-
-    // Barra de carga del ataque fuerte sobre la cabeza.
-    if (fighter.charging) {
-      const ratio = fighter.chargeRatio;
-      const barW = fighter.width;
-      const barH = 6;
-      const bx = rx;
-      const by = ry - 14;
-      ctx.fillStyle = "rgba(0,0,0,0.5)";
-      ctx.fillRect(bx, by, barW, barH);
-      ctx.fillStyle = chargeColor(ratio);
-      ctx.fillRect(bx, by, barW * ratio, barH);
-    }
-  }
-
-  /** Dibuja el "cubo" placeholder de la hitbox del ataque activo. */
-  private drawAttack(ctx: CanvasRenderingContext2D, player: Player): void {
-    const atk = player.attack;
-    if (!atk || !atk.hitbox) return;
-    const { x, y, w, h } = atk.hitbox;
-
-    // Color: ligeros en cian; fuertes según carga (blanco->amarillo->rojo).
-    const color =
-      atk.def.kind === "light" ? "#7df9ff" : chargeColor(atk.charge);
-
-    ctx.save();
-    ctx.globalAlpha = 0.85;
-    ctx.fillStyle = color;
-    ctx.fillRect(x, y, w, h);
-    ctx.globalAlpha = 1;
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = "#ffffff";
-    ctx.strokeRect(x, y, w, h);
-    ctx.restore();
-  }
-
-  /** Burbuja de escudo alrededor del combatiente (se encoge con su salud). */
-  private drawShield(
-    ctx: CanvasRenderingContext2D,
-    player: Player,
-    alpha: number,
-  ): void {
-    const radius = player.shieldRadius;
-    if (radius <= 0) return;
-    const rx = lerp(player.prevPos.x, player.pos.x, alpha) + player.width / 2;
-    const ry = lerp(player.prevPos.y, player.pos.y, alpha) + player.height / 2;
-
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(rx, ry, radius, 0, Math.PI * 2);
-    ctx.fillStyle = "rgba(120, 200, 255, 0.28)";
-    ctx.fill();
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = "rgba(160, 220, 255, 0.8)";
-    ctx.stroke();
-    ctx.restore();
-  }
-
-  /** Plataforma temporal de reaparición: barra tenue y punteada. */
-  private drawRespawnPlatform(
-    ctx: CanvasRenderingContext2D,
-    p: Platform,
-  ): void {
-    const { x, y, w, h } = p.box;
-    ctx.save();
-    ctx.fillStyle = "rgba(180, 210, 255, 0.22)";
-    ctx.fillRect(x, y, w, h);
-    ctx.setLineDash([8, 6]);
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = "rgba(180, 210, 255, 0.6)";
-    ctx.strokeRect(x, y, w, h);
-    ctx.restore();
-  }
-
-  /**
-   * Efecto de muerte: un RAYO vertical estilo Smash que cae desde arriba sobre
-   * el punto donde el combatiente salió, con un destello en el impacto. El
-   * zigzag es estable (usa la semilla del efecto) y se desvanece con la vida.
-   */
-  private drawDeathEffect(
-    ctx: CanvasRenderingContext2D,
-    e: DeathEffect,
-  ): void {
-    const prog = 1 - e.life / e.maxLife; // 0..1
-    // El rayo "cae" rápido (primera mitad) y luego se desvanece.
-    const fall = Math.min(1, prog / 0.35);
-    const fade = prog < 0.35 ? 1 : 1 - (prog - 0.35) / 0.65;
-
-    // El rayo nace muy arriba del impacto y baja hasta el punto.
-    const topY = e.y - 620;
-    const tipY = topY + (e.y - topY) * easeOut(fall);
-
-    // Construimos el zigzag del rayo con desviaciones pseudoaleatorias estables.
-    const segments = 14;
-    const points: Array<{ x: number; y: number }> = [];
-    for (let i = 0; i <= segments; i++) {
-      const s = i / segments;
-      const y = topY + (tipY - topY) * s;
-      // Amplitud del zigzag mayor arriba, estrecha cerca del impacto.
-      const amp = 26 * (1 - s) + 6;
-      const jitter = Math.sin((i * 12.9898 + e.seed) * 43.233);
-      const x = e.x + (jitter - Math.trunc(jitter)) * 2 * amp - amp;
-      points.push({ x, y });
-    }
-
-    ctx.save();
-    ctx.globalAlpha = fade;
-    ctx.lineJoin = "round";
-    ctx.lineCap = "round";
-
-    // Halo ancho del rayo (brillo).
-    ctx.strokeStyle = e.color;
-    ctx.globalAlpha = fade * 0.5;
-    ctx.lineWidth = 12;
-    this.strokePolyline(ctx, points);
-
-    // Núcleo blanco brillante.
-    ctx.globalAlpha = fade;
-    ctx.strokeStyle = "#ffffff";
-    ctx.lineWidth = 4;
-    this.strokePolyline(ctx, points);
-
-    // Una rama secundaria a media altura para dar el look ramificado.
-    const branchStart = points[Math.floor(segments * 0.45)];
-    if (branchStart) {
-      ctx.strokeStyle = e.color;
-      ctx.globalAlpha = fade * 0.7;
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.moveTo(branchStart.x, branchStart.y);
-      ctx.lineTo(branchStart.x + 40, branchStart.y + 70);
-      ctx.lineTo(branchStart.x + 18, branchStart.y + 120);
-      ctx.stroke();
-    }
-
-    // Destello/anillo en el punto de impacto (cuando el rayo ya tocó).
-    if (fall >= 1) {
-      const flashR = 46 * easeOut(Math.min(1, (prog - 0.35) / 0.4));
-      ctx.globalAlpha = fade;
-      ctx.fillStyle = "#ffffff";
-      ctx.beginPath();
-      ctx.arc(e.x, e.y, 14 * fade, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = e.color;
-      ctx.lineWidth = 4;
-      ctx.beginPath();
-      ctx.arc(e.x, e.y, flashR, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-
-    ctx.restore();
-  }
-
-  private strokePolyline(
-    ctx: CanvasRenderingContext2D,
-    points: Array<{ x: number; y: number }>,
-  ): void {
-    if (points.length === 0) return;
-    ctx.beginPath();
-    ctx.moveTo(points[0].x, points[0].y);
-    for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
-    ctx.stroke();
-  }
-
 }
 
 function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
 }
 
-/** Suavizado de salida (rápido al principio, lento al final). */
 function easeOut(t: number): number {
   return 1 - (1 - t) * (1 - t);
 }
 
-/** Oscurece (o aclara con f>1) un color hex #rrggbb por un factor f. */
-function shade(hex: string, f: number): string {
-  const n = parseInt(hex.slice(1), 16);
-  const r = Math.min(255, Math.round(((n >> 16) & 255) * f));
-  const g = Math.min(255, Math.round(((n >> 8) & 255) * f));
-  const b = Math.min(255, Math.round((n & 255) * f));
-  return `rgb(${r},${g},${b})`;
-}
-
-/** Color de carga: 0 blanco -> amarillo -> naranja -> 1 rojo. */
+/** Color de carga: 0 blanco -> amarillo -> rojo. */
 function chargeColor(t: number): string {
   const c = t < 0 ? 0 : t > 1 ? 1 : t;
   if (c < 0.5) {
-    // blanco -> amarillo
     const k = c / 0.5;
     const b = Math.round(255 - 255 * k);
     return `rgb(255,255,${b})`;
   }
-  // amarillo -> rojo
   const k = (c - 0.5) / 0.5;
   const g = Math.round(255 - 255 * k);
   return `rgb(255,${g},0)`;
+}
+
+/** HSL (0..1) a hex #rrggbb. */
+function hslHex(h: number, s: number, l: number): string {
+  const a = s * Math.min(l, 1 - l);
+  const f = (n: number): number => {
+    const k = (n + h * 12) % 12;
+    const c = l - a * Math.max(-1, Math.min(k - 3, Math.min(9 - k, 1)));
+    return Math.round(c * 255);
+  };
+  const toHex = (v: number): string => v.toString(16).padStart(2, "0");
+  return `#${toHex(f(0))}${toHex(f(8))}${toHex(f(4))}`;
+}
+
+/** Libera geometrías/materiales/texturas de un objeto al quitarlo de escena. */
+function disposeObject(obj: THREE.Object3D): void {
+  const anyObj = obj as unknown as {
+    geometry?: THREE.BufferGeometry;
+    material?: THREE.Material | THREE.Material[];
+  };
+  if (anyObj.geometry && !sharedGeometry(anyObj.geometry)) {
+    anyObj.geometry.dispose();
+  }
+  const mat = anyObj.material;
+  if (Array.isArray(mat)) {
+    for (const m of mat) disposeMaterial(m);
+  } else if (mat) {
+    disposeMaterial(mat);
+  }
+}
+
+function disposeMaterial(m: THREE.Material): void {
+  const anyMat = m as unknown as { map?: THREE.Texture };
+  anyMat.map?.dispose();
+  m.dispose();
+}
+
+// Geometrías compartidas que NO deben liberarse al limpiar el grupo dinámico.
+const sharedGeos = new WeakSet<THREE.BufferGeometry>();
+function sharedGeometry(geo: THREE.BufferGeometry): boolean {
+  return sharedGeos.has(geo);
+}
+export function markShared(geo: THREE.BufferGeometry): void {
+  sharedGeos.add(geo);
 }
