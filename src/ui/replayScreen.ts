@@ -193,6 +193,7 @@ export class ReplayScreen {
     if (!this.player) return;
     this.world = new World(this.player.data.mode, this.player.data.seed, {
       characters: this.player.data.characters,
+      controllers: this.player.data.controllers,
       stage: this.player.data.stage,
     });
     this.camera.clearCinematic();

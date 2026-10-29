@@ -40,7 +40,11 @@ interface Chip {
 }
 
 export interface CharacterSelectCallbacks {
-  onConfirm: (characters: [CharacterId, CharacterId]) => void;
+  /** Confirma personajes y quién controla al jugador 2 (humano o CPU). */
+  onConfirm: (
+    characters: [CharacterId, CharacterId],
+    p2Controller: "human" | "cpu",
+  ) => void;
   onBack: () => void;
 }
 
@@ -51,6 +55,8 @@ export class CharacterSelect {
   private readonly chips: Chip[] = [];
   private readonly goBtn: HTMLButtonElement;
   private readonly picks: Array<CharacterId | null> = [null, null];
+  /** Quién controla al jugador 2: humano (defecto) o CPU. */
+  private p2Controller: "human" | "cpu" = "human";
 
   constructor(
     private readonly cb: CharacterSelectCallbacks,
@@ -116,6 +122,10 @@ export class CharacterSelect {
       slot.className = "player-card-slot";
       slot.textContent = "arrastra →";
       card.appendChild(slot);
+      // Solo el jugador 2 puede ser CPU: le ponemos las pestañas Jugador/CPU.
+      if (p === 1) {
+        card.appendChild(this.buildControllerTabs(card));
+      }
       cards.appendChild(card);
     }
     this.stage.appendChild(cards);
@@ -153,7 +163,7 @@ export class CharacterSelect {
     this.goBtn.textContent = "Elegir escenario ›";
     this.goBtn.addEventListener("click", () => {
       if (this.picks[0] && this.picks[1]) {
-        this.cb.onConfirm([this.picks[0], this.picks[1]]);
+        this.cb.onConfirm([this.picks[0], this.picks[1]], this.p2Controller);
       }
     });
     actions.appendChild(this.goBtn);
@@ -169,6 +179,45 @@ export class CharacterSelect {
   }
   hide(): void {
     this.root.classList.remove("open");
+  }
+
+  /**
+   * Pestañas "Jugador" / "CPU" para el jugador 2. Al elegir CPU, además de
+   * guardar el controlador, marcamos la tarjeta para mostrar el borde gris.
+   */
+  private buildControllerTabs(card: HTMLElement): HTMLElement {
+    const tabs = document.createElement("div");
+    tabs.className = "player-card-tabs";
+
+    const options: Array<{ value: "human" | "cpu"; label: string }> = [
+      { value: "human", label: "Jugador" },
+      { value: "cpu", label: "CPU" },
+    ];
+
+    const buttons = new Map<"human" | "cpu", HTMLButtonElement>();
+    const sync = (): void => {
+      for (const [val, btn] of buttons) {
+        btn.classList.toggle("active", val === this.p2Controller);
+      }
+      // Borde gris de la tarjeta cuando es CPU (coherente con el render).
+      card.classList.toggle("cpu", this.p2Controller === "cpu");
+    };
+
+    for (const opt of options) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "player-card-tab";
+      btn.textContent = opt.label;
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        this.p2Controller = opt.value;
+        sync();
+      });
+      buttons.set(opt.value, btn);
+      tabs.appendChild(btn);
+    }
+    sync();
+    return tabs;
   }
 
   /** Coloca las fichas en su posición de reposo (sobre su tarjeta). */

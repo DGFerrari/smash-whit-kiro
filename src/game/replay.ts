@@ -17,10 +17,11 @@ import type { StageId } from "./stages.ts";
  */
 
 /**
- * v3 añade el resumen de resultado (result) para la lista de replays.
- * v2 añadió personajes + escenario. v1 (sin ellos) se sigue pudiendo cargar.
+ * v4 añade los controllers (human/cpu) para reproducir partidas con CPU.
+ * v3 añadió el resumen de resultado. v2 añadió personajes + escenario.
+ * v1 (sin nada de eso) se sigue pudiendo cargar.
  */
-export const REPLAY_VERSION = 3;
+export const REPLAY_VERSION = 4;
 
 /**
  * Resumen de un jugador para la ficha del replay (lista + panel de detalle).
@@ -58,6 +59,12 @@ export interface ReplayData {
   characters?: CharacterId[];
   /** Escenario de la partida (v2+). Opcional por compat con v1. */
   stage?: StageId;
+  /**
+   * Quién controla cada combatiente (v4+): "human" | "cpu". Necesario para que
+   * un replay con CPU se re-simule igual (la IA es determinista, pero el World
+   * debe saber que ese slot es CPU para regenerarla). Opcional por compat.
+   */
+  controllers?: ("human" | "cpu")[];
   /** Fecha ISO de grabación (informativo). */
   recordedAt: string;
   /** Nº de jugadores (2). */
@@ -129,6 +136,7 @@ export class ReplayRecorder {
     private readonly seed: number,
     private readonly characters: CharacterId[],
     private readonly stage: StageId,
+    private readonly controllers?: ("human" | "cpu")[],
   ) {}
 
   record(inputs: InputState[]): void {
@@ -147,6 +155,7 @@ export class ReplayRecorder {
       seed: this.seed,
       characters: this.characters,
       stage: this.stage,
+      controllers: this.controllers,
       recordedAt: new Date().toISOString(),
       players: 2,
       steps: this.steps,

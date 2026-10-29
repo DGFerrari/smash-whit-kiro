@@ -1,5 +1,6 @@
 import { BLAST_ZONE, RULES, WORLD } from "../config.ts";
 import { DUMMY_ATTACK } from "../combat/attacks.ts";
+import { CpuBrain } from "./cpuBrain.ts";
 import { Player } from "../entities/player.ts";
 import { Platform } from "../physics/platform.ts";
 import { overlaps } from "../physics/aabb.ts";
@@ -17,10 +18,18 @@ export type { StageKind } from "./stages.ts";
 /** Etiquetas de combatiente por índice (P1/P2). El color lo da el personaje. */
 export const FIGHTER_LABELS = ["P1", "P2"] as const;
 
+/** Quién controla a un combatiente. */
+export type Controller = "human" | "cpu";
+
 /** Configuración de una partida: qué personajes y en qué escenario. */
 export interface MatchConfig {
   characters: CharacterId[];
   stage: StageId;
+  /**
+   * Quién controla cada combatiente (por índice). Si falta, se asume humano.
+   * De momento solo el índice 1 puede ser "cpu" (elegible en la selección).
+   */
+  controllers?: Controller[];
 }
 
 /**
@@ -64,6 +73,8 @@ export class Fighter {
     readonly characterId: CharacterId,
     /** ¿Es el saco de entrenamiento? */
     readonly sandbag: boolean,
+    /** ¿Lo controla la CPU (IA)? */
+    readonly cpu: boolean = false,
   ) {
     this.lives = startingLives;
   }
@@ -90,6 +101,9 @@ export class Fighter {
 
   /** Pasos restantes de pausa entre ataques ligeros repetidos del dummy. */
   dummyAtkCooldown = 0;
+
+  /** Cerebro de IA si este combatiente es CPU (se crea perezosamente). */
+  brain: CpuBrain | null = null;
 
   /**
    * ¿La plataforma temporal debe parpadear este frame? Parpadea más rápido
@@ -223,7 +237,8 @@ export class World {
     const c1 = getCharacter(this.characters[1]);
     const startX = 220;
     const p2 = new Player(startX - Player.halfWidth, WORLD.groundY - 100);
-    const label1 = c1.sandbag ? "DUMMY" : FIGHTER_LABELS[1];
+    const isCpu1 = config?.controllers?.[1] === "cpu";
+    const label1 = c1.sandbag ? "DUMMY" : isCpu1 ? "CPU" : FIGHTER_LABELS[1];
     this.fighters.push(
       new Fighter(
         1,
@@ -233,6 +248,7 @@ export class World {
         mode === "versus" ? RULES.startingLives : Infinity,
         c1.id,
         !!c1.sandbag,
+        isCpu1,
       ),
     );
   }
@@ -275,6 +291,16 @@ export class World {
     const width = BLAST_ZONE.right - BLAST_ZONE.left;
     // Suelo de borde a borde; altura generosa para que no se caiga por debajo.
     this.platforms.push(new Platform(left, g, width, 260));
+  }
+
+  /** El primer rival vivo y no-muerto de un combatiente (o null). */
+  private opponentOf(self: Fighter): Player | null {
+    for (const f of this.fighters) {
+      if (f === self) continue;
+      if (!f.alive || f.isDead) continue;
+      return f.player;
+    }
+    return null;
   }
 
   /** Plataformas efectivas este paso: las fijas + las temporales de respawn. */
@@ -332,6 +358,12 @@ export class World {
     // El saco de entrenamiento se controla con su propia lógica (no input).
     if (f.sandbag) {
       this.updateDummy(f, dt, platforms);
+    } else if (f.cpu) {
+      // CPU: la IA genera su InputState a partir del estado del mundo.
+      if (!f.brain) f.brain = new CpuBrain();
+      const foe = this.opponentOf(f);
+      const aiInput = f.brain.think(f.player, foe, platforms);
+      f.player.fixedUpdate(aiInput, platforms, dt);
     } else {
       f.player.fixedUpdate(input ?? this.dummyInput, platforms, dt);
     }

@@ -519,7 +519,7 @@ export class Renderer {
     // Combatientes vivos + ataques + escudos.
     for (const f of world.fighters) {
       if (!f.alive || f.isDead) continue;
-      this.addFighter(f.player, alpha, f.color, f.index);
+      this.addFighter(f.player, alpha, f.color, f.index, f.cpu);
       this.addShield(f.player, alpha);
       this.addAttack(f.player);
     }
@@ -533,6 +533,7 @@ export class Renderer {
     alpha: number,
     baseColor: string,
     index: number,
+    isCpu = false,
   ): void {
     const rx = lerp(player.prevPos.x, player.pos.x, alpha);
     const ry = lerp(player.prevPos.y, player.pos.y, alpha);
@@ -633,6 +634,19 @@ export class Renderer {
           ),
         );
       });
+    }
+
+    // Borde GRIS para la CPU: el cuerpo conserva el color del personaje, pero
+    // un contorno gris la distingue del jugador humano de un vistazo.
+    if (isCpu) {
+      const edges = new THREE.LineSegments(
+        new THREE.EdgesGeometry(this.boxGeo),
+        new THREE.LineBasicMaterial({ color: 0x9aa5be }),
+      );
+      // Un pelín más grande que el cuerpo para que el borde se vea por fuera.
+      edges.scale.set(player.width + 4, player.height + 4, DEPTH.fighter + 2);
+      edges.position.set(cx, cy, 0);
+      this.dynamicGroup.add(edges);
     }
 
     if (debug.showHitboxes) {

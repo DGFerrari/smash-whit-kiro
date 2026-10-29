@@ -11,6 +11,7 @@ import { LoadingScreen, Countdown, KOFlash } from "./ui/overlays.ts";
 import { ReplayScreen } from "./ui/replayScreen.ts";
 import { ReplayListScreen } from "./ui/replayListScreen.ts";
 import { MenuBackground } from "./ui/menuBackground.ts";
+import { confirmDialog } from "./ui/confirmDialog.ts";
 import {
   ReplayRecorder,
   downloadReplay,
@@ -74,8 +75,13 @@ class App {
           this.showMenu();
         });
       },
-      onConfirm: (characters) => {
-        this.pendingConfig = { ...this.pendingConfig, characters };
+      onConfirm: (characters, p2Controller) => {
+        this.pendingConfig = {
+          ...this.pendingConfig,
+          characters,
+          // Jugador 1 siempre humano; el 2 según la pestaña elegida.
+          controllers: ["human", p2Controller],
+        };
         void this.transition(() => {
           this.charSelect.hide();
           this.stageSelect.show();
@@ -112,11 +118,9 @@ class App {
       this.matchOver.hide();
       void this.toMenu();
     },
-    // La partida ya se guardó sola; este botón abre la lista de repeticiones.
-    onViewReplays: () => {
-      this.matchOver.hide();
-      this.replayListScreen.show();
-    },
+    // La partida ya se guardó sola; este botón abre la lista de repeticiones,
+    // pero primero pregunta por si fue un toque accidental.
+    onViewReplays: () => void this.confirmViewReplays(),
   });
 
   private readonly replayScreen = new ReplayScreen(renderer, camera, {
@@ -129,8 +133,11 @@ class App {
     onExport: (data) => downloadReplay(data),
     onImportFile: (file) => loadReplayFile(file),
     onBack: () => {
-      this.replayListScreen.hide();
-      this.showMenu();
+      // Con transición de iris, igual que el resto de cambios de pantalla.
+      void this.transition(() => {
+        this.replayListScreen.hide();
+        this.showMenu();
+      });
     },
   });
 
@@ -225,8 +232,15 @@ class App {
     this.world = world;
     this.lastReplay = null;
 
-    // Siempre grabamos (para poder ofrecer la descarga del replay al terminar).
-    this.recorder = new ReplayRecorder(mode, world.seed, config.characters, config.stage);
+    // Siempre grabamos (para la lista de repeticiones). Guardamos también los
+    // controllers para reproducir bien las partidas con CPU.
+    this.recorder = new ReplayRecorder(
+      mode,
+      world.seed,
+      config.characters,
+      config.stage,
+      config.controllers,
+    );
 
     camera.resize(renderer.cssWidth, renderer.cssHeight);
     camera.setPaused(false);
@@ -334,6 +348,22 @@ class App {
     this.recorder = null;
   }
 
+  /** Pregunta antes de salir del podio a ver las repeticiones. */
+  private async confirmViewReplays(): Promise<void> {
+    const ok = await confirmDialog({
+      title: "Ver repeticiones",
+      message:
+        "¿Quieres ir a la lista de repeticiones? Saldrás de la pantalla de resultados (la partida ya está guardada).",
+      confirmText: "Sí, ver repeticiones",
+      cancelText: "Quedarme aquí",
+    });
+    if (!ok) return;
+    this.matchOver.hide();
+    await this.transition(() => {
+      this.replayListScreen.show();
+    });
+  }
+
   /** Abre la lista de repeticiones guardadas (desde el menú). */
   private async openReplayList(): Promise<void> {
     // No tocamos this.busy aquí: transition() ya lo gestiona (y si lo
@@ -344,12 +374,13 @@ class App {
     });
   }
 
-  /** Vuelve del reproductor a la lista de repeticiones. */
+  /** Vuelve del reproductor a la lista de repeticiones (con carga completa). */
   private async backToReplayList(): Promise<void> {
     if (this.busy) return;
     this.busy = true;
     await this.loading.cover();
     this.teardownMatch();
+    await this.loading.fill(400);
     this.replayListScreen.show();
     await this.loading.reveal();
     this.busy = false;
