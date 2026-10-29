@@ -232,6 +232,11 @@ export class Player {
     return !this.onGround && this.coyoteTimer <= 0 && this.jumpsLeft <= 0;
   }
 
+  /** Saltos aéreos que quedan (para que la IA sepa si le queda doble salto). */
+  get airJumpsLeft(): number {
+    return this.jumpsLeft;
+  }
+
   /** ¿Se quedó sin usos de ataque fuerte en el aire? */
   get outOfHeavy(): boolean {
     return !this.onGround && this.heavyAirUses <= 0;
