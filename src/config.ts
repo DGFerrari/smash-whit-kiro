@@ -240,4 +240,29 @@ export const SHIELD = {
   airDodgeTime: 0.22,
   /** Usos de esquiva aérea antes de tocar suelo/pared (como los saltos). */
   airDodgeMaxUses: 1,
+
+  /**
+   * Dash en tierra: al pulsar escudo mientras te mueves en una dirección (en el
+   * suelo), haces un impulso rápido en esa dirección (en vez de escudar). Es un
+   * movimiento de reposicionamiento ágil.
+   */
+  dashSpeed: 640,
+  dashTime: 0.16, // s de impulso controlado
+  dashCooldown: 0.35, // s hasta poder volver a dashear
+} as const;
+
+/**
+ * Barra de carga / modo FURIA.
+ *
+ * Cada jugador acumula carga al infligir daño. Al llenarse, se activa un modo
+ * temporal que multiplica mucho el daño que inflige y lo hace brillar de
+ * colores. La barra se muestra en su tarjeta del HUD.
+ */
+export const FURY = {
+  /** Daño infligido necesario para llenar la barra del todo. */
+  fillPerMatch: 120,
+  /** Duración del modo furia una vez activado (s). */
+  duration: 7,
+  /** Multiplicador de daño infligido durante la furia. */
+  damageMult: 2.5,
 } as const;

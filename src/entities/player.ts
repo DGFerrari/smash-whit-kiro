@@ -1,4 +1,4 @@
-import { PLAYER, SHIELD } from "../config.ts";
+import { FURY, PLAYER, SHIELD } from "../config.ts";
 import type { AABB, Vec2 } from "../core/types.ts";
 import type { InputState } from "../core/input.ts";
 import type { Platform } from "../physics/platform.ts";
@@ -117,6 +117,39 @@ export class Player {
     return SHIELD.minRadius + (SHIELD.maxRadius - SHIELD.minRadius) * this.shieldHealth;
   }
 
+  /** Barra de furia [0..1]: se llena al infligir daño. */
+  furyMeter = 0;
+  /** Segundos restantes del modo furia activo (0 = inactivo). */
+  furyTimer = 0;
+  /** ¿Está en modo furia ahora mismo? (daño x, brillo de colores). */
+  get furyActive(): boolean {
+    return this.furyTimer > 0;
+  }
+  /** Multiplicador de daño infligido según el estado de furia. */
+  get furyDamageMult(): number {
+    return this.furyActive ? FURY.damageMult : 1;
+  }
+
+  /** Dash en tierra: tiempo restante del impulso (s) y cooldown. */
+  dashTimer = 0;
+  private dashCooldownTimer = 0;
+  get dashing(): boolean {
+    return this.dashTimer > 0;
+  }
+
+  /**
+   * Suma carga de furia por el daño infligido. Al llenarse, activa la furia.
+   * Mientras la furia está activa no se acumula (se gasta primero).
+   */
+  addFuryCharge(damageDealt: number): void {
+    if (this.furyActive) return;
+    this.furyMeter = Math.min(1, this.furyMeter + damageDealt / FURY.fillPerMatch);
+    if (this.furyMeter >= 1) {
+      this.furyTimer = FURY.duration;
+      this.furyMeter = 1;
+    }
+  }
+
   /** Bloqueo de control horizontal tras un wall jump (s). */
   private wallJumpLockTimer = 0;
   /**
@@ -173,6 +206,11 @@ export class Player {
     this.shieldBreakTimer = 0;
     this.airDodgeUses = SHIELD.airDodgeMaxUses;
     this.airDodgeTimer = 0;
+    this.dashTimer = 0;
+    this.dashCooldownTimer = 0;
+    // La furia activa se corta al morir; la barra acumulada se conserva.
+    this.furyTimer = 0;
+    if (this.furyMeter >= 1) this.furyMeter = 0;
   }
 
   /** ¿Está aturdido por un golpe recibido? (no puede moverse ni atacar). */
@@ -305,6 +343,8 @@ export class Player {
     if (canMove) {
       this.applyHorizontal(input, dt);
       this.applyJump(input, dt);
+    } else if (this.dashing) {
+      // Durante el dash mantenemos el impulso (no frenamos ni aceleramos).
     } else if (this.onGround) {
       // En SUELO, al atacar/cargar nos anclamos (frenamos) para no deslizar.
       this.vel.x = approach(this.vel.x, 0, PLAYER.groundFriction * dt);
@@ -340,6 +380,7 @@ export class Player {
     if (this.shielding) return true;
     if (this.shieldBreakTimer > 0) return true;
     if (this.dodging) return true;
+    if (this.dashing) return true;
     return false;
   }
 
@@ -365,6 +406,18 @@ export class Player {
     if (this.onGround) {
       // Esquiva aérea termina al tocar suelo; recarga de usos.
       this.airDodgeUses = SHIELD.airDodgeMaxUses;
+
+      // Dash en tierra: pulsar escudo (flanco) mientras te mueves = impulso en
+      // esa dirección, en vez de levantar el escudo.
+      if (
+        input.shieldPressed &&
+        input.moveX !== 0 &&
+        this.dashCooldownTimer <= 0 &&
+        !this.attacking
+      ) {
+        this.doGroundDash(input.moveX > 0 ? 1 : -1);
+        return;
+      }
 
       const wantsShield = input.shieldHeld;
       if (wantsShield && this.shieldHealth > 0 && !this.attacking) {
@@ -398,6 +451,19 @@ export class Player {
     if (this.shieldHealth < 1) {
       this.shieldHealth = Math.min(1, this.shieldHealth + dt / SHIELD.regenTime);
     }
+  }
+
+  /** Dash en tierra hacia `dir` (1 derecha, -1 izquierda). */
+  private doGroundDash(dir: 1 | -1): void {
+    this.facing = dir;
+    this.vel.x = dir * SHIELD.dashSpeed;
+    this.dashTimer = SHIELD.dashTime;
+    this.dashCooldownTimer = SHIELD.dashCooldown;
+    this.shielding = false;
+    // Cancela ataque/carga en curso.
+    this.attack = null;
+    this.charging = false;
+    this.heavyChargeSteps = 0;
   }
 
   /**
@@ -732,6 +798,11 @@ export class Player {
     this.wallJumpLockTimer = Math.max(0, this.wallJumpLockTimer - dt);
     this.lightBufferTimer = Math.max(0, this.lightBufferTimer - dt);
     this.hitstunTimer = Math.max(0, this.hitstunTimer - dt);
+    this.furyTimer = Math.max(0, this.furyTimer - dt);
+    this.dashTimer = Math.max(0, this.dashTimer - dt);
+    this.dashCooldownTimer = Math.max(0, this.dashCooldownTimer - dt);
+    // Al acabar la furia, la barra se vacía (hay que volver a cargarla).
+    if (this.furyTimer <= 0 && this.furyMeter >= 1) this.furyMeter = 0;
     if (this.hitFlash > 0) this.hitFlash--;
 
     if (this.onGround) {

@@ -22,6 +22,10 @@ export interface PercentEntry {
    *   interpolan la caída/surgimiento. Por defecto 1.
    */
   anim?: number;
+  /** Carga de furia [0..1] para la barra. */
+  fury?: number;
+  /** ¿Modo furia activo? (barra brillando de colores). */
+  furyActive?: boolean;
 }
 
 export function drawPercentHud(
@@ -97,7 +101,49 @@ function drawBox(
     drawLives(ctx, e.lives, e.color, x + w / 2, y + h - 16);
   }
 
+  // Barra de furia: franja fina en el borde inferior del recuadro.
+  drawFuryBar(ctx, e, x, y, w, h);
+
   ctx.restore();
+}
+
+/** Barra de furia en la base del recuadro (brilla de colores si está activa). */
+function drawFuryBar(
+  ctx: CanvasRenderingContext2D,
+  e: PercentEntry,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+): void {
+  const fury = e.fury ?? 0;
+  if (fury <= 0 && !e.furyActive) return;
+
+  const pad = 10;
+  const barW = w - pad * 2;
+  const barH = 5;
+  const bx = x + pad;
+  const by = y + h - 6;
+
+  // Fondo de la barra.
+  ctx.fillStyle = "rgba(255,255,255,0.12)";
+  ctx.fillRect(bx, by, barW, barH);
+
+  if (e.furyActive) {
+    // Furia activa: barra llena con un degradado arcoíris animado.
+    const t = performance.now() / 600;
+    const grad = ctx.createLinearGradient(bx, 0, bx + barW, 0);
+    for (let i = 0; i <= 6; i++) {
+      const hue = (i / 6 + t) % 1;
+      grad.addColorStop(i / 6, `hsl(${hue * 360}, 95%, 60%)`);
+    }
+    ctx.fillStyle = grad;
+    ctx.fillRect(bx, by, barW, barH);
+  } else {
+    // Cargando: barra proporcional en el color del combatiente.
+    ctx.fillStyle = e.color;
+    ctx.fillRect(bx, by, barW * fury, barH);
+  }
 }
 
 /** Dibuja `lives` iconos de vida centrados en (cx, y). */

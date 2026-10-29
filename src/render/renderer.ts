@@ -5,6 +5,7 @@ import type { Camera } from "./camera.ts";
 import type { World, DeathEffect } from "../game/world.ts";
 import { debug } from "../debug/debugState.ts";
 import { drawPercentHud, type PercentEntry } from "../ui/percentHud.ts";
+import { Background } from "./background.ts";
 
 /**
  * Dibuja el estado del juego en el canvas 2D a pantalla completa.
@@ -23,6 +24,9 @@ export class Renderer {
   /** Medición de FPS: media móvil del tiempo entre frames. */
   private fps = 0;
   private lastFrameTime = performance.now();
+
+  /** Fondo de ciudad neón por capas con parallax. */
+  private readonly background = new Background();
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     const ctx = canvas.getContext("2d");
@@ -57,7 +61,7 @@ export class Renderer {
     const h = this.cssHeight;
 
     this.updateFps();
-    this.drawBackground(ctx, w, h);
+    this.background.draw(ctx, camera, w, h);
 
     // --- Mundo (afectado por la cámara) ---
     ctx.save();
@@ -94,6 +98,8 @@ export class Renderer {
       // Vidas infinitas (dummy) -> -1 oculta el medidor.
       lives: Number.isFinite(f.lives) ? f.lives : -1,
       anim: f.hudAnim,
+      fury: f.player.furyMeter,
+      furyActive: f.player.furyActive,
     }));
     drawPercentHud(ctx, entries, w, h);
 
@@ -196,19 +202,6 @@ export class Renderer {
     ctx.restore();
   }
 
-  private drawBackground(
-    ctx: CanvasRenderingContext2D,
-    w: number,
-    h: number,
-  ): void {
-    // Degradado vertical tipo "cielo profundo" para dar sensación de vacío.
-    const grad = ctx.createLinearGradient(0, 0, 0, h);
-    grad.addColorStop(0, "#0b1a33");
-    grad.addColorStop(1, "#060a14");
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, w, h);
-  }
-
   private drawPlatforms(
     ctx: CanvasRenderingContext2D,
     platforms: Platform[],
@@ -248,10 +241,25 @@ export class Renderer {
     const rx = lerp(fighter.prevPos.x, fighter.pos.x, alpha);
     const ry = lerp(fighter.prevPos.y, fighter.pos.y, alpha);
 
+    // Modo furia: aura y cuerpo brillando de colores (arcoíris animado).
+    if (fighter.furyActive) {
+      const t = performance.now() / 1000;
+      const hue = (t * 0.9) % 1;
+      ctx.save();
+      ctx.shadowColor = `hsl(${hue * 360}, 95%, 60%)`;
+      ctx.shadowBlur = 24;
+      ctx.fillStyle = `hsl(${hue * 360}, 90%, 62%)`;
+      ctx.fillRect(rx - 3, ry - 3, fighter.width + 6, fighter.height + 6);
+      ctx.restore();
+    }
+
     // Color del cuerpo. El flash de golpe siempre manda. Los colores de estado
     // (suelo/aire/pared) solo si el toggle de dev tools está activo.
     let color: string;
-    if (fighter.dodging) {
+    if (fighter.furyActive) {
+      const hue = ((performance.now() / 1000) * 0.9) % 1;
+      color = `hsl(${hue * 360}, 95%, 70%)`;
+    } else if (fighter.dodging) {
       color = "rgba(200, 230, 255, 0.55)"; // esquiva: translúcido (invulnerable)
     } else if (fighter.hitFlash > 0) {
       color = "#ffffff";

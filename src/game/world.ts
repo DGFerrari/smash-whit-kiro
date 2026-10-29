@@ -273,15 +273,18 @@ export class World {
         if (target.respawnTimer > 0) continue; // no golpear a muertos/reapareciendo
         if (atk.hasHit(target.player)) continue;
         if (overlaps(atk.hitbox, target.player.box)) {
+          // El modo furia multiplica el daño y el knockback del atacante.
+          const mult = attacker.player.furyDamageMult;
           const res = target.player.receiveHit(
-            atk.knockback,
+            atk.knockback * mult,
             atk.def.knockbackUp,
-            atk.damage,
+            atk.damage * mult,
             atk.attackerFacing,
           );
           if (res.connected) {
-            // El atacante se apunta el daño infligido.
+            // El atacante se apunta el daño infligido y carga su furia.
             attacker.player.stats.dealt += res.effectiveDamage;
+            attacker.player.addFuryCharge(res.effectiveDamage);
             // Recordamos quién golpeó por última vez (para atribuir el KO).
             target.lastHitBy = attacker.index;
             // ¿KO dramático? Golpe potente sobre un rival ya cargado, con

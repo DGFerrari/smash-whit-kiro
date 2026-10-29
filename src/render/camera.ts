@@ -199,6 +199,17 @@ export class Camera {
   get currentZoom(): number {
     return this.zoom;
   }
+  /** Centro de la cámara en coords de mundo (para el parallax del fondo). */
+  get focusX(): number {
+    return this.focus.x;
+  }
+  get focusY(): number {
+    return this.focus.y;
+  }
+  /** Escala efectiva aplicada al dibujar el mundo (fit·zoom·pausa·pov). */
+  get worldScale(): number {
+    return this.fit * this.zoom * this.pauseBoost;
+  }
 }
 
 function clamp(v: number, min: number, max: number): number {
