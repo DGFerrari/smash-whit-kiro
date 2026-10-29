@@ -63,9 +63,15 @@ export class MenuBackground {
   private loadCurrent(): void {
     const data = MENU_REPLAYS[this.index % MENU_REPLAYS.length];
     this.player = new ReplayPlayer(data);
+    // IMPORTANTE: pasar también controllers + cpuDifficulty. Si no, los slots
+    // CPU se crean como humanos y consumen inputs de teclado grabados (ceros),
+    // quedándose quietos. Con los controllers, el World regenera la IA y se
+    // re-simula igual que en la partida original.
     this.world = new World(data.mode, data.seed, {
       characters: data.characters,
       stage: data.stage,
+      controllers: data.controllers,
+      cpuDifficulty: data.cpuDifficulty,
     });
     this.step = 0;
     this.phase = "in";
