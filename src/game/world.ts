@@ -21,6 +21,9 @@ export const FIGHTER_LABELS = ["P1", "P2"] as const;
 /** Quién controla a un combatiente. */
 export type Controller = "human" | "cpu";
 
+/** Dificultad de la CPU. */
+export type CpuDifficulty = "easy" | "normal" | "hard";
+
 /** Configuración de una partida: qué personajes y en qué escenario. */
 export interface MatchConfig {
   characters: CharacterId[];
@@ -30,6 +33,8 @@ export interface MatchConfig {
    * De momento solo el índice 1 puede ser "cpu" (elegible en la selección).
    */
   controllers?: Controller[];
+  /** Dificultad de la CPU del índice 1 (si es CPU). Por defecto "normal". */
+  cpuDifficulty?: CpuDifficulty;
 }
 
 /**
@@ -159,6 +164,8 @@ export class World {
   readonly stageId: StageId;
   /** Personajes de cada combatiente (para render y el replay). */
   readonly characters: CharacterId[];
+  /** Dificultad de la CPU (si la hay). */
+  readonly cpuDifficulty: CpuDifficulty;
   readonly fighters: Fighter[] = [];
 
   /** Plataformas fijas del nivel (isla + flotantes). */
@@ -224,19 +231,31 @@ export class World {
     // Escenario: por defecto training-grid en entrenamiento; isla neón en versus.
     this.stageId = config?.stage ?? (mode === "training" ? "training" : "neonIsland");
     this.stage = getStage(this.stageId).kind;
+    this.cpuDifficulty = config?.cpuDifficulty ?? "normal";
     this.buildStage();
 
-    // Fighter 0: siempre el jugador humano principal.
+    // Posiciones de aparición SIMÉTRICAS: ambos apoyados sobre el suelo, uno a
+    // cada lado del centro. (Antes P1 caía desde arriba y P2 nacía en el suelo,
+    // lo que hacía que P1 "saliera volando" y P2 quieto.)
+    const spawnY = WORLD.groundY - Player.bodyHeight - 2;
+    const spawnOffset = 160;
+
+    // Fighter 0: siempre el jugador humano principal (a la izquierda del centro).
     const c0 = getCharacter(this.characters[0]);
-    const p1 = new Player(RULES.respawnX - Player.halfWidth, RULES.respawnY);
+    const p1 = new Player(
+      RULES.respawnX - spawnOffset - Player.halfWidth,
+      spawnY,
+    );
     this.fighters.push(
       new Fighter(0, p1, c0.color, FIGHTER_LABELS[0], RULES.startingLives, c0.id, !!c0.sandbag),
     );
 
-    // Fighter 1: en versus es P2 humano; en entrenamiento es el dummy.
+    // Fighter 1: en versus es P2 humano/CPU; en entrenamiento es el dummy.
     const c1 = getCharacter(this.characters[1]);
-    const startX = 220;
-    const p2 = new Player(startX - Player.halfWidth, WORLD.groundY - 100);
+    const p2 = new Player(
+      RULES.respawnX + spawnOffset - Player.halfWidth,
+      spawnY,
+    );
     const isCpu1 = config?.controllers?.[1] === "cpu";
     const label1 = c1.sandbag ? "DUMMY" : isCpu1 ? "CPU" : FIGHTER_LABELS[1];
     this.fighters.push(
@@ -360,7 +379,7 @@ export class World {
       this.updateDummy(f, dt, platforms);
     } else if (f.cpu) {
       // CPU: la IA genera su InputState a partir del estado del mundo.
-      if (!f.brain) f.brain = new CpuBrain();
+      if (!f.brain) f.brain = new CpuBrain(this.cpuDifficulty);
       const foe = this.opponentOf(f);
       const aiInput = f.brain.think(f.player, foe, platforms);
       f.player.fixedUpdate(aiInput, platforms, dt);

@@ -2,48 +2,106 @@ import { BLAST_ZONE } from "../config.ts";
 import { createInputState, type InputState } from "../core/input.ts";
 import type { Player } from "../entities/player.ts";
 import type { Platform } from "../physics/platform.ts";
+import type { CpuDifficulty } from "./world.ts";
 
 /**
- * IA simple para la CPU. Produce un InputState a partir del estado del mundo.
+ * IA de la CPU. Produce un InputState a partir del estado del mundo.
  *
- * DETERMINISMO: función (casi) pura del estado del mundo, sin azar ni reloj.
- * Su único estado interno son temporizadores que avanzan con el dt fijo, así
- * que los replays con CPU se reproducen igual.
+ * DETERMINISMO: función del estado del mundo, sin azar ni reloj. Su único estado
+ * interno son temporizadores que avanzan con el dt fijo, así que los replays
+ * con CPU se reproducen igual.
  *
- * SALTO CORRECTO (lo que fallaba antes): el salto de este juego es VARIABLE
- * (sube más cuanto más tiempo mantienes el botón) y hay DOBLE SALTO. Por eso la
- * IA no pulsa salto un frame suelto: cuando decide saltar, MANTIENE jumpHeld
- * durante una ráfaga de frames (jumpHoldSteps) para alcanzar altura. El flanco
- * jumpPressed solo se emite en el primer frame de cada salto; los siguientes
- * frames de la ráfaga solo mantienen jumpHeld. Para el doble salto emite otro
- * jumpPressed cuando ya está en el aire y aún le quedan saltos.
+ * Mecánicas que entiende (lo que fallaba antes):
+ *  - SALTO VARIABLE: mantiene jumpHeld durante una ráfaga para ganar altura.
+ *  - DOBLE SALTO: emite otro salto en el aire si le queda.
+ *  - ESQUIVA AÉREA: shieldPressed en el aire para desplazarse (recuperación y
+ *    para acercarse volando).
+ *  - FUERTE-ARRIBA / FUERTE DIRECCIONAL: recuperación y remate.
+ *  - DROP-THROUGH: pulsar abajo sobre una one-way para caer a través.
  *
- * Prioridades: 1) no caerse (recuperar), 2) defender, 3) atacar, 4) acercarse.
+ * DIFICULTAD: un perfil ajusta agresividad, defensa, rango y carga del fuerte.
  */
+
+interface DifficultyProfile {
+  /** Prob. (0..1) de atacar cuando está a rango. Más bajo = más pasivo. */
+  aggression: number;
+  /** Prob. (0..1) de defender cuando el rival ataca cerca. */
+  defense: number;
+  /** Distancia a la que decide acercarse a pegar (px). */
+  engageRange: number;
+  /** Umbral de daño del rival para preferir fuerte sobre ligero. */
+  heavyDamageThreshold: number;
+  /** Reactividad: cuántos pasos de cooldown entre ataques (menos = más rápido). */
+  attackCooldown: number;
+  /** ¿Persigue al rival al borde para rematarlo fuera? (edgeguard). */
+  edgeguard: boolean;
+}
+
+const PROFILES: Record<CpuDifficulty, DifficultyProfile> = {
+  // Fácil: se defiende bien, pero ataca poco y despacio. No acosa.
+  easy: {
+    aggression: 0.35,
+    defense: 0.85,
+    engageRange: 90,
+    heavyDamageThreshold: 90,
+    attackCooldown: 34,
+    edgeguard: false,
+  },
+  // Normal: equilibrada.
+  normal: {
+    aggression: 0.7,
+    defense: 0.6,
+    engageRange: 150,
+    heavyDamageThreshold: 60,
+    attackCooldown: 18,
+    edgeguard: false,
+  },
+  // Difícil: agresiva, te busca, remata y persigue al borde.
+  hard: {
+    aggression: 0.95,
+    defense: 0.55,
+    engageRange: 320,
+    heavyDamageThreshold: 35,
+    attackCooldown: 10,
+    edgeguard: true,
+  },
+};
+
 export class CpuBrain {
   private readonly out: InputState = createInputState();
+  private readonly prof: DifficultyProfile;
 
-  /** Frames que quedan MANTENIENDO el salto actual (ráfaga de ascenso). */
+  /** Frames que quedan manteniendo el salto actual (ráfaga de ascenso). */
   private jumpHoldSteps = 0;
-  /** Cooldown tras aterrizar para no re-saltar al instante. */
   private groundJumpCooldown = 0;
-  /** ¿Ya hemos consumido el doble salto en esta caída? */
   private usedDoubleJump = false;
+  private usedAirDodgeRecover = false;
+  private usedHeavyRecover = false;
 
   private dodgeCooldown = 0;
   private attackCooldown = 0;
   private holdingHeavy = 0;
+  /** Objetivo de carga del fuerte en curso (frames). Varía para dar variedad. */
+  private heavyTargetHold = 0;
+  /** Contador determinista para alternar decisiones (en vez de azar). */
+  private tick = 0;
+
+  constructor(difficulty: CpuDifficulty = "normal") {
+    this.prof = PROFILES[difficulty];
+  }
 
   think(me: Player, foe: Player | null, platforms: Platform[]): InputState {
     const s = resetInput(this.out);
+    this.tick++;
 
     if (this.dodgeCooldown > 0) this.dodgeCooldown--;
     if (this.attackCooldown > 0) this.attackCooldown--;
     if (this.groundJumpCooldown > 0) this.groundJumpCooldown--;
 
-    // Al tocar suelo se resetea el estado de salto aéreo.
     if (me.onGround) {
       this.usedDoubleJump = false;
+      this.usedAirDodgeRecover = false;
+      this.usedHeavyRecover = false;
       if (this.jumpHoldSteps > 0 && me.vel.y >= 0) this.jumpHoldSteps = 0;
     }
 
@@ -63,11 +121,7 @@ export class CpuBrain {
       return s;
     }
 
-    // Fuera de peligro: si teníamos una ráfaga de salto en marcha, la mantenemos
-    // hasta agotarla (para completar la altura del salto variable).
-    if (this.jumpHoldSteps > 0) {
-      this.continueJump(s, me);
-    }
+    if (this.jumpHoldSteps > 0) this.continueJump(s, me);
 
     if (!foe) {
       this.flushJump(s, me);
@@ -84,100 +138,119 @@ export class CpuBrain {
 
     // --- 2) Defensa ---
     const foeThreat = foe.attacking && adx < 90 && ady < 90;
-    if (foeThreat && this.dodgeCooldown === 0) {
+    if (foeThreat && this.dodgeCooldown === 0 && this.chance(this.prof.defense)) {
       s.shieldHeld = true;
       s.shieldPressed = true;
-      s.moveX = -dir;
-      this.dodgeCooldown = 32;
+      s.moveX = -dir; // apartarse
+      this.dodgeCooldown = 30;
       this.holdingHeavy = 0;
       return s;
     }
 
     // --- 3) Ataque a rango ---
-    const inRange = adx < 72 && ady < 70;
+    const inRange = adx < 74 && ady < 72;
     if (inRange) {
       me.facing = dir;
       if (dy < -40) s.moveY = -1;
       else if (dy > 40) s.moveY = 1;
 
-      const wantHeavy = me.onGround && foe.damage >= 60;
+      // ¿Fuerte o ligero? Fuerte si el rival ya tiene daño (según perfil) y
+      // estamos en el suelo; la CARGA varía para dar golpes poco/muy cargados.
+      const wantHeavy =
+        me.onGround && foe.damage >= this.prof.heavyDamageThreshold;
       if (wantHeavy) {
-        this.holdingHeavy++;
-        if (this.holdingHeavy < 10) {
-          s.heavyHeld = true;
-        } else {
-          s.heavyReleased = true;
-          this.holdingHeavy = 0;
-          this.attackCooldown = 20;
-        }
+        this.doChargedHeavy(s, me, dir);
         return s;
       }
-      if (this.attackCooldown === 0) {
+      if (this.attackCooldown === 0 && this.chance(this.prof.aggression)) {
         s.lightPressed = true;
-        this.attackCooldown = 14;
+        this.attackCooldown = this.prof.attackCooldown;
       }
       this.holdingHeavy = 0;
       return s;
     }
 
-    // --- 4) Acercarse ---
+    // --- 4) Acercarse (según agresividad/alcance del perfil) ---
     this.holdingHeavy = 0;
-    if (adx > 60) s.moveX = dir;
+    const shouldEngage = adx < this.prof.engageRange || this.prof.edgeguard;
+    if (shouldEngage && adx > 56) {
+      s.moveX = dir;
+    } else if (!shouldEngage && adx < 120) {
+      // Perfil pasivo (fácil): mantiene distancia si está muy cerca sin atacar.
+      s.moveX = -dir;
+    }
 
-    // Saltar para alcanzar a un rival por encima: salto sostenido + doble salto.
-    if (dy < -70) {
-      this.wantJumpToward(s, me);
+    // Saltar hacia un rival por encima.
+    if (dy < -70) this.wantJumpToward(s, me);
+    // Rival claramente por DEBAJO y estamos en el suelo: intentar bajar a través
+    // de una plataforma one-way pulsando abajo (si no hay, no pasa nada).
+    if (dy > 90 && me.onGround && adx < 120) {
+      s.moveY = 1;
+    }
+    // En difícil, si el rival está fuera de la isla, perseguir para rematar.
+    if (this.prof.edgeguard && (foeCx < safe.left || foeCx > safe.right)) {
+      s.moveX = dir;
+      if (foeCy < meCy - 40) this.wantJumpToward(s, me);
     }
 
     this.flushJump(s, me);
     return s;
   }
 
-  // --- Lógica de salto ------------------------------------------------------
+  // --- Ataque fuerte con carga variable -------------------------------------
 
   /**
-   * Pide iniciar/continuar un salto hacia arriba. Si está en suelo, arranca una
-   * ráfaga de ascenso; si está en el aire y le queda doble salto y ya no sube,
-   * gasta el doble salto. La ráfaga la mantiene continueJump en los frames
-   * siguientes.
+   * Carga el fuerte durante un número de frames que varía (determinista) entre
+   * un toque y una carga larga, y lo lanza. Da golpes poco y muy cargados.
    */
-  private wantJumpToward(s: InputState, me: Player): void {
-    if (this.jumpHoldSteps > 0) return; // ya estamos en una ráfaga
+  private doChargedHeavy(s: InputState, me: Player, dir: 1 | -1): void {
+    me.facing = dir;
+    if (this.holdingHeavy === 0) {
+      // Elegimos objetivo de carga al empezar: alterna corto/medio/largo según
+      // un patrón determinista (no azar, para no romper replays).
+      const pattern = [6, 44, 20, 54, 10][this.tick % 5];
+      this.heavyTargetHold = pattern;
+    }
+    this.holdingHeavy++;
+    if (this.holdingHeavy < this.heavyTargetHold) {
+      s.heavyHeld = true;
+    } else {
+      s.heavyReleased = true;
+      this.holdingHeavy = 0;
+      this.attackCooldown = this.prof.attackCooldown + 8;
+    }
+  }
 
+  // --- Salto ----------------------------------------------------------------
+
+  private wantJumpToward(s: InputState, me: Player): void {
+    if (this.jumpHoldSteps > 0) return;
     if (me.onGround && this.groundJumpCooldown === 0) {
-      this.startJump(s, 12); // ráfaga larga = salto alto
+      this.startJump(s, 12);
       this.groundJumpCooldown = 10;
     } else if (
       !me.onGround &&
       !this.usedDoubleJump &&
       me.airJumpsLeft > 0 &&
-      me.vel.y > 40 // ya cayendo o estancado: momento de doble saltar
+      me.vel.y > 40
     ) {
       this.startJump(s, 10);
       this.usedDoubleJump = true;
     }
   }
 
-  /** Arranca una ráfaga de salto: primer frame con flanco pressed. */
   private startJump(s: InputState, holdSteps: number): void {
     s.jumpPressed = true;
     s.jumpHeld = true;
     this.jumpHoldSteps = holdSteps;
   }
 
-  /** Mantiene jumpHeld durante la ráfaga (salto variable = más altura). */
   private continueJump(s: InputState, me: Player): void {
     this.jumpHoldSteps--;
-    // Mientras sigamos subiendo, mantenemos el botón para ganar altura.
-    if (me.vel.y < 0) {
-      s.jumpHeld = true;
-    } else {
-      // Ya no subimos: soltar para no desperdiciar la ráfaga.
-      this.jumpHoldSteps = 0;
-    }
+    if (me.vel.y < 0) s.jumpHeld = true;
+    else this.jumpHoldSteps = 0;
   }
 
-  /** Si no se pidió salto este frame pero había ráfaga, la refleja igualmente. */
   private flushJump(s: InputState, me: Player): void {
     if (this.jumpHoldSteps > 0 && me.vel.y < 0) s.jumpHeld = true;
   }
@@ -191,46 +264,76 @@ export class CpuBrain {
     safe: SafeZone,
   ): boolean {
     const outsideX = meCx < safe.left || meCx > safe.right;
-    const belowGround = meCy > safe.groundY + 30 && !me.onGround;
-    const nearBottom = me.pos.y > BLAST_ZONE.bottom - 450;
-    return (outsideX && !me.onGround) || belowGround || nearBottom;
+    const belowGround = meCy > safe.groundY + 20 && !me.onGround;
+    const nearBottom = me.pos.y > BLAST_ZONE.bottom - 500;
+    // También es peligro si vamos lanzados hacia fuera cerca del borde.
+    const flungOut =
+      !me.onGround &&
+      ((meCx < safe.left + 40 && me.vel.x < 0) ||
+        (meCx > safe.right - 40 && me.vel.x > 0));
+    return (outsideX && !me.onGround) || belowGround || nearBottom || flungOut;
   }
 
   /**
-   * Vuelve al escenario. Secuencia de recuperación:
-   *   1) Ir horizontalmente hacia el centro SIEMPRE.
-   *   2) Mientras queden saltos (suelo o doble salto), saltar SOSTENIDO para
-   *      ganar la máxima altura.
-   *   3) Cuando ya no queden saltos, usar el fuerte-arriba (resorte) como
-   *      último recurso para remontar.
+   * Recuperación aérea completa, en orden de prioridad para maximizar la vuelta:
+   *   1) Siempre empujar horizontalmente hacia el centro.
+   *   2) ESQUIVA AÉREA en diagonal hacia el centro (gran desplazamiento) si aún
+   *      no la usamos y estamos lejos lateralmente.
+   *   3) Salto sostenido (suelo) / DOBLE SALTO (aire) para ganar altura.
+   *   4) FUERTE-ARRIBA (resorte) como último recurso cuando no quedan saltos.
    */
   private recover(s: InputState, me: Player, meCx: number, safe: SafeZone): void {
     const center = (safe.left + safe.right) / 2;
-    s.moveX = meCx < center ? 1 : -1;
-    me.facing = s.moveX > 0 ? 1 : -1;
+    const toCenter: 1 | -1 = meCx < center ? 1 : -1;
+    s.moveX = toCenter;
+    me.facing = toCenter;
 
-    // Continuar una ráfaga de salto en curso (mantener altura).
+    // Continuar una ráfaga de salto en curso.
     if (this.jumpHoldSteps > 0) {
       this.continueJump(s, me);
       return;
     }
 
-    // Si estamos por debajo del nivel del suelo (o cayendo), intentar remontar.
-    const needHeight = me.pos.y + me.height > safe.groundY - 10 || me.vel.y > 0;
-    if (!needHeight) return;
+    const farOutX = meCx < safe.left - 60 || meCx > safe.right + 60;
 
-    if (me.onGround && this.groundJumpCooldown === 0) {
-      this.startJump(s, 12);
-      this.groundJumpCooldown = 10;
-    } else if (!me.onGround && !this.usedDoubleJump && me.airJumpsLeft > 0) {
-      // Doble salto de recuperación.
-      this.startJump(s, 12);
-      this.usedDoubleJump = true;
-    } else if (me.outOfJumps && !me.outOfHeavy) {
-      // Sin saltos: fuerte-arriba como resorte (gasta un uso aéreo del fuerte).
-      s.moveY = -1;
-      s.heavyReleased = true;
+    // 1) Esquiva aérea hacia el centro: mucho desplazamiento horizontal, ideal
+    // cuando nos han sacado lejos de lado.
+    if (!me.onGround && farOutX && !this.usedAirDodgeRecover && !me.outOfJumps) {
+      s.shieldPressed = true;
+      s.shieldHeld = true;
+      s.moveX = toCenter; // dirección de la esquiva
+      this.usedAirDodgeRecover = true;
+      return;
     }
+
+    // 2) Ganar altura con saltos.
+    const needHeight = me.pos.y + me.height > safe.groundY - 10 || me.vel.y > 0;
+    if (needHeight) {
+      if (me.onGround && this.groundJumpCooldown === 0) {
+        this.startJump(s, 12);
+        this.groundJumpCooldown = 10;
+        return;
+      }
+      if (!me.onGround && !this.usedDoubleJump && me.airJumpsLeft > 0) {
+        this.startJump(s, 12);
+        this.usedDoubleJump = true;
+        return;
+      }
+      // 3) Fuerte-arriba como resorte final.
+      if (me.outOfJumps && !me.outOfHeavy && !this.usedHeavyRecover) {
+        s.moveY = -1;
+        s.heavyReleased = true;
+        this.usedHeavyRecover = true;
+      }
+    }
+  }
+
+  /** Decisión determinista tipo "probabilidad" usando el tick interno. */
+  private chance(p: number): boolean {
+    if (p >= 1) return true;
+    if (p <= 0) return false;
+    // Secuencia determinista repartida: p=0.7 -> ~7 de cada 10 ticks.
+    return (this.tick * 7) % 10 < Math.round(p * 10);
   }
 }
 

@@ -1369,6 +1369,40 @@ body.hide-native-cursor * {
   color: #fff;
 }
 
+/* Fila de dificultad de la CPU: oculta hasta elegir la pestaña CPU. */
+.player-card-difficulty {
+  display: none;
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.player-card-difficulty.show {
+  display: flex;
+}
+
+.player-card-diff {
+  flex: 1;
+  padding: 5px 4px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #cdd6e4;
+  border: 1px solid #2d3850;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.player-card-diff:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.player-card-diff.active {
+  background: #9aa5be;
+  border-color: #9aa5be;
+  color: #10151f;
+}
+
 /* FICHA arrastrable (la "mano" / token de Smash). */
 .token-chip {
   --tc: #2f6bff;

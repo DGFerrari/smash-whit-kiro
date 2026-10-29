@@ -43,6 +43,8 @@ export class Player {
 
   /** Mitad del ancho, útil para centrar al jugador en una coordenada. */
   static readonly halfWidth = PLAYER.width / 2;
+  /** Alto del cuerpo (estático), útil para calcular posiciones de aparición. */
+  static readonly bodyHeight = PLAYER.height;
 
   /** ¿Está tocando suelo este paso? */
   onGround = false;
@@ -57,6 +59,12 @@ export class Player {
   private coyoteTimer = 0;
   private jumpBufferTimer = 0;
   private jumpsLeft: number = PLAYER.maxJumps;
+
+  /**
+   * Mientras >0, ignoramos las plataformas one-way (caemos a través). Se activa
+   * al pulsar "abajo" estando apoyado en una plataforma atravesable.
+   */
+  private dropThroughTimer = 0;
 
   /** Daño acumulado en % (estilo Smash: a más %, más knockback recibido). */
   damage = 0;
@@ -350,6 +358,7 @@ export class Player {
     const canMove = !this.isBusy();
 
     if (canMove) {
+      this.handleDropThrough(input);
       this.applyHorizontal(input, dt);
       this.applyJump(input, dt);
     } else if (this.dashing) {
@@ -661,6 +670,17 @@ export class Player {
     }
   }
 
+  /**
+   * Atravesar hacia abajo una plataforma one-way: si estás apoyado en el suelo
+   * y mantienes "abajo", activamos una ventana en la que las one-way se ignoran,
+   * de modo que te dejas caer a través de ellas.
+   */
+  private handleDropThrough(input: InputState): void {
+    if (this.onGround && input.moveY > 0) {
+      this.dropThroughTimer = 0.12; // s de ventana para colarse
+    }
+  }
+
   private applyJump(input: InputState, dt: number): void {
     // Bufferizamos el salto: si lo pulsa justo antes de tocar suelo, se guarda.
     if (input.jumpPressed) {
@@ -762,6 +782,8 @@ export class Player {
       if (!overlaps(this.box, p.box)) continue;
 
       if (p.oneWay) {
+        // Si estamos "cayendo a través" (abajo pulsado), ignoramos las one-way.
+        if (this.dropThroughTimer > 0) continue;
         // One-way: solo colisiona cayendo y si los pies estaban por encima del
         // borde superior en el paso previo (con 1px de tolerancia).
         const fallingOntoTop = this.vel.y > 0 && prevFeet <= p.box.y + 1;
@@ -824,6 +846,7 @@ export class Player {
     this.wallJumpLockTimer = Math.max(0, this.wallJumpLockTimer - dt);
     this.lightBufferTimer = Math.max(0, this.lightBufferTimer - dt);
     this.hitstunTimer = Math.max(0, this.hitstunTimer - dt);
+    this.dropThroughTimer = Math.max(0, this.dropThroughTimer - dt);
     this.furyTimer = Math.max(0, this.furyTimer - dt);
     this.dashTimer = Math.max(0, this.dashTimer - dt);
     this.dashCooldownTimer = Math.max(0, this.dashCooldownTimer - dt);

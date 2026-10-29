@@ -65,6 +65,8 @@ export interface ReplayData {
    * debe saber que ese slot es CPU para regenerarla). Opcional por compat.
    */
   controllers?: ("human" | "cpu")[];
+  /** Dificultad de la CPU (v4+); afecta a la IA y por tanto a la simulación. */
+  cpuDifficulty?: "easy" | "normal" | "hard";
   /** Fecha ISO de grabación (informativo). */
   recordedAt: string;
   /** Nº de jugadores (2). */
@@ -137,6 +139,7 @@ export class ReplayRecorder {
     private readonly characters: CharacterId[],
     private readonly stage: StageId,
     private readonly controllers?: ("human" | "cpu")[],
+    private readonly cpuDifficulty?: "easy" | "normal" | "hard",
   ) {}
 
   record(inputs: InputState[]): void {
@@ -156,6 +159,7 @@ export class ReplayRecorder {
       characters: this.characters,
       stage: this.stage,
       controllers: this.controllers,
+      cpuDifficulty: this.cpuDifficulty,
       recordedAt: new Date().toISOString(),
       players: 2,
       steps: this.steps,

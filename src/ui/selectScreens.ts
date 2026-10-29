@@ -40,10 +40,11 @@ interface Chip {
 }
 
 export interface CharacterSelectCallbacks {
-  /** Confirma personajes y quién controla al jugador 2 (humano o CPU). */
+  /** Confirma personajes, control del P2 y, si es CPU, su dificultad. */
   onConfirm: (
     characters: [CharacterId, CharacterId],
     p2Controller: "human" | "cpu",
+    cpuDifficulty: "easy" | "normal" | "hard",
   ) => void;
   onBack: () => void;
 }
@@ -57,6 +58,8 @@ export class CharacterSelect {
   private readonly picks: Array<CharacterId | null> = [null, null];
   /** Quién controla al jugador 2: humano (defecto) o CPU. */
   private p2Controller: "human" | "cpu" = "human";
+  /** Dificultad de la CPU (solo aplica si p2Controller === "cpu"). */
+  private cpuDifficulty: "easy" | "normal" | "hard" = "normal";
 
   constructor(
     private readonly cb: CharacterSelectCallbacks,
@@ -163,7 +166,11 @@ export class CharacterSelect {
     this.goBtn.textContent = "Elegir escenario ›";
     this.goBtn.addEventListener("click", () => {
       if (this.picks[0] && this.picks[1]) {
-        this.cb.onConfirm([this.picks[0], this.picks[1]], this.p2Controller);
+        this.cb.onConfirm(
+          [this.picks[0], this.picks[1]],
+          this.p2Controller,
+          this.cpuDifficulty,
+        );
       }
     });
     actions.appendChild(this.goBtn);
@@ -182,28 +189,51 @@ export class CharacterSelect {
   }
 
   /**
-   * Pestañas "Jugador" / "CPU" para el jugador 2. Al elegir CPU, además de
-   * guardar el controlador, marcamos la tarjeta para mostrar el borde gris.
+   * Pestañas "Jugador" / "CPU" para el jugador 2, más la fila de dificultad que
+   * aparece solo cuando CPU está seleccionado. Devuelve un contenedor con ambas.
    */
   private buildControllerTabs(card: HTMLElement): HTMLElement {
+    const wrap = document.createElement("div");
+    wrap.className = "player-card-controller";
+
     const tabs = document.createElement("div");
     tabs.className = "player-card-tabs";
+    wrap.appendChild(tabs);
 
-    const options: Array<{ value: "human" | "cpu"; label: string }> = [
+    // Fila de dificultad (oculta hasta elegir CPU).
+    const diff = document.createElement("div");
+    diff.className = "player-card-difficulty";
+    wrap.appendChild(diff);
+
+    const tabOptions: Array<{ value: "human" | "cpu"; label: string }> = [
       { value: "human", label: "Jugador" },
       { value: "cpu", label: "CPU" },
     ];
+    const tabButtons = new Map<"human" | "cpu", HTMLButtonElement>();
 
-    const buttons = new Map<"human" | "cpu", HTMLButtonElement>();
+    const diffOptions: Array<{
+      value: "easy" | "normal" | "hard";
+      label: string;
+    }> = [
+      { value: "easy", label: "Fácil" },
+      { value: "normal", label: "Normal" },
+      { value: "hard", label: "Difícil" },
+    ];
+    const diffButtons = new Map<"easy" | "normal" | "hard", HTMLButtonElement>();
+
     const sync = (): void => {
-      for (const [val, btn] of buttons) {
+      const isCpu = this.p2Controller === "cpu";
+      for (const [val, btn] of tabButtons) {
         btn.classList.toggle("active", val === this.p2Controller);
       }
-      // Borde gris de la tarjeta cuando es CPU (coherente con el render).
-      card.classList.toggle("cpu", this.p2Controller === "cpu");
+      for (const [val, btn] of diffButtons) {
+        btn.classList.toggle("active", val === this.cpuDifficulty);
+      }
+      card.classList.toggle("cpu", isCpu);
+      diff.classList.toggle("show", isCpu);
     };
 
-    for (const opt of options) {
+    for (const opt of tabOptions) {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "player-card-tab";
@@ -213,11 +243,26 @@ export class CharacterSelect {
         this.p2Controller = opt.value;
         sync();
       });
-      buttons.set(opt.value, btn);
+      tabButtons.set(opt.value, btn);
       tabs.appendChild(btn);
     }
+
+    for (const opt of diffOptions) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "player-card-diff";
+      btn.textContent = opt.label;
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        this.cpuDifficulty = opt.value;
+        sync();
+      });
+      diffButtons.set(opt.value, btn);
+      diff.appendChild(btn);
+    }
+
     sync();
-    return tabs;
+    return wrap;
   }
 
   /** Coloca las fichas en su posición de reposo (sobre su tarjeta). */

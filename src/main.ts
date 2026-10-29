@@ -75,12 +75,13 @@ class App {
           this.showMenu();
         });
       },
-      onConfirm: (characters, p2Controller) => {
+      onConfirm: (characters, p2Controller, cpuDifficulty) => {
         this.pendingConfig = {
           ...this.pendingConfig,
           characters,
           // Jugador 1 siempre humano; el 2 según la pestaña elegida.
           controllers: ["human", p2Controller],
+          cpuDifficulty,
         };
         void this.transition(() => {
           this.charSelect.hide();
@@ -240,6 +241,7 @@ class App {
       config.characters,
       config.stage,
       config.controllers,
+      config.cpuDifficulty,
     );
 
     camera.resize(renderer.cssWidth, renderer.cssHeight);
