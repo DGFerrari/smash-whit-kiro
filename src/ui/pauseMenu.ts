@@ -75,6 +75,11 @@ export interface PauseMenuCallbacks {
   onQuitToMenu: () => void;
   /** Modo actual, para mostrar/ocultar el apartado de Dummy. */
   mode: GameMode;
+  /**
+   * ¿Se puede ABRIR el menú ahora mismo? (p. ej. false durante la cuenta atrás
+   * de intro). Si devuelve false, Escape no abre el menú. Por defecto sí.
+   */
+  canOpen?: () => boolean;
 }
 
 type PageId =
@@ -158,8 +163,12 @@ export class PauseMenu {
     // Esc retrocede un nivel; en la raíz, cierra el menú.
     if (this.open && this.nav.length > 1) {
       this.back();
+    } else if (this.open) {
+      this.setOpen(false);
     } else {
-      this.setOpen(!this.open);
+      // Abrir: solo si está permitido (p. ej. no durante la cuenta atrás).
+      if (this.cb.canOpen && !this.cb.canOpen()) return;
+      this.setOpen(true);
     }
   };
 

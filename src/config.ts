@@ -258,10 +258,11 @@ export const PLAYER = {
 
   /**
    * Wall jump: al saltar estando agarrado a una pared, el impulso es diagonal
-   * (alejándose de la pared), no recto hacia arriba.
+   * (alejándose de la pared) pero con MÁS componente vertical que horizontal,
+   * para que recuperarse sea más fácil (te tira sobre todo hacia arriba).
    */
-  wallJumpSpeedY: 920, // impulso vertical del wall jump (px/s, hacia arriba)
-  wallJumpSpeedX: 520, // impulso horizontal, alejándose de la pared (px/s)
+  wallJumpSpeedY: 1120, // impulso vertical del wall jump (px/s, hacia arriba)
+  wallJumpSpeedX: 360, // impulso horizontal, alejándose de la pared (px/s)
   /**
    * Tras un wall jump bloqueamos el control horizontal un instante para que el
    * empuje de separación no se cancele al mantener la tecla hacia la pared.

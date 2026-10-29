@@ -4,6 +4,7 @@ import type { Renderer } from "../render/renderer.ts";
 import type { Camera } from "../render/camera.ts";
 import { ReplayPlayer, type ReplayData } from "../game/replay.ts";
 import { PauseMenu } from "./pauseMenu.ts";
+import { Countdown } from "./overlays.ts";
 
 /**
  * Reproductor de replays con controles tipo vídeo.
@@ -20,6 +21,14 @@ import { PauseMenu } from "./pauseMenu.ts";
 export interface ReplayScreenCallbacks {
   onExit: () => void;
 }
+
+/** Guion de la intro del replay: igual que en una partida (3·2·1·GO). */
+const REPLAY_INTRO: Array<{ dur: number; text: string | null; focus: number | "all" }> = [
+  { dur: 0.7, text: "3", focus: "all" },
+  { dur: 0.7, text: "2", focus: "all" },
+  { dur: 0.7, text: "1", focus: "all" },
+  { dur: 0.6, text: "GO!", focus: "all" },
+];
 
 export class ReplayScreen {
   private readonly root: HTMLDivElement;
@@ -42,6 +51,13 @@ export class ReplayScreen {
   private rafId = 0;
   private lastTime = 0;
   private accumulator = 0;
+
+  /** Overlay de la cuenta atrás de intro del replay. */
+  private readonly countdown = new Countdown();
+  /** Intro en curso: muestra 3·2·1·GO con la cámara recorriendo, sin simular. */
+  private introActive = false;
+  private introElapsed = 0;
+  private lastIntroText: string | null = null;
 
   // Cámara libre.
   private freeCam = false;
@@ -146,6 +162,10 @@ export class ReplayScreen {
     this.currentStep = 0;
     this.seek.max = String(Math.max(0, this.player.totalSteps - 1));
     this.seek.value = "0";
+    // Arranca con la INTRO (cuenta atrás); la reproducción empieza tras "GO!".
+    this.introActive = true;
+    this.introElapsed = 0;
+    this.lastIntroText = null;
     this.playing = true;
     this.menuPaused = false;
     this.updatePlayPause();
@@ -166,6 +186,8 @@ export class ReplayScreen {
         this.menuPaused = false;
       },
       onQuitToMenu: () => this.exit(),
+      // No se puede pausar durante la cuenta atrás de intro.
+      canOpen: () => !this.introActive,
     });
 
     this.lastTime = performance.now();
@@ -176,6 +198,8 @@ export class ReplayScreen {
 
   private exit(): void {
     this.playing = false;
+    this.introActive = false;
+    this.countdown.set(null);
     cancelAnimationFrame(this.rafId);
     this.root.classList.remove("open");
     this.setBarHidden(false);
@@ -224,7 +248,11 @@ export class ReplayScreen {
     if (frameTime > 0.25) frameTime = 0.25;
 
     if (this.player && this.world) {
-      if (this.playing && !this.menuPaused) {
+      if (this.introActive) {
+        // Fase de INTRO: cuenta atrás con la cámara encuadrando a todos; no se
+        // simula hasta "GO!". No se puede pausar por menú durante la intro.
+        this.updateIntro(frameTime);
+      } else if (this.playing && !this.menuPaused) {
         this.accumulator += frameTime * this.speed;
         let guard = 0;
         while (this.accumulator >= FIXED_DT && guard < 600) {
@@ -243,8 +271,10 @@ export class ReplayScreen {
         this.updateTimeLabel();
       }
 
-      // Cámara: libre (manual) o seguimiento automático del replay.
-      if (this.freeCam) {
+      // Cámara: durante la intro la conduce la cinemática; si no, libre o auto.
+      if (this.introActive) {
+        this.camera.follow(this.world);
+      } else if (this.freeCam) {
         this.camera.setManual(this.camX, this.camY, this.camZoom);
       } else {
         this.camera.follow(this.world);
@@ -255,8 +285,50 @@ export class ReplayScreen {
     this.rafId = requestAnimationFrame(this.frame);
   };
 
+  /** Avanza la intro del replay (cuenta atrás + cámara encuadrando a todos). */
+  private updateIntro(frameTime: number): void {
+    if (!this.world) return;
+    this.introElapsed += frameTime;
+
+    let acc = 0;
+    let current = REPLAY_INTRO[REPLAY_INTRO.length - 1];
+    let finished = true;
+    for (const step of REPLAY_INTRO) {
+      if (this.introElapsed < acc + step.dur) {
+        current = step;
+        finished = false;
+        break;
+      }
+      acc += step.dur;
+    }
+
+    // Cámara encuadrando a todos y texto de la cuenta atrás.
+    this.camera.cinematicFrameAll(this.world, 0.95);
+    if (current.text !== this.lastIntroText) {
+      this.lastIntroText = current.text;
+      this.countdown.set(current.text);
+    }
+
+    if (finished) {
+      this.introActive = false;
+      this.countdown.set(null);
+      this.camera.clearCinematic();
+      this.camera.snapTo(this.world);
+    }
+  }
+
+  /** Salta la intro (si el usuario toca controles durante la cuenta atrás). */
+  private skipIntro(): void {
+    if (!this.introActive) return;
+    this.introActive = false;
+    this.countdown.set(null);
+    this.camera.clearCinematic();
+    if (this.world) this.camera.snapTo(this.world);
+  }
+
   private togglePlay(): void {
     if (!this.player) return;
+    this.skipIntro();
     // Si está al final, al darle play reinicia.
     if (this.currentStep >= this.player.totalSteps) {
       this.simulateTo(0);
@@ -271,6 +343,7 @@ export class ReplayScreen {
   }
 
   private stepBy(delta: number): void {
+    this.skipIntro();
     this.playing = false;
     this.updatePlayPause();
     this.simulateTo(this.currentStep + delta);
@@ -279,6 +352,7 @@ export class ReplayScreen {
   }
 
   private seekTo(step: number): void {
+    this.skipIntro();
     this.simulateTo(step);
     this.updateTimeLabel();
   }

@@ -154,6 +154,11 @@ export class GameLoop {
     this.camera.setPaused(value);
   }
 
+  /** ¿Se puede pausar ya? (solo cuando la partida ha empezado, no en la intro). */
+  get canPause(): boolean {
+    return this.phase === "playing";
+  }
+
   private frame = (now: number): void => {
     if (!this.running) return;
 

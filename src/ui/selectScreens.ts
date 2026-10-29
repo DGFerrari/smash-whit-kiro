@@ -200,8 +200,8 @@ export class CharacterSelect {
 
   /**
    * Tarjeta de un jugador: etiqueta, hueco de ficha y pestañas de control.
-   *  - P1: siempre humano (sin pestañas, no se puede desactivar ni ser CPU).
-   *  - P2: Jugador / CPU (no se puede desactivar: hace falta mínimo 2).
+   *  - P1 y P2: Jugador / CPU (no se pueden desactivar: hace falta mínimo 2).
+   *    P1 puede ser CPU para montar partidas de solo CPUs.
    *  - P3/P4: Jugador / CPU / Deshabilitado.
    */
   private buildPlayerCard(p: number): HTMLElement {
@@ -220,20 +220,15 @@ export class CharacterSelect {
     slotHint.textContent = "arrastra →";
     card.appendChild(slotHint);
 
-    // P1 no tiene pestañas (siempre humano). Los demás sí.
-    if (p === 0) {
-      this.syncers.push(() => {
-        card.classList.remove("cpu", "off");
-      });
-      return card;
-    }
-
-    // Opciones de control (P2/P3/P4): Jugador, CPU o Deshabilitado. El mínimo
-    // de 2 jugadores activos lo garantiza la validación del botón de empezar.
+    // P1 y P2 no se pueden DESHABILITAR (mínimo 2 jugadores), pero sí elegir
+    // entre Jugador y CPU. P3/P4 añaden la opción "Deshabilitado".
+    const canDisable = p >= 2;
     const controlOptions: Array<{ value: SlotControl; label: string }> = [
       { value: "human", label: "Jugador" },
       { value: "cpu", label: "CPU" },
-      { value: "off", label: "Deshabilitado" },
+      ...(canDisable
+        ? [{ value: "off" as SlotControl, label: "Deshabilitado" }]
+        : []),
     ];
 
     const tabs = document.createElement("div");

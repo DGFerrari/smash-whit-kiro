@@ -267,6 +267,8 @@ class App {
       onOpen: () => loop.setPaused(true),
       onClose: () => loop.setPaused(false),
       onQuitToMenu: () => void this.toMenu(),
+      // Solo se puede pausar cuando la partida ya empezó (no en la cuenta atrás).
+      canOpen: () => loop.canPause,
     });
 
     // Arrancamos el loop (ya renderiza el primer frame) y abrimos el iris.
