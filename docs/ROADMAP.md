@@ -200,6 +200,33 @@ sencillo, pero a costa de más complejidad temprana.
 
 ---
 
+## Trabajo visual: cuándo y cómo sin romper el determinismo
+
+Las mejoras gráficas se pueden hacer **en cualquier momento** y **sin miedo**,
+porque tocan la capa de **presentación**, no la de **simulación**:
+
+- **Presentación** (libre de tocar): `src/render/` (Three.js, cámara, fondos,
+  texturas) y `src/ui/` (menús, HUD, CSS). Puede usar azar, tiempo real y todo
+  lo que quiera.
+- **Simulación** (intocable desde lo visual): `src/game/`, `src/physics/`,
+  `src/combat/`, `src/entities/` y los valores de `config.ts`.
+
+Regla de oro: **lo visual nunca debe influir en la simulación.**
+
+- No modificar física/combate en `config.ts` ni la lógica de `game`/`physics`
+  "para que se vea mejor".
+- Nada de `Math.random()` sin semilla ni `Date.now`/`performance.now` **dentro**
+  de la simulación (sí fuera, en efectos visuales).
+- Un efecto puede **leer** el estado del mundo, nunca **escribirlo**.
+
+Orden recomendado (no obligatorio): hacer mejoras visuales **idealmente tras la
+Fase 1**, porque esa fase separa definitivamente render y motor y deja tests de
+determinismo como red de seguridad. Si se meten **assets pesados** (modelos,
+texturas, audio), planificar dónde viven y su carga (afecta al tamaño del bundle
+y al despliegue), pero eso es optimización, no un bloqueo.
+
+---
+
 ## Riesgos y notas a vigilar
 
 - **Romper el determinismo** sin querer (usar `Math.random` sin semilla, fechas,
@@ -217,10 +244,16 @@ sencillo, pero a costa de más complejidad temprana.
 
 | Fecha | Decisión | Motivo |
 | --- | --- | --- |
-| _(pendiente)_ | _(p. ej. "backend en Node + X", "DB = Y")_ | |
+| 2026-10 | Objetivo = portafolio + amigos, sin dinero real | Acota alcance: sin pagos ni requisitos legales de gachas |
+| 2026-10 | Licencia MIT | Código abierto simple para portafolio |
+| 2026-10 | Despliegue en GitHub Pages vía GitHub Actions | Gratis y el repo ya está en GitHub |
+| _(pendiente)_ | Backend / base de datos / auth | Se decide al llegar a la Fase 2 |
 
 ## Bitácora de avances (ir apuntando aquí)
 
 | Fecha | Qué se hizo | Fase |
 | --- | --- | --- |
-| _(pendiente)_ | | |
+| 2026-10 | README actualizado (Three.js, features), `.gitignore` de secretos | Fase 0 |
+| 2026-10 | ROADMAP.md creado + nota de trabajo visual | Fase 0 |
+| 2026-10 | Licencia MIT y workflow de GitHub Pages | Fase 0 |
+| _(pendiente)_ | Activar Pages en Settings (manual) + capturas/GIF en README | Fase 0 |
