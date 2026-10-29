@@ -1986,3 +1986,105 @@ body.hide-native-cursor * {
     opacity: 1;
   }
 }
+
+/* Lista de sub-tareas del objetivo actual, cada una con su check. */
+.tutorial-tasks {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 8px;
+  width: 100%;
+}
+
+.tutorial-task {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 12px;
+  background: rgba(47, 59, 87, 0.35);
+  border: 1px solid #3a4560;
+  border-radius: 9px;
+  color: #cdd6e4;
+  font-size: 14px;
+  font-weight: 600;
+  transition: background 0.25s ease, border-color 0.25s ease, color 0.25s ease;
+}
+
+.tutorial-task.done {
+  background: rgba(58, 160, 98, 0.18);
+  border-color: #4caf6e;
+  color: #e6f7ec;
+}
+
+/* Marca de check (○ pendiente / ✓ hecho). */
+.tutorial-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #2f3b57;
+  color: #8793ad;
+  font-size: 13px;
+  font-weight: 900;
+  transition: background 0.25s ease, color 0.25s ease, transform 0.25s ease;
+}
+
+.tutorial-task.done .tutorial-check {
+  background: #4caf6e;
+  color: #fff;
+  animation: tutorialCheckPop 0.4s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+@keyframes tutorialCheckPop {
+  0% {
+    transform: scale(0.3);
+  }
+  55% {
+    transform: scale(1.35);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* Texto "¡Bien hecho!" al completar un objetivo. */
+#tutorial-cheer {
+  position: fixed;
+  top: 30%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0.6);
+  z-index: 32;
+  color: #4caf6e;
+  font-size: 44px;
+  font-weight: 900;
+  letter-spacing: 1px;
+  text-shadow: 0 0 24px rgba(76, 175, 110, 0.7), 0 8px 24px rgba(0, 0, 0, 0.7);
+  opacity: 0;
+  pointer-events: none;
+}
+
+#tutorial-cheer.show {
+  animation: tutorialCheer 1.1s cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+}
+
+@keyframes tutorialCheer {
+  0% {
+    transform: translate(-50%, -50%) scale(0.4);
+    opacity: 0;
+  }
+  22% {
+    transform: translate(-50%, -50%) scale(1.15);
+    opacity: 1;
+  }
+  70% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1.05);
+    opacity: 0;
+  }
+}

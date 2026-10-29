@@ -1,4 +1,5 @@
-import { FIXED_DT } from "../config.ts";
+import { FIXED_DT, RULES, WORLD } from "../config.ts";
+import { Player } from "../entities/player.ts";
 import { World } from "../game/world.ts";
 import { KeyboardInput, createInputState, type InputState } from "../core/input.ts";
 import { bindings, keyLabel } from "../core/bindings.ts";
@@ -9,24 +10,17 @@ import { markTutorialDone } from "./mainMenu.ts";
 
 /**
  * Pantalla de TUTORIAL: un modo guiado autónomo (con su propio bucle, como el
- * reproductor de replays) que usa el mapa de ENTRENAMIENTO. Presenta objetivos
- * uno a uno con un panel de ayuda; al completar todos, el tutorial termina y se
- * marca como hecho (deja de parpadear en el menú).
+ * reproductor de replays) sobre el mapa de ENTRENAMIENTO. Presenta objetivos
+ * por fases; cada objetivo tiene una o varias SUB-TAREAS con su check. Al
+ * completar todas las sub-tareas de un objetivo: check + "¡Bien hecho!" y se
+ * reinicia al jugador para la siguiente fase. Al terminar todo, se marca como
+ * hecho (deja de parpadear en el menú).
  *
  * No toca el GameLoop de combate: reutiliza World (training), KeyboardInput (P1),
- * Camera, Renderer y PauseMenu, igual que ReplayScreen.
+ * Camera, Renderer y PauseMenu.
  */
 export interface TutorialScreenCallbacks {
   onExit: () => void;
-}
-
-/** Una etapa del tutorial: título, instrucción y condición de completado. */
-interface Objective {
-  title: string;
-  /** Instrucción (se rellenan {tecla} con la tecla real de P1). */
-  instruction: string;
-  /** Devuelve true cuando el objetivo se ha cumplido, leyendo el estado. */
-  isDone: (t: Tutorial) => boolean;
 }
 
 /** Tecla asignada a una acción de P1, legible (para los textos del tutorial). */
@@ -35,61 +29,112 @@ function key(action: string): string {
   return arr && arr[0] ? keyLabel(arr[0]) : "?";
 }
 
+/** Una sub-tarea de un objetivo: etiqueta + condición de hecho. */
+interface Task {
+  label: string;
+  done: (t: Tutorial) => boolean;
+}
+
+/** Un objetivo del tutorial: título, instrucción y sus sub-tareas. */
+interface Objective {
+  title: string;
+  /** Instrucción con {accion} que se reemplaza por la tecla real de P1. */
+  instruction: string;
+  tasks: Task[];
+}
+
+/**
+ * Estado observable que leen las condiciones de las tareas. Lo alimenta
+ * `observe()` tras cada paso de física. Los contadores por dirección/carga
+ * permiten las sub-tareas de ataques.
+ */
 export class Tutorial {
-  // Estado observable que leen los objetivos (lo actualiza cada paso).
   movedLeft = false;
   movedRight = false;
-  jumpsDone = 0;
+  jumpDone = false;
   airJumpDone = false;
-  lightHits = 0;
-  heavyHits = 0;
-  shieldedOrDodged = 0;
 
-  // Internos de detección.
+  /** Golpes LIGEROS conectados por dirección. */
+  readonly light = { neutral: false, side: false, up: false, down: false };
+  /** Golpes FUERTES conectados por nivel de carga. */
+  heavyWeak = false; // fuerte con carga baja
+  heavyFull = false; // fuerte con carga (casi) máxima
+
+  shieldedOrDodged = false;
+
+  /** ¿Ha activado el modo furia alguna vez? */
+  furyActivated = false;
+  /** ¿Ha derrotado (KO) al saco con un fuerte estando en furia? */
+  furyKo = false;
+
   private prevOnGround = true;
   private prevDummyTaken = 0;
-  private prevShielding = false;
-  private prevDodging = false;
+  private prevDummyDeaths = 0;
 
   constructor(readonly world: World) {
     this.prevDummyTaken = this.dummyTaken();
+    this.prevDummyDeaths = this.dummyDeaths();
   }
 
+  private get dummy() {
+    return this.world.fighters[1]?.player ?? null;
+  }
   private dummyTaken(): number {
-    // Daño recibido acumulado del saco (sobrevive a sus respawns, a diferencia
-    // de `damage` que se resetea). Nos sirve para detectar que le pegamos.
-    const d = this.world.fighters[1]?.player;
-    return d ? d.stats.taken : 0;
+    return this.dummy?.stats.taken ?? 0;
+  }
+  private dummyDeaths(): number {
+    return this.dummy?.stats.deaths ?? 0;
   }
 
-  /** Observa el estado tras un paso de física y actualiza los contadores. */
   observe(input: InputState): void {
     const p = this.world.player;
 
     if (input.moveX < 0) this.movedLeft = true;
     if (input.moveX > 0) this.movedRight = true;
 
-    // Salto: flanco de despegue (estaba en suelo y ahora no, con vel hacia arriba).
-    if (this.prevOnGround && !p.onGround && p.vel.y < 0) this.jumpsDone++;
-    // Doble salto: pulsó saltar en el aire (airJumpsLeft bajó estando en aire).
+    if (this.prevOnGround && !p.onGround && p.vel.y < 0) this.jumpDone = true;
     if (!p.onGround && input.jumpPressed && p.airJumpsLeft < 1) this.airJumpDone = true;
     this.prevOnGround = p.onGround;
 
-    // Golpe al dummy: su daño recibido acumulado subió. Clasificamos por el
-    // tipo del ataque activo del jugador en ese momento.
+    if (p.furyActive) this.furyActivated = true;
+
+    // Golpe al saco: su daño recibido acumulado subió. Clasificamos por el
+    // ataque activo del jugador (dirección + carga) en ese instante.
     const taken = this.dummyTaken();
-    if (taken > this.prevDummyTaken + 0.01) {
-      const kind = p.attack?.def.kind;
-      if (kind === "heavy") this.heavyHits++;
-      else this.lightHits++;
+    if (taken > this.prevDummyTaken + 0.01 && p.attack) {
+      const { kind, dir } = p.attack.def;
+      if (kind === "light") {
+        this.light[dir] = true;
+      } else {
+        // charge 0..1: flojo si <0.35, a tope si >=0.8.
+        if (p.attack.charge >= 0.8) this.heavyFull = true;
+        else if (p.attack.charge < 0.35) this.heavyWeak = true;
+      }
     }
     this.prevDummyTaken = taken;
 
-    // Escudo / esquiva: flanco de activación.
-    if (p.shielding && !this.prevShielding) this.shieldedOrDodged++;
-    else if (p.dodging && !this.prevDodging) this.shieldedOrDodged++;
-    this.prevShielding = p.shielding;
-    this.prevDodging = p.dodging;
+    // KO del saco con un fuerte estando en furia: detectamos que el saco murió
+    // (sus muertes acumuladas suben) mientras el jugador está en furia y acaba
+    // de conectar un fuerte.
+    const deaths = this.dummyDeaths();
+    if (deaths > this.prevDummyDeaths) {
+      if (p.furyActive && (p.attack?.def.kind === "heavy" || this.recentHeavy)) {
+        this.furyKo = true;
+      }
+    }
+    this.prevDummyDeaths = deaths;
+
+    // Recordar si hubo un fuerte hace poco (el KO puede llegar 1-2 pasos
+    // después del golpe, cuando el saco cruza la blast zone).
+    if (p.attack?.def.kind === "heavy") this.recentHeavyTimer = 18;
+    else if (this.recentHeavyTimer > 0) this.recentHeavyTimer--;
+
+    if (p.shielding || p.dodging) this.shieldedOrDodged = true;
+  }
+
+  private recentHeavyTimer = 0;
+  private get recentHeavy(): boolean {
+    return this.recentHeavyTimer > 0;
   }
 }
 
@@ -97,27 +142,52 @@ const OBJECTIVES: Objective[] = [
   {
     title: "Moverse",
     instruction: "Muévete a izquierda y derecha con {left} y {right}.",
-    isDone: (t) => t.movedLeft && t.movedRight,
+    tasks: [
+      { label: "Ir a la izquierda", done: (t) => t.movedLeft },
+      { label: "Ir a la derecha", done: (t) => t.movedRight },
+    ],
   },
   {
     title: "Saltar",
-    instruction: "Salta con {jump}. Pulsa en el aire para el doble salto.",
-    isDone: (t) => t.jumpsDone >= 1 && t.airJumpDone,
+    instruction: "Salta con {jump}. Pulsa otra vez en el aire para el doble salto.",
+    tasks: [
+      { label: "Saltar", done: (t) => t.jumpDone },
+      { label: "Doble salto (en el aire)", done: (t) => t.airJumpDone },
+    ],
   },
   {
-    title: "Ataque ligero",
-    instruction: "Golpea al saco con el ataque ligero ({light}) 3 veces.",
-    isDone: (t) => t.lightHits >= 3,
+    title: "Ataques ligeros",
+    instruction:
+      "Golpea al saco con el ligero ({light}) en cada dirección. Apunta con {up}/{down} o muévete para el lateral.",
+    tasks: [
+      { label: "Ligero neutral", done: (t) => t.light.neutral },
+      { label: "Ligero lateral", done: (t) => t.light.side },
+      { label: "Ligero arriba", done: (t) => t.light.up },
+      { label: "Ligero abajo", done: (t) => t.light.down },
+    ],
   },
   {
-    title: "Ataque fuerte",
-    instruction: "Mantén {heavy} para cargar y suéltalo para golpear al saco.",
-    isDone: (t) => t.heavyHits >= 1,
+    title: "Ataques fuertes",
+    instruction:
+      "Mantén {heavy} para cargar. Un toque rápido = fuerte flojo; mantenerlo hasta el tope = fuerte potente.",
+    tasks: [
+      { label: "Fuerte poco cargado", done: (t) => t.heavyWeak },
+      { label: "Fuerte cargado a tope", done: (t) => t.heavyFull },
+    ],
   },
   {
     title: "Escudo y esquiva",
-    instruction: "Usa el escudo con {shield} (en el aire, esquiva).",
-    isDone: (t) => t.shieldedOrDodged >= 1,
+    instruction: "Usa el escudo con {shield} (en el aire es una esquiva).",
+    tasks: [{ label: "Escudar o esquivar", done: (t) => t.shieldedOrDodged }],
+  },
+  {
+    title: "Habilidad especial: Furia",
+    instruction:
+      "Al infligir daño cargas tu FURIA. Cuando se llene se activa sola y multiplica tu daño: ¡remata al saco con un fuerte estando en furia!",
+    tasks: [
+      { label: "Activar la furia (haz daño)", done: (t) => t.furyActivated },
+      { label: "Derrotar al saco con un fuerte en furia", done: (t) => t.furyKo },
+    ],
   },
 ];
 
@@ -126,7 +196,9 @@ export class TutorialScreen {
   private readonly titleEl: HTMLDivElement;
   private readonly instrEl: HTMLDivElement;
   private readonly progressEl: HTMLDivElement;
+  private readonly taskListEl: HTMLDivElement;
   private readonly doneEl: HTMLDivElement;
+  private readonly cheerEl: HTMLDivElement;
 
   private world: World | null = null;
   private tut: Tutorial | null = null;
@@ -137,6 +209,12 @@ export class TutorialScreen {
   private paused = false;
 
   private objIndex = 0;
+  /** Elementos de check de las tareas del objetivo actual. */
+  private taskEls: HTMLDivElement[] = [];
+  private taskDone: boolean[] = [];
+
+  /** Transición entre objetivos: >0 = mostrando "¡Bien hecho!" y reiniciando. */
+  private advanceTimer = 0;
   private completed = false;
   private completeTimer = 0;
 
@@ -164,12 +242,23 @@ export class TutorialScreen {
     this.instrEl.className = "tutorial-instr";
     this.panel.appendChild(this.instrEl);
 
-    // Cartel grande de "completado" (final).
+    // Lista de sub-tareas con sus checks.
+    this.taskListEl = document.createElement("div");
+    this.taskListEl.className = "tutorial-tasks";
+    this.panel.appendChild(this.taskListEl);
+
+    // Texto "¡Bien hecho!" al completar un objetivo.
+    this.cheerEl = document.createElement("div");
+    this.cheerEl.id = "tutorial-cheer";
+    this.cheerEl.textContent = "¡Bien hecho!";
+
+    // Cartel grande de "tutorial completado".
     this.doneEl = document.createElement("div");
     this.doneEl.id = "tutorial-done";
     this.doneEl.textContent = "¡Tutorial completado!";
 
     document.body.appendChild(this.panel);
+    document.body.appendChild(this.cheerEl);
     document.body.appendChild(this.doneEl);
   }
 
@@ -182,6 +271,7 @@ export class TutorialScreen {
     this.objIndex = 0;
     this.completed = false;
     this.completeTimer = 0;
+    this.advanceTimer = 0;
     this.paused = false;
 
     this.camera.clearCinematic();
@@ -203,7 +293,8 @@ export class TutorialScreen {
 
     this.panel.classList.add("open");
     this.doneEl.classList.remove("show");
-    this.renderObjective();
+    this.cheerEl.classList.remove("show");
+    this.buildObjective();
 
     this.lastTime = performance.now();
     this.accumulator = 0;
@@ -216,6 +307,7 @@ export class TutorialScreen {
     this.p1.detach();
     this.panel.classList.remove("open");
     this.doneEl.classList.remove("show");
+    this.cheerEl.classList.remove("show");
     this.camera.clearCinematic();
     if (this.pauseMenu) {
       this.pauseMenu.destroy();
@@ -239,9 +331,16 @@ export class TutorialScreen {
           this.tut.observe(this.p1State);
           this.accumulator -= FIXED_DT;
           guard++;
-          if (!this.completed) this.checkObjective();
+          if (!this.completed && this.advanceTimer <= 0) this.checkTasks();
         }
-        // Cuenta atrás tras completar el último objetivo -> salir.
+
+        // Transición "¡Bien hecho!" entre objetivos.
+        if (this.advanceTimer > 0) {
+          this.advanceTimer -= frameTime;
+          if (this.advanceTimer <= 0) this.advanceObjective();
+        }
+
+        // Cuenta atrás tras completar el tutorial entero -> salir.
         if (this.completed) {
           this.completeTimer -= frameTime;
           if (this.completeTimer <= 0) {
@@ -259,25 +358,70 @@ export class TutorialScreen {
     this.rafId = requestAnimationFrame(this.frame);
   };
 
-  /** Comprueba si el objetivo actual se cumplió; avanza al siguiente. */
-  private checkObjective(): void {
+  /** Comprueba el estado de cada sub-tarea del objetivo actual. */
+  private checkTasks(): void {
     if (!this.tut) return;
     const obj = OBJECTIVES[this.objIndex];
-    if (obj && obj.isDone(this.tut)) {
-      this.objIndex++;
-      if (this.objIndex >= OBJECTIVES.length) {
-        this.completed = true;
-        this.completeTimer = 2.6;
-        this.panel.classList.remove("open");
-        this.doneEl.classList.add("show");
-      } else {
-        this.renderObjective();
+    if (!obj) return;
+
+    let allDone = true;
+    obj.tasks.forEach((task, i) => {
+      const done = task.done(this.tut!);
+      if (done && !this.taskDone[i]) {
+        this.taskDone[i] = true;
+        this.markTaskDone(i);
       }
+      if (!done) allDone = false;
+    });
+
+    if (allDone) {
+      // Objetivo completado: "¡Bien hecho!" y, tras un instante, avanzar.
+      this.cheer();
+      this.advanceTimer = 1.1;
     }
   }
 
-  /** Pinta el panel del objetivo actual (rellenando las teclas reales). */
-  private renderObjective(): void {
+  /** Muestra el texto de ánimo al completar un objetivo. */
+  private cheer(): void {
+    this.cheerEl.classList.remove("show");
+    void this.cheerEl.offsetWidth; // reinicia la animación
+    this.cheerEl.classList.add("show");
+  }
+
+  /** Pasa al siguiente objetivo (o completa el tutorial), reiniciando al jugador. */
+  private advanceObjective(): void {
+    this.objIndex++;
+    if (this.objIndex >= OBJECTIVES.length) {
+      this.completed = true;
+      this.completeTimer = 2.6;
+      this.panel.classList.remove("open");
+      this.doneEl.classList.add("show");
+      return;
+    }
+    this.resetPlayer();
+    this.buildObjective();
+  }
+
+  /**
+   * Reinicia al jugador (y al saco) sobre el suelo, listo para la siguiente
+   * fase. Los colocamos a ras de suelo (como el spawn inicial) en vez de en el
+   * punto de reaparición flotante, para que no caigan ni queden descolocados.
+   */
+  private resetPlayer(): void {
+    if (!this.world) return;
+    const groundY = WORLD.groundY - Player.bodyHeight - 2;
+    const p = this.world.player;
+    p.respawn(RULES.respawnX, groundY);
+    // La barra de furia NO se conserva entre fases salvo en el apartado de
+    // furia, donde queremos que el jugador la cargue él mismo.
+    p.furyMeter = 0;
+    p.furyTimer = 0;
+    const dummy = this.world.fighters[1]?.player;
+    if (dummy) dummy.respawn(RULES.respawnX + 150, groundY);
+  }
+
+  /** Construye el panel + lista de tareas del objetivo actual. */
+  private buildObjective(): void {
     const obj = OBJECTIVES[this.objIndex];
     if (!obj) return;
     this.progressEl.textContent = `Objetivo ${this.objIndex + 1} / ${OBJECTIVES.length}`;
@@ -286,5 +430,32 @@ export class TutorialScreen {
       /\{(\w+)\}/g,
       (_m, action: string) => `<b class="tutorial-key">${key(action)}</b>`,
     );
+
+    // Reconstruye la lista de sub-tareas con sus checks (vacíos).
+    this.taskListEl.replaceChildren();
+    this.taskEls = [];
+    this.taskDone = obj.tasks.map(() => false);
+    obj.tasks.forEach((task) => {
+      const row = document.createElement("div");
+      row.className = "tutorial-task";
+      const check = document.createElement("span");
+      check.className = "tutorial-check";
+      check.textContent = "○";
+      const label = document.createElement("span");
+      label.textContent = task.label;
+      row.appendChild(check);
+      row.appendChild(label);
+      this.taskListEl.appendChild(row);
+      this.taskEls.push(row);
+    });
+  }
+
+  /** Marca visualmente una sub-tarea como completada (check verde + animación). */
+  private markTaskDone(i: number): void {
+    const row = this.taskEls[i];
+    if (!row) return;
+    row.classList.add("done");
+    const check = row.querySelector(".tutorial-check");
+    if (check) check.textContent = "✓";
   }
 }
