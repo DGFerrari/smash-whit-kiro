@@ -86,8 +86,19 @@ export class CpuBrain {
   /** Contador determinista para alternar decisiones (en vez de azar). */
   private tick = 0;
 
-  constructor(difficulty: CpuDifficulty = "normal") {
+  /**
+   * Offset de "personalidad" [0..n) para desincronizar varias CPUs. Desfasa los
+   * ritmos de ataque y los patrones de carga, para que no hagan todas lo mismo
+   * a la vez cuando están pegadas al mismo rival. Es determinista (lo fija el
+   * índice del fighter), así no rompe replays.
+   */
+  private readonly variation: number;
+
+  constructor(difficulty: CpuDifficulty = "normal", variation = 0) {
     this.prof = PROFILES[difficulty];
+    this.variation = variation;
+    // Arrancamos el tick desfasado para que cada CPU no actúe en el mismo frame.
+    this.tick = variation * 11;
   }
 
   think(me: Player, foe: Player | null, platforms: Platform[]): InputState {
@@ -164,7 +175,8 @@ export class CpuBrain {
       }
       if (this.attackCooldown === 0 && this.chance(this.prof.aggression)) {
         s.lightPressed = true;
-        this.attackCooldown = this.prof.attackCooldown;
+        // Cooldown con desfase por personalidad: cada CPU ataca a su ritmo.
+        this.attackCooldown = this.prof.attackCooldown + (this.variation % 3) * 5;
       }
       this.holdingHeavy = 0;
       return s;
@@ -172,8 +184,11 @@ export class CpuBrain {
 
     // --- 4) Acercarse (según agresividad/alcance del perfil) ---
     this.holdingHeavy = 0;
+    // Distancia de "pegado" un poco distinta por CPU, para no apilarse todas en
+    // el mismo punto haciendo lo mismo.
+    const keepDist = 56 + (this.variation % 3) * 16;
     const shouldEngage = adx < this.prof.engageRange || this.prof.edgeguard;
-    if (shouldEngage && adx > 56) {
+    if (shouldEngage && adx > keepDist) {
       s.moveX = dir;
     } else if (!shouldEngage && adx < 120) {
       // Perfil pasivo (fácil): mantiene distancia si está muy cerca sin atacar.
@@ -207,9 +222,10 @@ export class CpuBrain {
     me.facing = dir;
     if (this.holdingHeavy === 0) {
       // Elegimos objetivo de carga al empezar: alterna corto/medio/largo según
-      // un patrón determinista (no azar, para no romper replays).
-      const pattern = [6, 44, 20, 54, 10][this.tick % 5];
-      this.heavyTargetHold = pattern;
+      // un patrón determinista (no azar, para no romper replays). El offset de
+      // personalidad desfasa el patrón entre CPUs.
+      const seq = [6, 44, 20, 54, 10, 30];
+      this.heavyTargetHold = seq[(this.tick + this.variation) % seq.length];
     }
     this.holdingHeavy++;
     if (this.holdingHeavy < this.heavyTargetHold) {

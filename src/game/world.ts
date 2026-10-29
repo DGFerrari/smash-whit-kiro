@@ -304,12 +304,26 @@ export class World {
 
   /** El primer rival vivo y no-muerto de un combatiente (o null). */
   private opponentOf(self: Fighter): Player | null {
+    const sx = self.player.pos.x + self.player.width / 2;
+    const sy = self.player.pos.y + self.player.height / 2;
+    let best: Player | null = null;
+    let bestD = Infinity;
     for (const f of this.fighters) {
       if (f === self) continue;
       if (!f.alive || f.isDead) continue;
-      return f.player;
+      const fx = f.player.pos.x + f.player.width / 2;
+      const fy = f.player.pos.y + f.player.height / 2;
+      // Distancia al cuadrado; pesamos un poco más el eje X (el combate es
+      // mayormente horizontal), para preferir al que tenemos al lado.
+      const dx = fx - sx;
+      const dy = fy - sy;
+      const d = dx * dx + dy * dy * 0.5;
+      if (d < bestD) {
+        bestD = d;
+        best = f.player;
+      }
     }
-    return null;
+    return best;
   }
 
   /** Plataformas efectivas este paso: las fijas + las temporales de respawn. */
@@ -357,7 +371,11 @@ export class World {
     dt: number,
     platforms: Platform[],
   ): void {
-    // Muerto: corre el reloj de reaparición y no se simula el cuerpo.
+    // Eliminado (sin vidas): ya no se simula ni se comprueba la blast zone, así
+    // no vuelve a disparar el efecto de muerte una y otra vez.
+    if (!f.alive) return;
+
+    // Muerto temporalmente: corre el reloj de reaparición y no se simula.
     if (f.respawnTimer > 0) {
       f.respawnTimer -= dt;
       if (f.respawnTimer <= 0) this.doRespawn(f);
@@ -369,7 +387,7 @@ export class World {
       this.updateDummy(f, dt, platforms);
     } else if (f.cpu) {
       // CPU: la IA genera su InputState a partir del estado del mundo.
-      if (!f.brain) f.brain = new CpuBrain(this.cpuDifficulty);
+      if (!f.brain) f.brain = new CpuBrain(this.cpuDifficulty, f.index);
       const foe = this.opponentOf(f);
       const aiInput = f.brain.think(f.player, foe, platforms);
       f.player.fixedUpdate(aiInput, platforms, dt);

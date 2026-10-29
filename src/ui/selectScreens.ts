@@ -69,8 +69,11 @@ export class CharacterSelect {
 
   /** Personaje elegido por cada slot (null = sin elegir). */
   private readonly picks: Array<CharacterId | null> = [null, null, null, null];
-  /** Control de cada slot. P1 siempre humano; P2 humano; P3/P4 off por defecto. */
-  private readonly control: SlotControl[] = ["human", "human", "off", "off"];
+  /**
+   * Control de cada slot. P1 siempre humano; P2/P3/P4 arrancan DESHABILITADOS
+   * (el jugador activa los que quiera; mínimo 2 para empezar).
+   */
+  private readonly control: SlotControl[] = ["human", "off", "off", "off"];
   /** Dificultad común de las CPU. */
   private cpuDifficulty: CpuDiff = "normal";
   /** Para re-sincronizar las tarjetas tras cambios. */
@@ -225,18 +228,13 @@ export class CharacterSelect {
       return card;
     }
 
-    // Opciones de control: P2 no puede desactivarse (mínimo 2 jugadores).
-    const controlOptions: Array<{ value: SlotControl; label: string }> =
-      p === 1
-        ? [
-            { value: "human", label: "Jugador" },
-            { value: "cpu", label: "CPU" },
-          ]
-        : [
-            { value: "human", label: "Jugador" },
-            { value: "cpu", label: "CPU" },
-            { value: "off", label: "Off" },
-          ];
+    // Opciones de control (P2/P3/P4): Jugador, CPU o Deshabilitado. El mínimo
+    // de 2 jugadores activos lo garantiza la validación del botón de empezar.
+    const controlOptions: Array<{ value: SlotControl; label: string }> = [
+      { value: "human", label: "Jugador" },
+      { value: "cpu", label: "CPU" },
+      { value: "off", label: "Deshabilitado" },
+    ];
 
     const tabs = document.createElement("div");
     tabs.className = "player-card-tabs";
