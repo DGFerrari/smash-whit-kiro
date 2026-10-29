@@ -1,4 +1,5 @@
 import { POV } from "../config.ts";
+import { audio } from "../core/audio.ts";
 import {
   ACTION_LABELS,
   bindings,
@@ -361,6 +362,7 @@ export class PauseMenu {
   /** Opciones del jugador: POV + acceso al remapeo de teclas. */
   private fillOptions(el: HTMLElement): void {
     el.appendChild(this.buildPovSlider());
+    el.appendChild(this.buildVolumeSlider());
     // Mostrar/ocultar la UI del juego (HUD de %/vidas/cronómetro).
     el.appendChild(
       this.buildToggle({
@@ -372,6 +374,40 @@ export class PauseMenu {
     el.appendChild(
       this.menuButton("Cambiar teclas", () => this.goTo("keys")),
     );
+  }
+
+  /** Slider de volumen del juego (0..100%). */
+  private buildVolumeSlider(): HTMLElement {
+    const wrap = document.createElement("div");
+    wrap.className = "pause-field";
+
+    const head = document.createElement("div");
+    head.className = "pause-field-head";
+    const label = document.createElement("span");
+    label.className = "pause-label";
+    label.textContent = "Volumen";
+    head.appendChild(label);
+    const value = document.createElement("span");
+    value.className = "pause-field-value";
+    const fmt = (v: number): string => `${Math.round(v * 100)}%`;
+    value.textContent = fmt(audio.getVolume());
+    head.appendChild(value);
+    wrap.appendChild(head);
+
+    const slider = document.createElement("input");
+    slider.type = "range";
+    slider.className = "pause-slider";
+    slider.min = "0";
+    slider.max = "1";
+    slider.step = "0.05";
+    slider.value = String(audio.getVolume());
+    slider.addEventListener("input", () => {
+      const v = Number(slider.value);
+      audio.setVolume(v);
+      value.textContent = fmt(v);
+    });
+    wrap.appendChild(slider);
+    return wrap;
   }
 
   /** Elección de qué jugador remapear. */

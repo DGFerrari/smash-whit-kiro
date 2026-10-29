@@ -7,6 +7,7 @@ import { debug } from "../debug/debugState.ts";
 import { Rng, randomSeed } from "../core/rng.ts";
 import { getCharacter, type CharacterId } from "./characters.ts";
 import { getStage, type StageId, type StageKind } from "./stages.ts";
+import { audio } from "../core/audio.ts";
 
 /** Modo de juego. */
 export type GameMode = "training" | "versus";
@@ -455,9 +456,11 @@ export class World {
             attacker.player.addFuryCharge(res.effectiveDamage);
             // Recordamos quién golpeó por última vez (para atribuir el KO).
             target.lastHitBy = attacker.index;
-            // Efecto visual de impacto en el punto de contacto.
+            // Efecto visual + sonido de impacto en el punto de contacto.
             const hitColor = attacker.player.furyActive ? "#ffe08a" : attacker.color;
-            this.spawnHitEffect(atk.hitbox, hitColor, res.effectiveDamage, res.blocked > 0.01);
+            const wasBlocked = res.blocked > 0.01;
+            this.spawnHitEffect(atk.hitbox, hitColor, res.effectiveDamage, wasBlocked);
+            audio.play(wasBlocked ? "blocked" : atk.def.kind === "heavy" ? "hitHeavy" : "hit");
             // ¿KO dramático? Golpe potente sobre un rival ya cargado, con
             // knockback suficiente para sacarlo. Solo en versus y una vez.
             if (
@@ -535,6 +538,7 @@ export class World {
 
     // Pedimos a la cámara que se quede un momento enfocando este punto.
     this.pendingDeathFocus = { x, y };
+    audio.play("ko");
   }
 
   private updateDeathEffects(dt: number): void {

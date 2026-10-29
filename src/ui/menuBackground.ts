@@ -4,6 +4,7 @@ import type { Renderer } from "../render/renderer.ts";
 import type { Camera } from "../render/camera.ts";
 import { ReplayPlayer } from "../game/replay.ts";
 import { MENU_REPLAYS } from "../game/menuReplays.ts";
+import { audio } from "../core/audio.ts";
 
 /**
  * Fondo animado del menú principal: reproduce replays en bucle detrás del menú.
@@ -88,7 +89,9 @@ export class MenuBackground {
 
     if (this.player && this.world) {
       // Avanzamos la simulación del replay (siempre a velocidad normal).
+      // El fondo del menú es MUDO: silenciamos el audio mientras simula.
       if (this.phase !== "out") {
+        audio.setSilent(true);
         this.accumulator += frameTime;
         let guard = 0;
         while (this.accumulator >= FIXED_DT && guard < 600) {
@@ -101,6 +104,7 @@ export class MenuBackground {
           this.accumulator -= FIXED_DT;
           guard++;
         }
+        audio.setSilent(false);
       }
 
       // Fundido: fade-in al entrar, fade-out al terminar -> siguiente replay.

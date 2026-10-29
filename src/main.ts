@@ -2,6 +2,7 @@ import "./style.css";
 import { World, type GameMode, type MatchConfig } from "./game/world.ts";
 import { CharacterSelect, StageSelect } from "./ui/selectScreens.ts";
 import { HandCursor } from "./ui/handCursor.ts";
+import { audio } from "./core/audio.ts";
 import { Renderer } from "./render/renderer.ts";
 import { Camera } from "./render/camera.ts";
 import { GameLoop } from "./game/loop.ts";
@@ -43,6 +44,8 @@ class App {
   private recorder: ReplayRecorder | null = null;
   /** Replay grabado de la última partida (para ofrecer descargarlo al acabar). */
   private lastReplay: ReplayData | null = null;
+  /** Último texto de cuenta atrás (para no repetir el sonido cada frame). */
+  private lastCountdown: string | null = null;
 
   /** Config elegida de la partida en curso (para grabación y revancha). */
   private pendingMode: GameMode = "versus";
@@ -220,7 +223,15 @@ class App {
 
     const loop = new GameLoop(world, renderer, camera, {
       onGameOver: (winnerIndex) => this.onGameOver(winnerIndex),
-      onCountdown: (text) => this.countdown.set(text),
+      onCountdown: (text) => {
+        this.countdown.set(text);
+        // Sonido solo al CAMBIAR el texto (el callback llega cada frame).
+        if (text !== this.lastCountdown) {
+          this.lastCountdown = text;
+          if (text === "GO!") audio.play("go");
+          else if (text) audio.play("count");
+        }
+      },
       onKOFlash: (intensity) => this.koFlash.set(intensity),
       onDramaticKO: () => {
         /* El destello lo maneja onKOFlash; aquí podríamos sonar un golpe. */
@@ -324,4 +335,19 @@ class App {
 
 const app = new App();
 window.addEventListener("resize", () => app.onResize());
+// El audio del navegador se desbloquea en el primer gesto del usuario.
+audio.unlockOnFirstGesture();
+
+// Sonidos de UI: un clic sutil al pulsar cualquier botón/celda interactiva.
+document.addEventListener(
+  "pointerdown",
+  (e) => {
+    const el = e.target as HTMLElement | null;
+    if (el?.closest("button, .portrait, .stage-cell, .token-chip")) {
+      audio.play("uiConfirm");
+    }
+  },
+  true,
+);
+
 app.start();

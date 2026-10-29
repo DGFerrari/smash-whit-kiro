@@ -4,6 +4,7 @@ import type { Renderer } from "../render/renderer.ts";
 import type { Camera } from "../render/camera.ts";
 import { ReplayPlayer, type ReplayData } from "../game/replay.ts";
 import { PauseMenu } from "./pauseMenu.ts";
+import { audio } from "../core/audio.ts";
 
 /**
  * Reproductor de replays con controles tipo vídeo.
@@ -204,6 +205,8 @@ export class ReplayScreen {
   private simulateTo(target: number): void {
     if (!this.player || !this.world) return;
     const t = Math.max(0, Math.min(this.player.totalSteps, target));
+    // Silenciamos el audio durante el re-salto (si no, sonarían miles de golpes).
+    audio.setSilent(true);
     // Si vamos hacia atrás, reiniciamos y re-simulamos desde cero.
     if (t < this.currentStep) {
       this.rebuildWorld();
@@ -214,6 +217,7 @@ export class ReplayScreen {
       this.world.step(inputs, FIXED_DT);
       this.currentStep++;
     }
+    audio.setSilent(false);
   }
 
   private frame = (now: number): void => {

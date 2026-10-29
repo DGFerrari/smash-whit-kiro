@@ -1,4 +1,5 @@
 import { FURY, PLAYER, SHIELD } from "../config.ts";
+import { audio } from "../core/audio.ts";
 import type { AABB, Vec2 } from "../core/types.ts";
 import type { InputState } from "../core/input.ts";
 import type { Platform } from "../physics/platform.ts";
@@ -468,6 +469,7 @@ export class Player {
     this.attack = null;
     this.charging = false;
     this.heavyChargeSteps = 0;
+    audio.play("dash");
   }
 
   /**
@@ -493,6 +495,7 @@ export class Player {
     this.attack = null;
     this.charging = false;
     this.heavyChargeSteps = 0;
+    audio.play("shield");
   }
 
   /** Avanza el ataque en curso y lo descarta al terminar. */
@@ -690,6 +693,7 @@ export class Player {
     this.coyoteTimer = 0;
     this.onGround = false;
     this.jumpsLeft = Math.max(0, this.jumpsLeft - 1);
+    audio.play("jump");
   }
 
   /**
@@ -707,6 +711,7 @@ export class Player {
     this.wallGrabDir = 0; // consumimos el agarre
     this.wallSliding = false;
     this.onGround = false;
+    audio.play("jump");
     // No gastamos salto aéreo: el wall jump es su propia acción.
   }
 
