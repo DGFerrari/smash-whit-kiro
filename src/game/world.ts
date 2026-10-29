@@ -23,6 +23,24 @@ export interface MatchConfig {
 }
 
 /**
+ * Efecto visual de IMPACTO al conectar un golpe: destello + chispas en el punto
+ * de contacto. Lo emite el World al resolver un hit y lo dibuja el renderer.
+ */
+export interface HitEffect {
+  x: number;
+  y: number;
+  /** Color del destello (del atacante). */
+  color: string;
+  /** Intensidad 0..1 (según el daño/knockback): escala tamaño y chispas. */
+  power: number;
+  /** ¿Fue bloqueado por escudo? (destello azulado, sin chispas). */
+  blocked: boolean;
+  readonly seed: number;
+  life: number;
+  readonly maxLife: number;
+}
+
+/**
  * Efecto visual de muerte: un RAYO estilo Smash que cae sobre el punto donde el
  * combatiente cruzó la blast zone. Vive unos frames y lo dibuja el renderer.
  */
@@ -148,6 +166,8 @@ export class World {
 
   /** Efectos de muerte activos (visuales). */
   readonly deathEffects: DeathEffect[] = [];
+  /** Efectos de impacto activos (destellos de golpe). */
+  readonly hitEffects: HitEffect[] = [];
 
   /** ¿Terminó la partida? Y el índice del ganador (o -1 = empate). */
   gameOver = false;
@@ -435,6 +455,9 @@ export class World {
             attacker.player.addFuryCharge(res.effectiveDamage);
             // Recordamos quién golpeó por última vez (para atribuir el KO).
             target.lastHitBy = attacker.index;
+            // Efecto visual de impacto en el punto de contacto.
+            const hitColor = attacker.player.furyActive ? "#ffe08a" : attacker.color;
+            this.spawnHitEffect(atk.hitbox, hitColor, res.effectiveDamage, res.blocked > 0.01);
             // ¿KO dramático? Golpe potente sobre un rival ya cargado, con
             // knockback suficiente para sacarlo. Solo en versus y una vez.
             if (
@@ -520,6 +543,31 @@ export class World {
     for (let i = this.deathEffects.length - 1; i >= 0; i--) {
       if (this.deathEffects[i].life <= 0) this.deathEffects.splice(i, 1);
     }
+    // Lo mismo para los efectos de impacto.
+    for (const e of this.hitEffects) e.life -= dt;
+    for (let i = this.hitEffects.length - 1; i >= 0; i--) {
+      if (this.hitEffects[i].life <= 0) this.hitEffects.splice(i, 1);
+    }
+  }
+
+  /** Emite un efecto de impacto en el centro de la hitbox del golpe. */
+  private spawnHitEffect(
+    hitbox: { x: number; y: number; w: number; h: number },
+    color: string,
+    damage: number,
+    blocked: boolean,
+  ): void {
+    const power = Math.max(0.25, Math.min(1, damage / 22));
+    this.hitEffects.push({
+      x: hitbox.x + hitbox.w / 2,
+      y: hitbox.y + hitbox.h / 2,
+      color,
+      power,
+      blocked,
+      seed: this.rng.range(0, 1000),
+      life: 0.32,
+      maxLife: 0.32,
+    });
   }
 
   /**

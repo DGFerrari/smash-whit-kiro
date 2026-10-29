@@ -4,7 +4,7 @@ import { BLAST_ZONE, DEPTH, TEXTURES, WORLD, type SurfaceTexture } from "../conf
 import type { Player } from "../entities/player.ts";
 import type { Platform } from "../physics/platform.ts";
 import { Camera } from "./camera.ts";
-import type { World, DeathEffect } from "../game/world.ts";
+import type { World, DeathEffect, HitEffect } from "../game/world.ts";
 import { getStage, type StageTheme } from "../game/stages.ts";
 import { debug } from "../debug/debugState.ts";
 import { drawPercentHud, type PercentEntry } from "../ui/percentHud.ts";
@@ -574,8 +574,93 @@ export class Renderer {
       this.addAttack(f.player);
     }
 
-    // Efectos de muerte (rayos).
+    // Efectos de impacto (destellos de golpe) y de muerte (rayos).
+    for (const e of world.hitEffects) this.addHitEffect(e);
     for (const e of world.deathEffects) this.addDeathEffect(e);
+  }
+
+  /**
+   * Destello de impacto al golpear: un disco brillante que crece y se apaga,
+   * más unos rayos/chispas radiales. Si fue bloqueado por escudo, un anillo
+   * azulado sin chispas. Todo en el plano de juego, delante de los cuerpos.
+   */
+  private addHitEffect(e: HitEffect): void {
+    const t = 1 - e.life / e.maxLife; // 0..1
+    const fade = 1 - t;
+    const z = DEPTH.fighter / 2 + 6;
+
+    if (e.blocked) {
+      // Bloqueo: anillo azul que se expande.
+      const r = (10 + 40 * easeOut(t)) * (0.6 + e.power);
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(r * 0.8, r, 24),
+        new THREE.MeshBasicMaterial({
+          color: 0x8fd0ff,
+          transparent: true,
+          opacity: fade * 0.9,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+        }),
+      );
+      ring.position.set(e.x, -e.y, z);
+      this.dynamicGroup.add(ring);
+      return;
+    }
+
+    // Destello central (disco blanco que crece y se apaga).
+    const flashR = (16 + 46 * easeOut(t)) * (0.6 + e.power);
+    const flash = new THREE.Mesh(
+      this.sphereGeo,
+      new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: fade,
+        depthWrite: false,
+      }),
+    );
+    flash.scale.setScalar(flashR * (1 - t * 0.5));
+    flash.position.set(e.x, -e.y, z);
+    this.dynamicGroup.add(flash);
+
+    // Halo de color del atacante.
+    const halo = new THREE.Mesh(
+      new THREE.RingGeometry(flashR * 0.9, flashR * 1.4, 20),
+      new THREE.MeshBasicMaterial({
+        color: new THREE.Color(e.color),
+        transparent: true,
+        opacity: fade * 0.85,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      }),
+    );
+    halo.position.set(e.x, -e.y, z);
+    this.dynamicGroup.add(halo);
+
+    // Chispas radiales (líneas) que salen disparadas; más cuanto más potente.
+    const spikes = Math.round(5 + e.power * 7);
+    const verts: number[] = [];
+    for (let i = 0; i < spikes; i++) {
+      const ang = (i / spikes) * Math.PI * 2 + e.seed;
+      const inner = flashR * 0.7;
+      const outer = flashR * (1.3 + e.power * 1.4) * (0.6 + t);
+      verts.push(
+        e.x + Math.cos(ang) * inner, -e.y + Math.sin(ang) * inner, z,
+        e.x + Math.cos(ang) * outer, -e.y + Math.sin(ang) * outer, z,
+      );
+    }
+    const sparks = new THREE.LineSegments(
+      (() => {
+        const g = new THREE.BufferGeometry();
+        g.setAttribute("position", new THREE.Float32BufferAttribute(verts, 3));
+        return g;
+      })(),
+      new THREE.LineBasicMaterial({
+        color: new THREE.Color(e.color),
+        transparent: true,
+        opacity: fade,
+      }),
+    );
+    this.dynamicGroup.add(sparks);
   }
 
   private addFighter(
