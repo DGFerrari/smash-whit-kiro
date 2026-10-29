@@ -59,6 +59,8 @@ export class MainMenu {
   private readonly rows = new Map<MenuOption, HTMLButtonElement>();
   private readonly hintEl: HTMLParagraphElement;
   private readonly playBtn: HTMLButtonElement;
+  /** Logo compartido entre fases: se desliza del centro a arriba-izquierda. */
+  private readonly logo: HTMLHeadingElement;
   private selected: MenuOption | null = null;
   private phase: "title" | "select" = "title";
 
@@ -66,13 +68,16 @@ export class MainMenu {
     this.root = document.createElement("div");
     this.root.id = "main-menu";
 
-    // --- Fase 1: título ---
+    // Logo ÚNICO compartido: su posición la decide la clase de fase del root,
+    // así la transición de centro -> arriba-izquierda es un deslizamiento suave.
+    this.logo = document.createElement("h1");
+    this.logo.className = "menu-logo";
+    this.logo.textContent = "Título";
+    this.root.appendChild(this.logo);
+
+    // --- Fase 1: título (solo "Press start"; el logo es el compartido) ---
     this.titlePhase = document.createElement("div");
     this.titlePhase.className = "menu-title-phase";
-    const logo = document.createElement("h1");
-    logo.className = "menu-logo";
-    logo.textContent = "Título";
-    this.titlePhase.appendChild(logo);
     const press = document.createElement("div");
     press.className = "menu-press-start";
     press.textContent = "Press start";
@@ -83,11 +88,6 @@ export class MainMenu {
     // --- Fase 2: selección ---
     this.selectPhase = document.createElement("div");
     this.selectPhase.className = "menu-select-phase";
-
-    const title = document.createElement("h1");
-    title.className = "menu-select-title";
-    title.textContent = "Título";
-    this.selectPhase.appendChild(title);
 
     // Lista de modos (a la izquierda).
     const list = document.createElement("div");
@@ -122,8 +122,15 @@ export class MainMenu {
 
   show(): void {
     this.phase = "title";
-    this.root.classList.remove("in-select");
+    this.root.classList.remove("in-select", "mode-chosen");
     this.root.classList.add("open", "in-title");
+
+    // Entramos SIN ningún modo seleccionado.
+    this.selected = null;
+    for (const row of this.rows.values()) row.classList.remove("selected");
+    this.hintEl.textContent = "Selecciona un modo.";
+    this.hintEl.style.color = "";
+    this.playBtn.disabled = true;
   }
 
   hide(): void {
@@ -246,17 +253,22 @@ export class MatchOverScreen {
 
     const actions = document.createElement("div");
     actions.className = "results-actions";
+
+    // Revancha: botón primario (acento, icono de repetir).
     const rematch = document.createElement("button");
     rematch.type = "button";
-    rematch.className = "menu-btn";
-    rematch.textContent = "Revancha";
+    rematch.className = "result-btn result-btn-rematch";
+    rematch.innerHTML =
+      '<span class="result-btn-icon">↻</span><span class="result-btn-text">Revancha</span><span class="result-btn-sub">Misma config</span>';
     rematch.addEventListener("click", () => this.cb.onRematch());
     actions.appendChild(rematch);
 
+    // Menú: botón secundario (neutro, icono de casa).
     const menu = document.createElement("button");
     menu.type = "button";
-    menu.className = "menu-btn";
-    menu.textContent = "Menú principal";
+    menu.className = "result-btn result-btn-menu";
+    menu.innerHTML =
+      '<span class="result-btn-icon">⌂</span><span class="result-btn-text">Menú principal</span><span class="result-btn-sub">Salir de la partida</span>';
     menu.addEventListener("click", () => this.cb.onMenu());
     actions.appendChild(menu);
     this.panel.appendChild(actions);
@@ -265,26 +277,24 @@ export class MatchOverScreen {
     document.body.appendChild(this.root);
   }
 
+  /** Muestra SOLO el cartel "FINISH" (durante la cámara lenta del remate). */
+  showFinish(): void {
+    this.root.classList.add("open");
+    this.panel.classList.remove("show");
+    this.finishEl.classList.remove("show");
+    void this.finishEl.offsetWidth;
+    this.finishEl.classList.add("show");
+  }
+
   /**
-   * Muestra la secuencia: FINISH -> podio. `results` ya viene ordenado o no;
-   * aquí ordenamos poniendo al ganador primero.
+   * Muestra el podio tras el FINISH, con entrada en dos tiempos: primero el
+   * GANADOR destacado y, un instante después, se acopla el perdedor.
    */
   show(winnerLabel: string, winnerColor: string, results: FighterResult[]): void {
     this.root.classList.add("open");
-
-    // Fase 1: FINISH.
     this.finishEl.classList.remove("show");
-    this.panel.classList.remove("show");
-    void this.finishEl.offsetWidth;
-    this.finishEl.classList.add("show");
-
-    // Fase 2: tras un instante, el podio.
-    window.clearTimeout(this.finishTimer);
-    this.finishTimer = window.setTimeout(() => {
-      this.finishEl.classList.remove("show");
-      this.buildPodium(winnerLabel, winnerColor, results);
-      this.panel.classList.add("show");
-    }, 1400);
+    this.buildPodium(winnerLabel, winnerColor, results);
+    this.panel.classList.add("show");
   }
 
   private buildPodium(
@@ -295,14 +305,21 @@ export class MatchOverScreen {
     this.titleEl.textContent = `¡Gana ${winnerLabel}!`;
     this.titleEl.style.color = winnerColor;
 
+    // Ganador primero; el resto después (orden de entrada).
     const sorted = [...results].sort(
       (a, b) => Number(b.isWinner) - Number(a.isWinner) || b.dealt - a.dealt,
     );
 
     this.podium.replaceChildren();
-    for (const r of sorted) {
-      this.podium.appendChild(this.buildCard(r));
-    }
+    sorted.forEach((r, i) => {
+      const card = this.buildCard(r);
+      // Entrada escalonada: el ganador entra ya; los demás, con retraso, para
+      // que se vea primero al ganador y luego se "acople" el perdedor.
+      card.style.animationDelay = r.isWinner ? "0s" : `${0.7 + i * 0.15}s`;
+      this.podium.appendChild(card);
+    });
+    // Marca para que el ganador tenga su efecto extra de realce.
+    window.clearTimeout(this.finishTimer);
   }
 
   private buildCard(r: FighterResult): HTMLElement {

@@ -53,15 +53,16 @@ class App {
     this.mainMenu.show();
   }
 
-  /** Vuelve al menú principal con pantalla de carga de por medio. */
+  /** Vuelve al menú principal con transición de iris de por medio. */
   private async toMenu(): Promise<void> {
     if (this.busy) return;
     this.busy = true;
-    const loaded = this.loading.show(700);
+    // Iris se cierra tapando la escena actual.
+    await this.loading.cover();
     this.teardownMatch();
-    await loaded;
-    this.loading.hide();
     this.mainMenu.show();
+    // Iris se abre revelando el menú.
+    await this.loading.reveal();
     this.busy = false;
   }
 
@@ -69,10 +70,10 @@ class App {
     if (this.busy) return;
     this.busy = true;
 
+    // Iris se cierra tapando el menú.
+    await this.loading.cover();
     this.mainMenu.hide();
-    const loaded = this.loading.show(900);
     this.teardownMatch();
-    await loaded;
 
     const world = new World(mode);
     this.world = world;
@@ -89,6 +90,8 @@ class App {
       onDramaticKO: () => {
         /* El destello lo maneja onKOFlash; aquí podríamos sonar un golpe. */
       },
+      // Al perder la última vida: "FINISH" durante la cámara lenta del remate.
+      onFinish: () => this.matchOver.showFinish(),
     });
     this.loop = loop;
 
@@ -99,8 +102,9 @@ class App {
       onQuitToMenu: () => void this.toMenu(),
     });
 
-    this.loading.hide();
+    // Arrancamos el loop (ya renderiza el primer frame) y abrimos el iris.
     loop.start();
+    await this.loading.reveal();
     this.busy = false;
   }
 

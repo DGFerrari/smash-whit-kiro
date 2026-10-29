@@ -14,6 +14,8 @@ export interface LoopCallbacks {
   onDramaticKO?: (victimIndex: number) => void;
   /** Destello del KO dramático en [0..1] (1 = pleno), para el overlay. */
   onKOFlash?: (intensity: number) => void;
+  /** La partida acaba de terminar: mostrar "FINISH" (empieza la cámara lenta). */
+  onFinish?: () => void;
 }
 
 /** Fases de una partida gestionadas por el loop. */
@@ -63,6 +65,14 @@ export class GameLoop {
 
   /** Temporizador de la cámara "quedándose" en el punto de muerte (s). */
   private deathFocusTimer = 0;
+
+  /**
+   * Final de partida en cámara lenta: al perder la última vida alguien, no
+   * mostramos el podio al instante. Entramos en cámara lenta, enseñamos
+   * "FINISH" y, tras este tiempo, avisamos a la app para el podio.
+   */
+  private finishTimer = 0;
+  private finishing = false;
 
   constructor(
     private readonly world: World,
@@ -197,7 +207,8 @@ export class GameLoop {
       // Destello que decae con el tiempo restante.
       this.cb.onKOFlash?.(Math.max(0, this.slowmoTimer / 0.9));
       if (this.slowmoTimer <= 0) {
-        this.targetTimeScale = 1;
+        // Si NO estamos en el remate de fin de partida, volvemos a tiempo real.
+        if (!this.finishing) this.targetTimeScale = 1;
         this.cb.onKOFlash?.(0);
       }
     }
@@ -236,9 +247,20 @@ export class GameLoop {
 
     const alpha = this.accumulator / FIXED_DT;
 
-    if (this.world.gameOver && !this.gameOverNotified) {
-      this.gameOverNotified = true;
-      this.cb.onGameOver?.(this.world.winnerIndex);
+    // Fin de partida: la primera vez entramos en cámara lenta + "FINISH"; solo
+    // avisamos para el podio cuando el temporizador de remate se agota.
+    if (this.world.gameOver && !this.finishing && !this.gameOverNotified) {
+      this.finishing = true;
+      this.finishTimer = 2.4; // s de reloj real en cámara lenta
+      this.targetTimeScale = 0.18; // cámara MUY lenta para el remate
+      this.cb.onFinish?.();
+    }
+    if (this.finishing && !this.gameOverNotified) {
+      this.finishTimer -= frameTime;
+      if (this.finishTimer <= 0) {
+        this.gameOverNotified = true;
+        this.cb.onGameOver?.(this.world.winnerIndex);
+      }
     }
 
     return alpha;

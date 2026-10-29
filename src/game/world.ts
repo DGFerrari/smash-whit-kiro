@@ -240,8 +240,9 @@ export class World {
    *   entrenamiento, el índice 1 se ignora (el dummy usa input neutro).
    */
   step(inputs: InputState[], dt: number): void {
-    if (this.gameOver) return;
-
+    // Nota: NO frenamos la simulación al marcar gameOver. Dejamos que el último
+    // KO (knockback + rayo) se reproduzca en cámara lenta durante el "FINISH"
+    // antes del podio. El resultado (winnerIndex) ya quedó fijado.
     const platforms = this.activePlatforms();
 
     for (const f of this.fighters) {

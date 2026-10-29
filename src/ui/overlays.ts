@@ -8,58 +8,63 @@
  */
 
 /**
- * Pantalla de carga estilo "iris" (Looney Tunes): un velo oscuro cubre la
- * pantalla y, abajo a la derecha, un CÍRCULO se va llenando de abajo a arriba
- * indicando el progreso de carga. Al llegar al 100% el iris se cierra/abre y
- * resuelve la promesa.
+ * Transición de carga estilo IRIS (barrido circular de dibujos animados).
+ *
+ * Es un velo negro a pantalla completa con un AGUJERO circular transparente en
+ * el centro, cuyo radio animamos:
+ *  - cover(): el agujero se cierra (radio grande -> 0), tapando la pantalla de
+ *    FUERA hacia DENTRO. Se usa para ocultar la escena actual.
+ *  - reveal(): el agujero se abre (radio 0 -> grande), destapando la nueva
+ *    escena de DENTRO hacia FUERA.
+ *
+ * El radio se aplica con un radial-gradient (transparente dentro, negro fuera),
+ * animado por requestAnimationFrame para un control fino del easing.
  */
 export class LoadingScreen {
   private readonly root: HTMLDivElement;
-  /** Relleno que sube dentro del círculo (altura 0%..100%). */
-  private readonly fill: HTMLDivElement;
   private raf = 0;
+  /** Radio que cubre de sobra la pantalla (diagonal). */
+  private get maxRadius(): number {
+    return Math.hypot(window.innerWidth, window.innerHeight) / 2 + 40;
+  }
 
   constructor() {
     this.root = document.createElement("div");
     this.root.id = "loading-screen";
-
-    // Círculo abajo a la derecha (el "iris").
-    const circle = document.createElement("div");
-    circle.className = "loading-iris";
-
-    this.fill = document.createElement("div");
-    this.fill.className = "loading-iris-fill";
-    circle.appendChild(this.fill);
-
-    const ring = document.createElement("div");
-    ring.className = "loading-iris-ring";
-    circle.appendChild(ring);
-
-    const label = document.createElement("div");
-    label.className = "loading-iris-label";
-    label.textContent = "That's all folks… cargando";
-    circle.appendChild(label);
-
-    this.root.appendChild(circle);
+    this.setRadius(this.maxRadius); // empieza totalmente abierto (invisible)
     document.body.appendChild(this.root);
   }
 
-  /**
-   * Muestra la pantalla de carga durante `duration` ms; el círculo se llena de
-   * abajo a arriba y la promesa resuelve al terminar.
-   */
-  show(duration = 900): Promise<void> {
-    this.root.classList.add("open");
-    this.fill.style.height = "0%";
-    const start = performance.now();
-    cancelAnimationFrame(this.raf);
+  /** Aplica el radio del agujero transparente centrado. */
+  private setRadius(r: number): void {
+    const px = Math.max(0, r);
+    // Dentro del radio: transparente; justo fuera: negro. El pequeño solape
+    // (px+1) evita un borde dentado.
+    this.root.style.background = `radial-gradient(circle at 50% 50%, rgba(7,10,18,0) ${px}px, rgba(7,10,18,1) ${px + 1}px)`;
+  }
 
+  /** Cierra el iris (tapa la pantalla). Promesa al terminar. */
+  cover(duration = 450): Promise<void> {
+    this.root.classList.add("open");
+    return this.animate(this.maxRadius, 0, duration);
+  }
+
+  /** Abre el iris (destapa la pantalla) y oculta el overlay al acabar. */
+  reveal(duration = 550): Promise<void> {
+    this.root.classList.add("open");
+    return this.animate(0, this.maxRadius, duration).then(() => {
+      this.root.classList.remove("open");
+    });
+  }
+
+  private animate(from: number, to: number, duration: number): Promise<void> {
+    cancelAnimationFrame(this.raf);
+    const start = performance.now();
     return new Promise<void>((resolve) => {
       const tick = (now: number): void => {
         const t = Math.min(1, (now - start) / duration);
-        // Curva con un pequeño "tirón" al final para que se sienta dinámica.
-        const eased = t < 0.9 ? t * 0.85 : 0.765 + (t - 0.9) * 2.35;
-        this.fill.style.height = `${Math.min(100, eased * 100)}%`;
+        const eased = easeInOut(t);
+        this.setRadius(from + (to - from) * eased);
         if (t < 1) {
           this.raf = requestAnimationFrame(tick);
         } else {
@@ -69,10 +74,10 @@ export class LoadingScreen {
       this.raf = requestAnimationFrame(tick);
     });
   }
+}
 
-  hide(): void {
-    this.root.classList.remove("open");
-  }
+function easeInOut(t: number): number {
+  return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
 }
 
 /** Texto grande centrado para la cuenta atrás de la intro. */

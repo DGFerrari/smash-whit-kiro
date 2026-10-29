@@ -418,65 +418,20 @@ body {
 }
 
 /* ===== Pantalla de carga ===== */
-/* Velo oscuro de carga; el "iris" circular vive abajo a la derecha. */
+/* Transición de carga tipo IRIS: velo a pantalla completa cuyo fondo (un
+   radial-gradient con un agujero transparente) lo anima el JS. Sin display:flex
+   ni contenido; solo el barrido circular. */
 #loading-screen {
   position: fixed;
   inset: 0;
   z-index: 40;
   display: none;
-  background: #070a12;
-  opacity: 0;
-  transition: opacity 0.25s ease;
+  pointer-events: none;
 }
 
 #loading-screen.open {
   display: block;
-  opacity: 1;
-}
-
-/* Círculo "iris" estilo Looney Tunes, anclado abajo a la derecha. */
-.loading-iris {
-  position: absolute;
-  right: 40px;
-  bottom: 40px;
-  width: 128px;
-  height: 128px;
-  border-radius: 50%;
-  overflow: hidden;
-  background: rgba(255, 255, 255, 0.06);
-  box-shadow: 0 0 40px rgba(0, 0, 0, 0.6);
-}
-
-/* Relleno que sube de ABAJO a ARRIBA según el progreso. */
-.loading-iris-fill {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 0%;
-  background: linear-gradient(0deg, #2f6bff, #7fb2ff);
-  transition: height 0.05s linear;
-}
-
-/* Aro del círculo por encima del relleno. */
-.loading-iris-ring {
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  border: 4px solid rgba(255, 255, 255, 0.85);
-  box-sizing: border-box;
-}
-
-/* Pequeña etiqueta a la izquierda del círculo. */
-.loading-iris-label {
-  position: absolute;
-  right: 150px;
-  bottom: 54px;
-  white-space: nowrap;
-  color: #cdd6e4;
-  font-size: 14px;
-  letter-spacing: 1px;
-  opacity: 0.85;
+  pointer-events: auto;
 }
 
 /* ===== Cuenta atrás de intro ===== */
@@ -609,18 +564,63 @@ body {
   animation: cardRise 0.5s cubic-bezier(0.22, 0.61, 0.36, 1) both;
 }
 
+/* Ganador destacado: más grande, borde dorado, resplandor pulsante y corona. */
 .podium-card.winner {
-  box-shadow: 0 0 28px rgba(255, 216, 77, 0.25);
+  transform-origin: center bottom;
+  border-color: #ffd84d;
+  border-width: 3px;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 216, 77, 0.14),
+    rgba(255, 255, 255, 0.04)
+  );
+  box-shadow: 0 0 40px rgba(255, 216, 77, 0.45);
+  animation: winnerIn 0.7s cubic-bezier(0.22, 0.61, 0.36, 1) both,
+    winnerGlow 1.8s ease-in-out 0.7s infinite;
+  z-index: 2;
 }
 
+.podium-card.winner .podium-head {
+  font-size: 24px;
+  text-shadow: 0 0 14px rgba(255, 216, 77, 0.5);
+}
+
+/* Entrada del ganador: aparece centrado y crece con un rebote. */
+@keyframes winnerIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.6) translateY(20px);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.08) translateY(0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1.04) translateY(0);
+  }
+}
+
+/* Resplandor pulsante continuo del ganador. */
+@keyframes winnerGlow {
+  0%,
+  100% {
+    box-shadow: 0 0 34px rgba(255, 216, 77, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 52px rgba(255, 216, 77, 0.7);
+  }
+}
+
+/* El/los perdedores se "acoplan" deslizando desde abajo, tras el ganador. */
 @keyframes cardRise {
   from {
     opacity: 0;
-    transform: translateY(26px);
+    transform: translateY(40px) scale(0.96);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: translateY(0) scale(1);
   }
 }
 
@@ -657,16 +657,73 @@ body {
 
 .results-actions {
   display: flex;
-  gap: 12px;
+  gap: 16px;
+  margin-top: 8px;
 }
 
-.results-actions .menu-btn {
+/* Botones de resultado: con icono, texto y subtexto; claramente distintos. */
+.result-btn {
   flex: 1;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 12px;
   align-items: center;
-  text-align: center;
+  padding: 14px 18px;
+  border-radius: 12px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: transform 0.12s ease, box-shadow 0.2s ease, background 0.15s ease,
+    border-color 0.15s ease;
 }
 
-/* ===== Selección de modo en el menú principal ===== */
+.result-btn:hover {
+  transform: translateY(-2px);
+}
+
+.result-btn-icon {
+  grid-row: 1 / 3;
+  font-size: 30px;
+  line-height: 1;
+}
+
+.result-btn-text {
+  font-size: 17px;
+  font-weight: 800;
+}
+
+.result-btn-sub {
+  font-size: 12px;
+  opacity: 0.75;
+}
+
+/* Revancha = acción PRIMARIA (azul, resaltada). */
+.result-btn-rematch {
+  background: linear-gradient(180deg, #2f6bff, #2456d8);
+  border-color: #5b86ff;
+  color: #ffffff;
+  box-shadow: 0 6px 20px rgba(47, 107, 255, 0.4);
+}
+
+.result-btn-rematch:hover {
+  background: linear-gradient(180deg, #4680ff, #2f6bff);
+  box-shadow: 0 8px 26px rgba(47, 107, 255, 0.55);
+}
+
+/* Menú = acción SECUNDARIA (gris/contorno, más sobria). */
+.result-btn-menu {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: #3a4560;
+  color: #cdd6e4;
+}
+
+.result-btn-menu:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: #5a6886;
+  color: #ffffff;
+}
+
 /* ===== Menú principal (dos fases) ===== */
 #main-menu {
   --menu-accent: #2f6bff;
@@ -695,6 +752,35 @@ body {
   );
 }
 
+/* Logo compartido entre fases. Se posiciona en el centro (título) o arriba a
+   la izquierda (selección) y la transición de transform lo DESLIZA suave. */
+.menu-logo {
+  position: absolute;
+  margin: 0;
+  color: #f1f4fa;
+  font-weight: 800;
+  letter-spacing: 2px;
+  transition: transform 0.5s cubic-bezier(0.22, 0.61, 0.36, 1),
+    font-size 0.5s cubic-bezier(0.22, 0.61, 0.36, 1);
+  will-change: transform;
+}
+
+/* Fase título: logo centrado y grande. */
+#main-menu.in-title .menu-logo {
+  left: 50%;
+  top: 38%;
+  transform: translate(-50%, -50%);
+  font-size: 64px;
+}
+
+/* Fase selección: logo desplazado a arriba-izquierda y más pequeño. */
+#main-menu.in-select .menu-logo {
+  left: 7vw;
+  top: 7vh;
+  transform: translate(0, 0);
+  font-size: 44px;
+}
+
 /* --- Fase título --- */
 .menu-title-phase {
   position: absolute;
@@ -703,7 +789,6 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 10px;
   cursor: pointer;
 }
 
@@ -711,15 +796,9 @@ body {
   display: flex;
 }
 
-.menu-logo {
-  color: #f1f4fa;
-  font-size: 64px;
-  font-weight: 800;
-  letter-spacing: 2px;
-  margin: 0;
-}
-
+/* "Press start" colocado bajo el logo centrado. */
 .menu-press-start {
+  margin-top: 90px;
   color: #9fb0cc;
   font-size: 20px;
   letter-spacing: 1px;
@@ -748,16 +827,11 @@ body {
   display: block;
 }
 
-.menu-select-title {
-  color: #f1f4fa;
-  font-size: 44px;
-  font-weight: 800;
-  letter-spacing: 1px;
-  margin: 0 0 6vh;
-}
-
-/* Lista de modos a la izquierda. */
+/* Lista de modos a la izquierda, bajo el logo. */
 .mode-list {
+  position: absolute;
+  left: 7vw;
+  top: 26vh;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -783,7 +857,16 @@ body {
 }
 
 .mode-row:hover {
-  transform: translateX(4px);
+  transform: translateX(6px);
+}
+
+/* El modo seleccionado SOBRESALE hacia la derecha (deslizamiento suave). */
+.mode-row.selected {
+  transform: translateX(32px);
+}
+
+.mode-row.selected:hover {
+  transform: translateX(32px);
 }
 
 /* El caret ">" solo aparece en el seleccionado. */
