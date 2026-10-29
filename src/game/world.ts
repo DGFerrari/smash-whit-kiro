@@ -4,6 +4,7 @@ import { Platform } from "../physics/platform.ts";
 import { overlaps } from "../physics/aabb.ts";
 import { createInputState, type InputState } from "../core/input.ts";
 import { debug } from "../debug/debugState.ts";
+import { Rng, randomSeed } from "../core/rng.ts";
 
 /** Modo de juego. */
 export type GameMode = "training" | "versus";
@@ -138,9 +139,14 @@ export class World {
   /** Efectos de muerte activos (visuales). */
   readonly deathEffects: DeathEffect[] = [];
 
-  /** ¿Terminó la partida? Y el índice del ganador (o -1). */
+  /** ¿Terminó la partida? Y el índice del ganador (o -1 = empate). */
   gameOver = false;
   winnerIndex = -1;
+  /** ¿La partida acabó en empate? (para el podio). */
+  draw = false;
+
+  /** Tiempo restante del 1vs1 en segundos. Infinity = sin límite (training). */
+  timeLeft: number;
 
   /**
    * Evento de "KO dramático" pendiente de consumir por la capa de presentación
@@ -160,8 +166,16 @@ export class World {
   /** Input neutro permanente para el dummy en entrenamiento. */
   private readonly dummyInput: InputState = createInputState();
 
-  constructor(mode: GameMode = "training") {
+  /** Semilla y RNG determinista de la partida (clave para replays idénticos). */
+  readonly seed: number;
+  private readonly rng: Rng;
+
+  constructor(mode: GameMode = "training", seed: number = randomSeed()) {
     this.mode = mode;
+    this.seed = seed;
+    this.rng = new Rng(seed);
+    // Solo el 1vs1 tiene límite de tiempo; entrenamiento es ilimitado.
+    this.timeLeft = mode === "versus" ? RULES.matchTimeLimit : Infinity;
     // Entrenamiento usa el escenario de práctica; versus, la isla.
     this.stage = mode === "training" ? "trainingGrid" : "island";
     this.buildStage();
@@ -243,6 +257,15 @@ export class World {
     // Nota: NO frenamos la simulación al marcar gameOver. Dejamos que el último
     // KO (knockback + rayo) se reproduzca en cámara lenta durante el "FINISH"
     // antes del podio. El resultado (winnerIndex) ya quedó fijado.
+
+    // Cronómetro del 1vs1: al agotarse, se resuelve por vidas y luego por daño.
+    if (!this.gameOver && Number.isFinite(this.timeLeft)) {
+      this.timeLeft = Math.max(0, this.timeLeft - dt);
+      if (this.timeLeft <= 0) {
+        this.resolveByTime();
+      }
+    }
+
     const platforms = this.activePlatforms();
 
     for (const f of this.fighters) {
@@ -449,7 +472,7 @@ export class World {
       x,
       y,
       color: f.color,
-      seed: Math.random() * 1000,
+      seed: this.rng.range(0, 1000),
       life: 0.6,
       maxLife: 0.6,
     });
@@ -525,6 +548,49 @@ export class World {
     if (alive.length <= 1) {
       this.gameOver = true;
       this.winnerIndex = alive.length === 1 ? alive[0].index : -1;
+      this.draw = alive.length === 0;
+    }
+  }
+
+  /**
+   * Resolución por tiempo agotado (1vs1): gana quien tenga MÁS vidas; a igualdad
+   * de vidas, quien tenga MENOS % de daño acumulado; si todo empata, es empate.
+   */
+  private resolveByTime(): void {
+    if (this.gameOver) return;
+    this.gameOver = true;
+
+    const contenders = this.fighters.filter((f) => f.alive);
+    if (contenders.length === 0) {
+      this.winnerIndex = -1;
+      this.draw = true;
+      return;
+    }
+
+    let best = contenders[0];
+    let tie = false;
+    for (let i = 1; i < contenders.length; i++) {
+      const f = contenders[i];
+      if (f.lives > best.lives) {
+        best = f;
+        tie = false;
+      } else if (f.lives === best.lives) {
+        // Menos daño gana el desempate.
+        if (f.player.damage < best.player.damage) {
+          best = f;
+          tie = false;
+        } else if (f.player.damage === best.player.damage) {
+          tie = true;
+        }
+      }
+    }
+
+    if (tie) {
+      this.winnerIndex = -1;
+      this.draw = true;
+    } else {
+      this.winnerIndex = best.index;
+      this.draw = false;
     }
   }
 }

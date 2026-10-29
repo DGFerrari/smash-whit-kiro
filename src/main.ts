@@ -114,8 +114,17 @@ class App {
 
   private onGameOver(winnerIndex: number): void {
     const world = this.world;
-    const label = winnerIndex >= 0 ? FIGHTER_LABELS[winnerIndex] : "nadie";
-    const color = winnerIndex >= 0 ? FIGHTER_COLORS[winnerIndex] : "#f1f4fa";
+    const isDraw = world?.draw ?? winnerIndex < 0;
+    const label = isDraw
+      ? "Empate"
+      : winnerIndex >= 0
+        ? FIGHTER_LABELS[winnerIndex]
+        : "nadie";
+    const color = isDraw
+      ? "#f1f4fa"
+      : winnerIndex >= 0
+        ? FIGHTER_COLORS[winnerIndex]
+        : "#f1f4fa";
 
     // Recogemos las calificaciones ANTES de destruir el mundo.
     const results: FighterResult[] = (world?.fighters ?? []).map((f) => ({

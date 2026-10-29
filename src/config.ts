@@ -109,6 +109,10 @@ export const POV = {
 /** Reglas de combate básicas: vidas y reaparición. */
 export const RULES = {
   startingLives: 3,
+
+  /** Límite de tiempo del 1vs1 en segundos (5 minutos). Al agotarse, se
+   * resuelve por vidas y, a igualdad, por menor % de daño. */
+  matchTimeLimit: 300,
   /** Punto de reaparición en coordenadas de mundo (centro de referencia). */
   respawnX: 0,
   respawnY: -120,

@@ -142,8 +142,57 @@ export class Renderer {
     }));
     drawPercentHud(this.hud, entries, w, h);
 
+    // Cronómetro del 1vs1 (arriba centrado).
+    if (Number.isFinite(world.timeLeft)) {
+      this.drawTimer(this.hud, world.timeLeft, w);
+    }
+
     if (debug.showStats) this.drawStats(this.hud, world.player, camera);
     if (debug.showFps) this.drawFps(this.hud);
+  }
+
+  /** Reloj mm:ss arriba centrado; se pone rojo en los últimos 10 s. */
+  private drawTimer(
+    ctx: CanvasRenderingContext2D,
+    timeLeft: number,
+    screenW: number,
+  ): void {
+    const total = Math.max(0, Math.ceil(timeLeft));
+    const mm = Math.floor(total / 60);
+    const ss = total % 60;
+    const text = `${mm}:${ss.toString().padStart(2, "0")}`;
+
+    ctx.save();
+    ctx.font = "800 30px ui-monospace, monospace";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    const tw = ctx.measureText(text).width + 36;
+    const x = screenW / 2;
+    const y = 14;
+    // Fondo redondeado.
+    ctx.fillStyle = "rgba(10, 14, 22, 0.75)";
+    this.roundRect(ctx, x - tw / 2, y, tw, 42, 10);
+    ctx.fill();
+    ctx.fillStyle = timeLeft <= 10 ? "#ff5d5d" : "#f1f4fa";
+    ctx.fillText(text, x, y + 7);
+    ctx.restore();
+  }
+
+  private roundRect(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    r: number,
+  ): void {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
   }
 
   // ---------------------------------------------------------------------------

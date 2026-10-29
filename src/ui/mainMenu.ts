@@ -302,7 +302,8 @@ export class MatchOverScreen {
     winnerColor: string,
     results: FighterResult[],
   ): void {
-    this.titleEl.textContent = `¡Gana ${winnerLabel}!`;
+    this.titleEl.textContent =
+      winnerLabel === "Empate" ? "¡Empate!" : `¡Gana ${winnerLabel}!`;
     this.titleEl.style.color = winnerColor;
 
     // Ganador primero; el resto después (orden de entrada).
