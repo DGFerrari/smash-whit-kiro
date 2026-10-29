@@ -173,3 +173,15 @@ export const HEAVY_LUNGE = {
   /** Usos del fuerte en el aire antes de tocar suelo/pared. */
   maxAirUses: 2,
 } as const;
+
+/**
+ * Parámetros del dummy de entrenamiento cuando repite un ataque en bucle.
+ */
+export const DUMMY_ATTACK = {
+  /**
+   * Pausa (en pasos de física, 60 = 1 s) entre ataques LIGEROS repetidos, para
+   * que no haga spam ininterrumpido. El fuerte no la usa: se relanza en cuanto
+   * termina el anterior, pero carga completa cada vez.
+   */
+  lightIntervalSteps: 24,
+} as const;

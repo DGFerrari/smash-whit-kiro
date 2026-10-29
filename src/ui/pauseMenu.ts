@@ -29,7 +29,8 @@ interface ToggleDef {
   hint?: string;
 }
 
-const DEV_TOGGLES: ToggleDef[] = [
+/** Depuración · Visuales: lo que se dibuja sobre el mundo. */
+const DEBUG_VISUAL_TOGGLES: ToggleDef[] = [
   {
     key: "showBlastZone",
     label: "Borde del mapa (blast zone)",
@@ -55,6 +56,10 @@ const DEV_TOGGLES: ToggleDef[] = [
     label: "Saltos / ataques agotados",
     hint: "Avisa cuando un jugador se queda sin saltos o sin fuerte aéreo.",
   },
+];
+
+/** Depuración · Información: overlays de datos. */
+const DEBUG_INFO_TOGGLES: ToggleDef[] = [
   {
     key: "showStats",
     label: "Stats del jugador",
@@ -78,18 +83,16 @@ type PageId =
   | "keys"
   | "keysP1"
   | "keysP2"
-  | "dev"
   | "dummy"
   | "controls"
   | "quit";
 
 const PAGE_TITLE: Record<PageId, string> = {
   root: "Pausa",
-  options: "Opciones",
+  options: "Ajustes",
   keys: "Controles (teclas)",
   keysP1: "Teclas · P1",
   keysP2: "Teclas · P2",
-  dev: "Dev tools",
   dummy: "Dummy",
   controls: "Controles",
   quit: "Salir de la partida",
@@ -324,9 +327,6 @@ export class PauseMenu {
       case "keysP2":
         this.fillKeyBindings(body, "p2");
         break;
-      case "dev":
-        this.fillToggles(body, DEV_TOGGLES);
-        break;
       case "dummy":
         this.fillDummy(body);
         break;
@@ -346,8 +346,7 @@ export class PauseMenu {
 
   private fillRoot(el: HTMLElement): void {
     el.appendChild(this.menuButton("Reanudar", () => this.setOpen(false)));
-    el.appendChild(this.menuButton("Opciones", () => this.goTo("options")));
-    el.appendChild(this.menuButton("Dev tools", () => this.goTo("dev")));
+    el.appendChild(this.menuButton("Ajustes", () => this.goTo("options")));
     // El Dummy solo tiene sentido en entrenamiento.
     if (this.cb.mode === "training") {
       el.appendChild(this.menuButton("Dummy", () => this.goTo("dummy")));
@@ -358,10 +357,17 @@ export class PauseMenu {
     );
   }
 
-  /** Opciones del jugador: POV + acceso al remapeo de teclas. */
+  /**
+   * Ajustes, organizados por categorías. Incluye lo que antes estaba separado
+   * en "Dev tools": aquí todo convive por secciones.
+   */
   private fillOptions(el: HTMLElement): void {
+    // --- Vista ---
+    el.appendChild(this.category("Vista"));
     el.appendChild(this.buildPovSlider());
-    // Mostrar/ocultar la UI del juego (HUD de %/vidas/cronómetro).
+
+    // --- Interfaz ---
+    el.appendChild(this.category("Interfaz"));
     el.appendChild(
       this.buildToggle({
         key: "showGameUi",
@@ -369,9 +375,21 @@ export class PauseMenu {
         hint: "Oculta el HUD de porcentajes, vidas y cronómetro para ver el gameplay limpio.",
       }),
     );
-    el.appendChild(
-      this.menuButton("Cambiar teclas", () => this.goTo("keys")),
-    );
+
+    // --- Depuración (lo que antes era Dev tools) ---
+    el.appendChild(this.category("Depuración · Visuales"));
+    this.fillToggles(el, DEBUG_VISUAL_TOGGLES);
+
+    el.appendChild(this.category("Depuración · Información"));
+    this.fillToggles(el, DEBUG_INFO_TOGGLES);
+  }
+
+  /** Cabecera de categoría dentro de una página. */
+  private category(title: string): HTMLElement {
+    const h = document.createElement("div");
+    h.className = "pause-subtitle";
+    h.textContent = title;
+    return h;
   }
 
   /** Elección de qué jugador remapear. */
@@ -540,14 +558,28 @@ export class PauseMenu {
       el.appendChild(this.buildDummyRadio(b.value, b.label, b.hint));
     }
 
-    // --- Ejecutar ataque ---
+    // --- Ataque repetido ---
     const atkTitle = document.createElement("div");
     atkTitle.className = "pause-subtitle";
     atkTitle.textContent = "Hacer que el dummy ataque";
     el.appendChild(atkTitle);
 
+    const note = document.createElement("span");
+    note.className = "pause-hint";
+    note.textContent =
+      "Elige un ataque y el dummy lo repetirá en bucle. El ligero deja una pausa entre golpes; el fuerte sale siempre a carga completa.";
+    el.appendChild(note);
+
     el.appendChild(this.buildAttackRow("Ataque ligero", "light"));
     el.appendChild(this.buildAttackRow("Ataque fuerte", "heavy"));
+
+    // Botón para detener el bucle de ataques.
+    const stop = this.menuButton("Parar ataques", () => {
+      debug.dummyAttack = null;
+      this.renderStack(); // refresca los resaltados
+    });
+    stop.classList.add("pause-btn-danger");
+    el.appendChild(stop);
   }
 
   private buildDummyRadio(
@@ -582,7 +614,11 @@ export class PauseMenu {
     return row;
   }
 
-  /** Fila con un ataque y 4 botones de dirección que lo disparan en el dummy. */
+  /**
+   * Fila con un ataque y 4 botones de dirección. Pulsar un botón SELECCIONA ese
+   * ataque+dirección para que el dummy lo repita en bucle; vuelve a pulsarlo
+   * para desactivarlo. El botón activo queda resaltado.
+   */
   private buildAttackRow(label: string, kind: "light" | "heavy"): HTMLElement {
     const wrap = document.createElement("div");
     wrap.className = "pause-attackrow";
@@ -607,8 +643,15 @@ export class PauseMenu {
       b.className = "pause-dirbtn";
       b.textContent = d.glyph;
       b.title = d.dir;
+      // Marca activo si coincide con la selección actual.
+      const active =
+        debug.dummyAttack?.kind === kind && debug.dummyAttack?.dir === d.dir;
+      if (active) b.classList.add("active");
       b.addEventListener("click", () => {
-        debug.dummyAction = { kind, dir: d.dir };
+        const current = debug.dummyAttack;
+        const isSame = current?.kind === kind && current?.dir === d.dir;
+        debug.dummyAttack = isSame ? null : { kind, dir: d.dir };
+        this.renderStack(); // refresca resaltados de toda la página
       });
       btns.appendChild(b);
     }
@@ -639,6 +682,9 @@ export class PauseMenu {
       row.appendChild(k);
       el.appendChild(row);
     }
+
+    // Botón para reasignar teclas (antes estaba en Ajustes).
+    el.appendChild(this.menuButton("Cambiar teclas", () => this.goTo("keys")));
   }
 
   /** Botón de menú uniforme (mismo tamaño y estilo gris, azul al hover). */

@@ -1,4 +1,5 @@
 import { BLAST_ZONE, RULES, WORLD } from "../config.ts";
+import { DUMMY_ATTACK } from "../combat/attacks.ts";
 import { Player } from "../entities/player.ts";
 import { Platform } from "../physics/platform.ts";
 import { overlaps } from "../physics/aabb.ts";
@@ -86,6 +87,9 @@ export class Fighter {
 
   /** Temporizador de "quieto en el suelo" para el modo reposicionar (s). */
   idleStillTimer = 0;
+
+  /** Pasos restantes de pausa entre ataques ligeros repetidos del dummy. */
+  dummyAtkCooldown = 0;
 
   /**
    * ¿La plataforma temporal debe parpadear este frame? Parpadea más rápido
@@ -215,11 +219,11 @@ export class World {
       new Fighter(0, p1, c0.color, FIGHTER_LABELS[0], RULES.startingLives, c0.id, !!c0.sandbag),
     );
 
-    // Fighter 1: en versus es P2 humano; en entrenamiento es el dummy/saco.
+    // Fighter 1: en versus es P2 humano; en entrenamiento es el dummy.
     const c1 = getCharacter(this.characters[1]);
     const startX = 220;
     const p2 = new Player(startX - Player.halfWidth, WORLD.groundY - 100);
-    const label1 = c1.sandbag ? "SACO" : FIGHTER_LABELS[1];
+    const label1 = c1.sandbag ? "DUMMY" : FIGHTER_LABELS[1];
     this.fighters.push(
       new Fighter(
         1,
@@ -346,11 +350,8 @@ export class World {
   private updateDummy(f: Fighter, dt: number, platforms: Platform[]): void {
     const dummy = f.player;
 
-    // Acción de ataque pedida desde el menú (se consume una vez).
-    if (debug.dummyAction) {
-      dummy.forceAttack(debug.dummyAction.kind, debug.dummyAction.dir);
-      debug.dummyAction = null;
-    }
+    // Ataque en bucle pedido desde el menú (si hay uno seleccionado).
+    this.updateDummyAttack(f);
 
     if (debug.dummyBehavior === "freeze") {
       // Clavado en su posición actual (solo fijamos velocidad y prevPos).
@@ -371,6 +372,30 @@ export class World {
     if (debug.dummyBehavior === "reposition") {
       this.repositionDummy(f, dt);
     }
+  }
+
+  /**
+   * Repite el ataque seleccionado para el dummy. El ligero deja una pausa entre
+   * golpes (anti-spam); el fuerte se relanza en cuanto puede, siempre a carga
+   * completa (forceAttack ya usa carga 1 para el fuerte).
+   */
+  private updateDummyAttack(f: Fighter): void {
+    const sel = debug.dummyAttack;
+    if (!sel) {
+      f.dummyAtkCooldown = 0;
+      return;
+    }
+    if (f.dummyAtkCooldown > 0) {
+      f.dummyAtkCooldown--;
+      return;
+    }
+    // Solo lanzamos cuando el dummy está libre (no atacando ni cargando).
+    if (!f.player.canStartAttack) return;
+
+    f.player.forceAttack(sel.kind, sel.dir);
+    // Tras un ligero, imponemos una pausa; el fuerte se encadena sin pausa
+    // extra (ya es lento de por sí).
+    f.dummyAtkCooldown = sel.kind === "light" ? DUMMY_ATTACK.lightIntervalSteps : 0;
   }
 
   /**

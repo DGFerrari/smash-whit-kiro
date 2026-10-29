@@ -1034,6 +1034,14 @@ body {
   color: #ffffff;
 }
 
+/* Botón de dirección activo: el ataque que el dummy repite ahora mismo. */
+.pause-dirbtn.active {
+  background: #2f6bff;
+  border-color: #6fa0ff;
+  color: #ffffff;
+  box-shadow: 0 0 0 2px rgba(111, 160, 255, 0.4);
+}
+
 /* ===== Opciones extra del menú (grabar / cargar replay) ===== */
 .menu-extras {
   position: absolute;

@@ -583,12 +583,14 @@ export class Player {
    */
   forceAttack(kind: "light" | "heavy", dir: AttackDir): void {
     if (this.stunned) return;
-    if (dir === "side") {
-      // Orienta hacia el lado del ataque (por defecto a la derecha).
-      this.facing = this.facing; // mantenemos el facing actual
-    }
-    const charge = kind === "heavy" ? 0.6 : 0;
+    // El fuerte sale a carga completa; el ligero sin carga.
+    const charge = kind === "heavy" ? 1 : 0;
     this.startAttack(kind, dir, charge);
+  }
+
+  /** ¿Está libre para iniciar un nuevo ataque? (ni atacando ni cargando). */
+  get canStartAttack(): boolean {
+    return !this.stunned && this.attack === null && !this.charging;
   }
 
   /**

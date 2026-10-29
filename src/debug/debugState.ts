@@ -32,10 +32,11 @@ export interface DebugState {
    */
   dummyBehavior: "free" | "freeze" | "reposition";
   /**
-   * Acción pendiente que el dummy debe EJECUTAR (la dispara un botón del menú y
-   * la consume el World en el siguiente paso). null = nada pendiente.
+   * Ataque que el dummy debe REPETIR de forma continua. null = no ataca.
+   * El World lo ejecuta en bucle: el ligero con un intervalo entre golpes
+   * (anti-spam) y el fuerte siempre a carga completa.
    */
-  dummyAction:
+  dummyAttack:
     | { kind: "light" | "heavy"; dir: "neutral" | "side" | "up" | "down" }
     | null;
   /**
@@ -65,7 +66,7 @@ export const debug: DebugState = {
   showStun: false,
   showStateColors: true,
   dummyBehavior: "free",
-  dummyAction: null,
+  dummyAttack: null,
   showResources: false,
   povZoom: POV.default,
   showGameUi: true,
