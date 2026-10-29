@@ -138,6 +138,13 @@ export class World {
    */
   pendingDramaticKO: number | null = null;
 
+  /**
+   * Petición de "cámara en el punto de muerte": tras morir alguien, la cámara
+   * se queda un rato enfocando dónde ocurrió para ver bien el rayo. El loop lo
+   * consume (lo pone a null) y corre la cinemática.
+   */
+  pendingDeathFocus: { x: number; y: number } | null = null;
+
   /** Input neutro permanente para el dummy en entrenamiento. */
   private readonly dummyInput: InputState = createInputState();
 
@@ -351,6 +358,9 @@ export class World {
       life: 0.6,
       maxLife: 0.6,
     });
+
+    // Pedimos a la cámara que se quede un momento enfocando este punto.
+    this.pendingDeathFocus = { x, y };
   }
 
   private updateDeathEffects(dt: number): void {

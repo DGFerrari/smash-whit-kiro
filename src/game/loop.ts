@@ -61,6 +61,9 @@ export class GameLoop {
   private slowmoTimer = 0;
   private koVictim = -1;
 
+  /** Temporizador de la cámara "quedándose" en el punto de muerte (s). */
+  private deathFocusTimer = 0;
+
   constructor(
     private readonly world: World,
     private readonly renderer: Renderer,
@@ -181,6 +184,13 @@ export class GameLoop {
     // Suavizado de la escala de tiempo (entra/sale de la cámara lenta).
     this.timeScale += (this.targetTimeScale - this.timeScale) * 0.25;
 
+    // Cámara "quedándose" en el punto de muerte: mientras el temporizador corre,
+    // forzamos un enfoque cinemático en ese punto; al acabar, liberamos.
+    if (this.deathFocusTimer > 0) {
+      this.deathFocusTimer -= frameTime;
+      if (this.deathFocusTimer <= 0) this.camera.clearCinematic();
+    }
+
     // Cámara lenta del KO dramático.
     if (this.slowmoTimer > 0) {
       this.slowmoTimer -= frameTime;
@@ -210,6 +220,14 @@ export class GameLoop {
         this.slowmoTimer = 0.9;
         this.targetTimeScale = 0.25;
         this.cb.onDramaticKO?.(this.koVictim);
+      }
+
+      // ¿Alguien murió? La cámara se queda enfocando el punto para ver el rayo.
+      if (this.world.pendingDeathFocus) {
+        const { x, y } = this.world.pendingDeathFocus;
+        this.world.pendingDeathFocus = null;
+        this.camera.focusOn(x, y, 1.1);
+        this.deathFocusTimer = 2.2;
       }
     }
 

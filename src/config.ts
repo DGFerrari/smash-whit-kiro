@@ -152,8 +152,16 @@ export const PLAYER = {
   /** Velocidad inicial del salto (px/s, hacia arriba = negativo). */
   jumpSpeed: 880,
 
-  /** Caída máxima para que no acelere infinitamente (px/s). */
+  /** Caída máxima absoluta (tope de seguridad, px/s). */
   maxFallSpeed: 1300,
+
+  /**
+   * Caída a velocidad (casi) CONSTANTE: al caer, en vez de acelerar sin fin,
+   * el jugador se acerca rápido a `fallSpeed` y se queda ahí. `fallAccel` es
+   * lo deprisa que llega a esa velocidad terminal.
+   */
+  fallSpeed: 720, // px/s de caída estable
+  fallAccel: 4200, // px/s^2 para alcanzar fallSpeed
 
   /**
    * Salto más "jugoso":

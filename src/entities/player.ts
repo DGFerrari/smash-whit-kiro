@@ -626,7 +626,15 @@ export class Player {
   }
 
   private applyGravity(dt: number): void {
-    this.vel.y += PLAYER.gravity * dt;
+    if (this.vel.y < 0) {
+      // Subiendo: gravedad normal (da el arco natural del salto).
+      this.vel.y += PLAYER.gravity * dt;
+    } else {
+      // Cayendo: en vez de acelerar sin fin, nos acercamos rápido a una
+      // velocidad de caída CONSTANTE (terminal). Así la caída es predecible y
+      // no "pesa" cada vez más.
+      this.vel.y = approach(this.vel.y, PLAYER.fallSpeed, PLAYER.fallAccel * dt);
+    }
     if (this.vel.y > PLAYER.maxFallSpeed) {
       this.vel.y = PLAYER.maxFallSpeed;
     }

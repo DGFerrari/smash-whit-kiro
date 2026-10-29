@@ -187,8 +187,8 @@ export class PauseMenu {
    * izquierda, desplazadas, escaladas y oscurecidas, pero SIGUEN VISIBLES. Al
    * navegar, la nueva tarjeta entra desde la derecha empujando el resto.
    */
-  private renderStack(animateTop: "none" | "enter" | "leaving"): void {
-    // Reconstruimos las tarjetas de la pila actual.
+  private renderStack(): void {
+    // Reconstruimos (sin animación) las tarjetas de la pila actual.
     const cards: HTMLElement[] = this.nav.map((page) => {
       const card = this.buildPage(page);
       card.classList.add("pause-card");
@@ -197,26 +197,9 @@ export class PauseMenu {
 
     this.viewport.replaceChildren(...cards);
     const top = cards.length - 1;
-
-    const layout = (): void => {
-      cards.forEach((card, i) => {
-        const depth = top - i; // 0 = arriba, 1 = justo detrás...
-        this.placeCard(card, depth);
-      });
-    };
-
-    if (animateTop === "enter") {
-      // La tarjeta superior entra desde la derecha.
-      const topCard = cards[top];
-      topCard.style.transition = "none";
-      topCard.style.transform = "translateX(120%)";
-      topCard.style.opacity = "0";
-      void topCard.offsetWidth;
-      topCard.style.transition = "";
-      requestAnimationFrame(layout);
-    } else {
-      layout();
-    }
+    cards.forEach((card, i) => {
+      this.placeCard(card, top - i);
+    });
   }
 
   /** Coloca una tarjeta según su profundidad en la pila. */
@@ -236,36 +219,78 @@ export class PauseMenu {
 
   /** Muestra la página actual sin animación (al abrir o resetear). */
   private renderInitial(): void {
-    this.renderStack("none");
+    this.renderStack();
   }
 
-  /** Entra a una subpágina: la nueva tarjeta llega desde la derecha. */
+  /**
+   * Entra a una subpágina: la nueva tarjeta llega desde la derecha y empuja las
+   * existentes una posición hacia atrás (se deslizan a la izquierda). Reutiliza
+   * las tarjetas ya presentes para que la transición de empuje sea visible.
+   */
   private goTo(page: PageId): void {
     if (this.animating) return;
     this.animating = true;
     this.nav.push(page);
-    this.renderStack("enter");
+
+    const existing = Array.from(this.viewport.children) as HTMLElement[];
+
+    // Empuja las existentes una posición más atrás (profundidad +1).
+    const newTopDepth = existing.length; // tras añadir la nueva
+    existing.forEach((card, i) => {
+      const depth = newTopDepth - i; // la antigua top pasa a depth 1, etc.
+      this.placeCard(card, depth);
+    });
+
+    // Crea la nueva tarjeta fuera (a la derecha) y la trae a su sitio (depth 0).
+    const card = this.buildPage(page);
+    card.classList.add("pause-card");
+    card.style.transition = "none";
+    card.style.transform = "translateX(120%)";
+    card.style.opacity = "0";
+    this.viewport.appendChild(card);
+    void card.offsetWidth; // reflow para que arranque desde fuera
+    card.style.transition = "";
+    requestAnimationFrame(() => this.placeCard(card, 0));
+
     window.setTimeout(() => {
       this.animating = false;
     }, 300);
   }
 
-  /** Vuelve una página: la tarjeta superior sale por la derecha. */
+  /**
+   * Vuelve una página: la tarjeta superior sale por la derecha y, A LA VEZ, las
+   * tarjetas de debajo se deslizan hacia adelante (de profundidad d a d-1), que
+   * es lo que daba la sensación de "sin animación" al volver. Reutilizamos los
+   * elementos existentes para que transicionen en lugar de reconstruirlos.
+   */
   private back(): void {
     if (this.animating || this.nav.length <= 1) return;
     this.animating = true;
+
     const cards = Array.from(this.viewport.children) as HTMLElement[];
     const topCard = cards[cards.length - 1];
+    const survivors = cards.slice(0, -1);
 
-    // Anima la salida de la tarjeta superior hacia la derecha.
+    // La tarjeta superior sale hacia la derecha.
+    topCard.style.pointerEvents = "none";
     topCard.style.transform = "translateX(120%)";
     topCard.style.opacity = "0";
 
+    // Las de debajo avanzan una posición (se recolocan con su transición).
+    const newTop = survivors.length - 1;
+    survivors.forEach((card, i) => {
+      this.placeCard(card, newTop - i);
+    });
+
+    this.nav.pop();
+
     window.setTimeout(() => {
-      this.nav.pop();
-      this.renderStack("none");
+      // Quitamos del DOM solo la tarjeta que salió; las demás ya están puestas.
+      if (topCard.parentElement === this.viewport) {
+        this.viewport.removeChild(topCard);
+      }
       this.animating = false;
-    }, 260);
+    }, 300);
   }
 
   private buildPage(page: PageId): HTMLElement {
@@ -381,7 +406,7 @@ export class PauseMenu {
     const reset = this.menuButton("Restaurar por defecto", () => {
       resetBindings(slot);
       // Re-dibuja la pila para reflejar los valores por defecto.
-      this.renderStack("none");
+      this.renderStack();
     });
     reset.classList.add("pause-btn-danger");
     el.appendChild(reset);
