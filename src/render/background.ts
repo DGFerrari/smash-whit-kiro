@@ -22,14 +22,25 @@ import type { StageBackdrop } from "../game/stages.ts";
 interface LayerDef {
   z: number; // profundidad (más negativo = más lejos)
   seed: number;
+  /** Cuánto sigue este plano al foco de la cámara (0 = quieto, 1 = pegado). */
+  parallax: number;
 }
 
 /** 4 capas a distintas profundidades; la textura la decide el backdrop. */
+/**
+ * Capas, de más LEJOS a más CERCA. Más alejadas que antes (Z más negativa) y
+ * con un `parallax` por capa: cuánto SIGUE cada plano al foco de la cámara.
+ *  - parallax 0 = clavado al mundo (se queda quieto; la cámara lo "sobrevuela").
+ *  - parallax 1 = pegado a la cámara (parece estático respecto a la pantalla).
+ * Valores bajos en las capas lejanas y algo más altos en las cercanas dan la
+ * sensación de profundidad: al moverte, el fondo se desplaza (antes se movían
+ * todas con la cámara 1:1, así que casi no se notaba).
+ */
 const LAYERS: LayerDef[] = [
-  { z: -2600, seed: 11 },
-  { z: -1900, seed: 29 },
-  { z: -1300, seed: 47 },
-  { z: -800, seed: 83 },
+  { z: -3800, seed: 11, parallax: 0.08 },
+  { z: -2900, seed: 29, parallax: 0.16 },
+  { z: -2000, seed: 47, parallax: 0.26 },
+  { z: -1200, seed: 83, parallax: 0.4 },
 ];
 
 export class Background3D {
@@ -74,23 +85,30 @@ export class Background3D {
   }
 
   /**
-   * Coloca las capas centradas en la X/Y de la cámara (para cubrir la vista),
-   * manteniendo su Z.
+   * Coloca cada capa con PARALLAX: sigue al foco de la cámara solo una fracción
+   * (`parallax`). Las capas lejanas se quedan casi clavadas al mundo, así que
+   * al moverse la cámara el fondo se desplaza respecto a la escena (sensación
+   * de profundidad). Al no seguir 1:1 a la cámara, los planos deben ser grandes
+   * (ver buildLayer) para no enseñar los bordes.
    */
   update(camera: Camera): void {
     if (this.backdrop === "grid") return;
     const fx = camera.focusX;
     const fy = -camera.focusY; // a coords de escena
-    for (const plane of this.planes) {
-      plane.position.x = fx;
-      plane.position.y = fy;
-    }
+    this.planes.forEach((plane, i) => {
+      const k = LAYERS[i].parallax;
+      plane.position.x = fx * k;
+      plane.position.y = fy * k;
+    });
   }
 
   private buildLayer(def: LayerDef): THREE.Mesh {
     const dist = Math.abs(def.z);
-    const w = dist * 3.2;
-    const h = dist * 1.9;
+    // Planos MÁS GRANDES: al estar más lejos y moverse con parallax (no pegados
+    // a la cámara), tienen que cubrir de sobra la vista para que NO se vean los
+    // bordes ni al alejar el zoom ni al desplazarse el foco.
+    const w = dist * 5.0;
+    const h = dist * 3.0;
     const geo = new THREE.PlaneGeometry(w, h);
     const mat = new THREE.MeshBasicMaterial({
       transparent: true,
