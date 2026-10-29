@@ -1,5 +1,6 @@
 import { FIXED_DT, MAX_STEPS_PER_FRAME } from "../config.ts";
 import { createInputState, KeyboardInput, type InputState } from "../core/input.ts";
+import { PLAYER_SLOTS } from "../core/bindings.ts";
 import type { Renderer } from "../render/renderer.ts";
 import type { Camera } from "../render/camera.ts";
 import type { World } from "./world.ts";
@@ -82,8 +83,16 @@ export class GameLoop {
     private readonly camera: Camera,
     private readonly cb: LoopCallbacks = {},
   ) {
-    this.inputs = [new KeyboardInput("p1"), new KeyboardInput("p2")];
-    this.inputStates = [createInputState(), createInputState()];
+    // Un KeyboardInput y un InputState por combatiente del mundo (hasta 4). A
+    // los que no son humanos (CPU/dummy) el World les ignora el input, pero
+    // mantener el array alineado por índice simplifica todo.
+    const n = world.fighters.length;
+    this.inputs = [];
+    this.inputStates = [];
+    for (let i = 0; i < n; i++) {
+      this.inputs.push(new KeyboardInput(PLAYER_SLOTS[i] ?? "p1"));
+      this.inputStates.push(createInputState());
+    }
   }
 
   start(): void {

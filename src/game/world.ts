@@ -15,8 +15,8 @@ export type GameMode = "training" | "versus";
 
 export type { StageKind } from "./stages.ts";
 
-/** Etiquetas de combatiente por índice (P1/P2). El color lo da el personaje. */
-export const FIGHTER_LABELS = ["P1", "P2"] as const;
+/** Etiquetas de combatiente por índice (P1..P4). El color lo da el personaje. */
+export const FIGHTER_LABELS = ["P1", "P2", "P3", "P4"] as const;
 
 /** Quién controla a un combatiente. */
 export type Controller = "human" | "cpu";
@@ -234,42 +234,32 @@ export class World {
     this.cpuDifficulty = config?.cpuDifficulty ?? "normal";
     this.buildStage();
 
-    // Posiciones de aparición SIMÉTRICAS: ambos apoyados sobre el suelo, uno a
-    // cada lado del centro. (Antes P1 caía desde arriba y P2 nacía en el suelo,
-    // lo que hacía que P1 "saliera volando" y P2 quieto.)
+    // Creamos N combatientes (2..4) repartidos simétricamente sobre el suelo.
+    const n = this.characters.length;
     const spawnY = WORLD.groundY - Player.bodyHeight - 2;
-    const spawnOffset = 160;
-
-    // Fighter 0: siempre el jugador humano principal (a la izquierda del centro).
-    const c0 = getCharacter(this.characters[0]);
-    const p1 = new Player(
-      RULES.respawnX - spawnOffset - Player.halfWidth,
-      spawnY,
-    );
-    this.fighters.push(
-      new Fighter(0, p1, c0.color, FIGHTER_LABELS[0], RULES.startingLives, c0.id, !!c0.sandbag),
-    );
-
-    // Fighter 1: en versus es P2 humano/CPU; en entrenamiento es el dummy.
-    const c1 = getCharacter(this.characters[1]);
-    const p2 = new Player(
-      RULES.respawnX + spawnOffset - Player.halfWidth,
-      spawnY,
-    );
-    const isCpu1 = config?.controllers?.[1] === "cpu";
-    const label1 = c1.sandbag ? "DUMMY" : isCpu1 ? "CPU" : FIGHTER_LABELS[1];
-    this.fighters.push(
-      new Fighter(
-        1,
-        p2,
-        c1.color,
-        label1,
-        mode === "versus" ? RULES.startingLives : Infinity,
-        c1.id,
-        !!c1.sandbag,
-        isCpu1,
-      ),
-    );
+    const spacing = 150;
+    // Centramos el grupo: posiciones a -(n-1)/2 .. +(n-1)/2 veces el espaciado.
+    for (let i = 0; i < n; i++) {
+      const c = getCharacter(this.characters[i]);
+      const offset = (i - (n - 1) / 2) * spacing;
+      const player = new Player(
+        RULES.respawnX + offset - Player.halfWidth,
+        spawnY,
+      );
+      const isCpu = config?.controllers?.[i] === "cpu";
+      const label = c.sandbag
+        ? "DUMMY"
+        : isCpu
+          ? `CPU${n > 2 ? i + 1 : ""}`
+          : FIGHTER_LABELS[i] ?? `P${i + 1}`;
+      // El fighter 0 (jugador principal) y los humanos tienen vidas normales en
+      // versus; en entrenamiento el dummy es infinito.
+      const lives =
+        mode === "versus" ? RULES.startingLives : c.sandbag ? Infinity : RULES.startingLives;
+      this.fighters.push(
+        new Fighter(i, player, c.color, label, lives, c.id, !!c.sandbag, isCpu),
+      );
+    }
   }
 
   /** Acceso cómodo al jugador principal (fighter 0). */

@@ -75,12 +75,11 @@ class App {
           this.showMenu();
         });
       },
-      onConfirm: (characters, p2Controller, cpuDifficulty) => {
+      onConfirm: (characters, controllers, cpuDifficulty) => {
         this.pendingConfig = {
           ...this.pendingConfig,
           characters,
-          // Jugador 1 siempre humano; el 2 según la pestaña elegida.
-          controllers: ["human", p2Controller],
+          controllers,
           cpuDifficulty,
         };
         void this.transition(() => {

@@ -161,7 +161,7 @@ export class ReplayRecorder {
       controllers: this.controllers,
       cpuDifficulty: this.cpuDifficulty,
       recordedAt: new Date().toISOString(),
-      players: 2,
+      players: this.characters.length,
       steps: this.steps,
       result,
     };
@@ -178,7 +178,10 @@ export class ReplayPlayer {
 
   constructor(readonly data: ReplayData) {
     this.totalSteps = data.steps.length;
-    this.scratch = [createInputState(), createInputState()];
+    // Un scratch por jugador (2..4). Deducimos el número de `players` o, por
+    // compat, del primer paso grabado.
+    const n = data.players || data.steps[0]?.length || 2;
+    this.scratch = Array.from({ length: n }, () => createInputState());
   }
 
   /** Inputs del paso `index` (clamp a los límites). */

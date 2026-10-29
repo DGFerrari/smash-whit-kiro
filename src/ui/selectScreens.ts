@@ -24,8 +24,14 @@ import type { HandCursor } from "./handCursor.ts";
  * para que muestre la mano "agarrando".
  */
 
-const TOKEN_COLORS = ["#2f6bff", "#ff4f6d"] as const; // P1, P2
-const TOKEN_LABELS = ["P1", "P2"] as const;
+const TOKEN_COLORS = ["#2f6bff", "#ff4f6d", "#f0c23a", "#5fcf80"] as const;
+const TOKEN_LABELS = ["P1", "P2", "P3", "P4"] as const;
+/** Nº máximo de jugadores (slots). */
+const MAX_SLOTS = 4;
+
+/** Control de un slot: humano, CPU, o deshabilitado (no participa). */
+type SlotControl = "human" | "cpu" | "off";
+type CpuDiff = "easy" | "normal" | "hard";
 
 /** Una ficha arrastrable con su estado de colocación. */
 interface Chip {
@@ -40,11 +46,16 @@ interface Chip {
 }
 
 export interface CharacterSelectCallbacks {
-  /** Confirma personajes, control del P2 y, si es CPU, su dificultad. */
+  /**
+   * Confirma la selección. Se pasan solo los slots ACTIVOS (2..4), en orden:
+   *  - characters: personaje de cada jugador activo.
+   *  - controllers: "human" | "cpu" por jugador activo.
+   *  - cpuDifficulty: dificultad común de las CPU (simple: una para todas).
+   */
   onConfirm: (
-    characters: [CharacterId, CharacterId],
-    p2Controller: "human" | "cpu",
-    cpuDifficulty: "easy" | "normal" | "hard",
+    characters: CharacterId[],
+    controllers: ("human" | "cpu")[],
+    cpuDifficulty: CpuDiff,
   ) => void;
   onBack: () => void;
 }
@@ -55,11 +66,15 @@ export class CharacterSelect {
   private readonly cells = new Map<CharacterId, HTMLButtonElement>();
   private readonly chips: Chip[] = [];
   private readonly goBtn: HTMLButtonElement;
-  private readonly picks: Array<CharacterId | null> = [null, null];
-  /** Quién controla al jugador 2: humano (defecto) o CPU. */
-  private p2Controller: "human" | "cpu" = "human";
-  /** Dificultad de la CPU (solo aplica si p2Controller === "cpu"). */
-  private cpuDifficulty: "easy" | "normal" | "hard" = "normal";
+
+  /** Personaje elegido por cada slot (null = sin elegir). */
+  private readonly picks: Array<CharacterId | null> = [null, null, null, null];
+  /** Control de cada slot. P1 siempre humano; P2 humano; P3/P4 off por defecto. */
+  private readonly control: SlotControl[] = ["human", "human", "off", "off"];
+  /** Dificultad común de las CPU. */
+  private cpuDifficulty: CpuDiff = "normal";
+  /** Para re-sincronizar las tarjetas tras cambios. */
+  private syncers: Array<() => void> = [];
 
   constructor(
     private readonly cb: CharacterSelectCallbacks,
@@ -76,11 +91,10 @@ export class CharacterSelect {
 
     const hint = document.createElement("p");
     hint.className = "select-hint";
-    hint.textContent = "Arrastra la ficha de cada jugador sobre un personaje";
+    hint.textContent =
+      "Arrastra la ficha de cada jugador activo sobre un personaje (mínimo 2)";
     this.root.appendChild(hint);
 
-    // Stage: contenedor relativo que aloja la parrilla, las fichas y sus
-    // tarjetas de jugador, para posicionar en coordenadas locales.
     this.stage = document.createElement("div");
     this.stage.className = "css-stage char-stage";
 
@@ -103,38 +117,22 @@ export class CharacterSelect {
       name.className = "portrait-name";
       name.textContent = def.name;
       cell.appendChild(name);
-      // No seleccionable por clic: solo soltando una ficha encima.
       cell.addEventListener("click", (e) => e.preventDefault());
       this.cells.set(id, cell);
       grid.appendChild(cell);
     }
     this.stage.appendChild(grid);
 
-    // Tarjetas de jugador (abajo) con su ficha encima.
+    // Cuatro tarjetas de jugador, cada una con sus pestañas de control.
     const cards = document.createElement("div");
     cards.className = "player-cards";
-    for (let p = 0; p < 2; p++) {
-      const card = document.createElement("div");
-      card.className = "player-card";
-      card.style.setProperty("--pc", TOKEN_COLORS[p]);
-      const label = document.createElement("div");
-      label.className = "player-card-label";
-      label.textContent = `Jugador ${p + 1}`;
-      card.appendChild(label);
-      const slot = document.createElement("div");
-      slot.className = "player-card-slot";
-      slot.textContent = "arrastra →";
-      card.appendChild(slot);
-      // Solo el jugador 2 puede ser CPU: le ponemos las pestañas Jugador/CPU.
-      if (p === 1) {
-        card.appendChild(this.buildControllerTabs(card));
-      }
-      cards.appendChild(card);
+    for (let p = 0; p < MAX_SLOTS; p++) {
+      cards.appendChild(this.buildPlayerCard(p));
     }
     this.stage.appendChild(cards);
 
-    // Fichas arrastrables.
-    for (let p = 0; p < 2; p++) {
+    // Cuatro fichas arrastrables (se ocultan si el slot está deshabilitado).
+    for (let p = 0; p < MAX_SLOTS; p++) {
       const el = document.createElement("div");
       el.className = "token-chip";
       el.style.setProperty("--tc", TOKEN_COLORS[p]);
@@ -164,15 +162,7 @@ export class CharacterSelect {
     this.goBtn = document.createElement("button");
     this.goBtn.className = "menu-btn select-go";
     this.goBtn.textContent = "Elegir escenario ›";
-    this.goBtn.addEventListener("click", () => {
-      if (this.picks[0] && this.picks[1]) {
-        this.cb.onConfirm(
-          [this.picks[0], this.picks[1]],
-          this.p2Controller,
-          this.cpuDifficulty,
-        );
-      }
-    });
+    this.goBtn.addEventListener("click", () => this.confirm());
     actions.appendChild(this.goBtn);
     this.root.appendChild(actions);
 
@@ -188,64 +178,115 @@ export class CharacterSelect {
     this.root.classList.remove("open");
   }
 
+  /** ¿Está activo el slot p? (humano o CPU; off = no participa). */
+  private isActive(p: number): boolean {
+    return this.control[p] !== "off";
+  }
+
+  private confirm(): void {
+    if (!this.canStart()) return;
+    const characters: CharacterId[] = [];
+    const controllers: ("human" | "cpu")[] = [];
+    for (let p = 0; p < MAX_SLOTS; p++) {
+      if (!this.isActive(p)) continue;
+      characters.push(this.picks[p] as CharacterId);
+      controllers.push(this.control[p] as "human" | "cpu");
+    }
+    this.cb.onConfirm(characters, controllers, this.cpuDifficulty);
+  }
+
   /**
-   * Pestañas "Jugador" / "CPU" para el jugador 2, más la fila de dificultad que
-   * aparece solo cuando CPU está seleccionado. Devuelve un contenedor con ambas.
+   * Tarjeta de un jugador: etiqueta, hueco de ficha y pestañas de control.
+   *  - P1: siempre humano (sin pestañas, no se puede desactivar ni ser CPU).
+   *  - P2: Jugador / CPU (no se puede desactivar: hace falta mínimo 2).
+   *  - P3/P4: Jugador / CPU / Deshabilitado.
    */
-  private buildControllerTabs(card: HTMLElement): HTMLElement {
-    const wrap = document.createElement("div");
-    wrap.className = "player-card-controller";
+  private buildPlayerCard(p: number): HTMLElement {
+    const card = document.createElement("div");
+    card.className = "player-card";
+    card.style.setProperty("--pc", TOKEN_COLORS[p]);
+    card.dataset.slot = String(p);
+
+    const label = document.createElement("div");
+    label.className = "player-card-label";
+    label.textContent = `Jugador ${p + 1}`;
+    card.appendChild(label);
+
+    const slotHint = document.createElement("div");
+    slotHint.className = "player-card-slot";
+    slotHint.textContent = "arrastra →";
+    card.appendChild(slotHint);
+
+    // P1 no tiene pestañas (siempre humano). Los demás sí.
+    if (p === 0) {
+      this.syncers.push(() => {
+        card.classList.remove("cpu", "off");
+      });
+      return card;
+    }
+
+    // Opciones de control: P2 no puede desactivarse (mínimo 2 jugadores).
+    const controlOptions: Array<{ value: SlotControl; label: string }> =
+      p === 1
+        ? [
+            { value: "human", label: "Jugador" },
+            { value: "cpu", label: "CPU" },
+          ]
+        : [
+            { value: "human", label: "Jugador" },
+            { value: "cpu", label: "CPU" },
+            { value: "off", label: "Off" },
+          ];
 
     const tabs = document.createElement("div");
     tabs.className = "player-card-tabs";
-    wrap.appendChild(tabs);
+    const tabButtons = new Map<SlotControl, HTMLButtonElement>();
 
-    // Fila de dificultad (oculta hasta elegir CPU).
     const diff = document.createElement("div");
     diff.className = "player-card-difficulty";
-    wrap.appendChild(diff);
-
-    const tabOptions: Array<{ value: "human" | "cpu"; label: string }> = [
-      { value: "human", label: "Jugador" },
-      { value: "cpu", label: "CPU" },
-    ];
-    const tabButtons = new Map<"human" | "cpu", HTMLButtonElement>();
-
-    const diffOptions: Array<{
-      value: "easy" | "normal" | "hard";
-      label: string;
-    }> = [
+    const diffOptions: Array<{ value: CpuDiff; label: string }> = [
       { value: "easy", label: "Fácil" },
       { value: "normal", label: "Normal" },
       { value: "hard", label: "Difícil" },
     ];
-    const diffButtons = new Map<"easy" | "normal" | "hard", HTMLButtonElement>();
+    const diffButtons = new Map<CpuDiff, HTMLButtonElement>();
 
     const sync = (): void => {
-      const isCpu = this.p2Controller === "cpu";
-      for (const [val, btn] of tabButtons) {
-        btn.classList.toggle("active", val === this.p2Controller);
-      }
+      const ctrl = this.control[p];
+      for (const [val, btn] of tabButtons) btn.classList.toggle("active", val === ctrl);
       for (const [val, btn] of diffButtons) {
         btn.classList.toggle("active", val === this.cpuDifficulty);
       }
-      card.classList.toggle("cpu", isCpu);
-      diff.classList.toggle("show", isCpu);
+      card.classList.toggle("cpu", ctrl === "cpu");
+      card.classList.toggle("off", ctrl === "off");
+      diff.classList.toggle("show", ctrl === "cpu");
+      slotHint.style.visibility = ctrl === "off" ? "hidden" : "visible";
     };
+    this.syncers.push(sync);
 
-    for (const opt of tabOptions) {
+    for (const opt of controlOptions) {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "player-card-tab";
       btn.textContent = opt.label;
       btn.addEventListener("click", (e) => {
         e.preventDefault();
-        this.p2Controller = opt.value;
-        sync();
+        this.control[p] = opt.value;
+        if (opt.value === "off") {
+          // Al desactivar, liberamos su personaje y escondemos su ficha.
+          this.picks[p] = null;
+          const chip = this.chips[p];
+          if (chip) chip.placedOn = null;
+        }
+        this.syncAll();
+        this.resetChips();
+        this.refreshSelectedStyles();
+        this.updateGo();
       });
       tabButtons.set(opt.value, btn);
       tabs.appendChild(btn);
     }
+    card.appendChild(tabs);
 
     for (const opt of diffOptions) {
       const btn = document.createElement("button");
@@ -255,23 +296,34 @@ export class CharacterSelect {
       btn.addEventListener("click", (e) => {
         e.preventDefault();
         this.cpuDifficulty = opt.value;
-        sync();
+        this.syncAll();
       });
       diffButtons.set(opt.value, btn);
       diff.appendChild(btn);
     }
+    card.appendChild(diff);
 
-    sync();
-    return wrap;
+    return card;
   }
 
-  /** Coloca las fichas en su posición de reposo (sobre su tarjeta). */
+  /** Re-sincroniza el estado visual de todas las tarjetas. */
+  private syncAll(): void {
+    for (const s of this.syncers) s();
+  }
+
+  /** Coloca cada ficha en su tarjeta; oculta las de slots deshabilitados. */
   private resetChips(): void {
     const cards = this.stage.querySelectorAll<HTMLDivElement>(".player-card");
     const sRect = this.stage.getBoundingClientRect();
     this.chips.forEach((chip, p) => {
       const card = cards[p];
       if (!card) return;
+      // Slot deshabilitado: ocultamos su ficha.
+      if (!this.isActive(p)) {
+        chip.el.style.display = "none";
+        return;
+      }
+      chip.el.style.display = "";
       const cRect = card.getBoundingClientRect();
       chip.homeLeft = cRect.left - sRect.left + cRect.width / 2 - 24;
       chip.homeTop = cRect.top - sRect.top + 10;
@@ -280,6 +332,7 @@ export class CharacterSelect {
   }
 
   private onChipDown(e: PointerEvent, chip: Chip): void {
+    if (!this.isActive(chip.player)) return;
     e.preventDefault();
     chip.dragging = true;
     chip.el.classList.add("dragging");
@@ -309,7 +362,6 @@ export class CharacterSelect {
     chip.el.style.top = `${top}px`;
   }
 
-  /** Resalta el retrato bajo el cursor mientras se arrastra. */
   private highlightHover(ev: PointerEvent): void {
     const hit = this.cellAt(ev.clientX, ev.clientY);
     for (const [, cell] of this.cells) cell.classList.toggle("hover-drop", cell === hit);
@@ -326,7 +378,7 @@ export class CharacterSelect {
     if (id) {
       this.picks[chip.player] = id;
       chip.placedOn = id;
-      this.snapChipToCell(chip, hit as HTMLElement);
+      this.snapChipToCell(chip, hit as HTMLElement, chip.player);
     } else {
       this.picks[chip.player] = null;
       chip.placedOn = null;
@@ -336,12 +388,15 @@ export class CharacterSelect {
     this.updateGo();
   }
 
-  /** Posa la ficha en una esquina del retrato (P1 arriba-izq, P2 abajo-der). */
-  private snapChipToCell(chip: Chip, cell: HTMLElement): void {
+  /** Posa la ficha en una esquina distinta del retrato según el slot. */
+  private snapChipToCell(chip: Chip, cell: HTMLElement, slot: number): void {
     const sRect = this.stage.getBoundingClientRect();
     const cRect = cell.getBoundingClientRect();
-    const offX = chip.player === 0 ? 6 : cRect.width - 54;
-    const offY = chip.player === 0 ? 6 : cRect.height - 54;
+    // Repartimos las 4 posibles fichas en las cuatro esquinas del retrato.
+    const left = slot % 2 === 0;
+    const top = slot < 2;
+    const offX = left ? 6 : cRect.width - 54;
+    const offY = top ? 6 : cRect.height - 54;
     this.moveChip(chip, cRect.left - sRect.left + offX, cRect.top - sRect.top + offY);
   }
 
@@ -355,6 +410,7 @@ export class CharacterSelect {
     return null;
   }
 
+  /** Varios jugadores pueden repetir personaje; marcamos los elegidos. */
   private refreshSelectedStyles(): void {
     for (const [id, cell] of this.cells) {
       const chosen = this.picks.includes(id);
@@ -362,8 +418,19 @@ export class CharacterSelect {
     }
   }
 
+  /** ¿Se puede empezar? Al menos 2 slots activos y TODOS con personaje. */
+  private canStart(): boolean {
+    let active = 0;
+    for (let p = 0; p < MAX_SLOTS; p++) {
+      if (!this.isActive(p)) continue;
+      active++;
+      if (!this.picks[p]) return false; // activo sin personaje
+    }
+    return active >= 2;
+  }
+
   private updateGo(): void {
-    const ready = !!this.picks[0] && !!this.picks[1];
+    const ready = this.canStart();
     this.goBtn.disabled = !ready;
     this.goBtn.classList.toggle("disabled", !ready);
   }

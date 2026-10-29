@@ -1307,25 +1307,28 @@ body.hide-native-cursor * {
 /* Tarjetas de jugador (abajo): el "home" de cada ficha. */
 .player-cards {
   display: flex;
-  gap: 40px;
+  gap: 18px;
+  flex-wrap: wrap;
+  justify-content: center;
 }
 
 .player-card {
   --pc: #2f6bff;
-  width: 180px;
-  padding: 10px 14px 16px;
+  width: 150px;
+  padding: 8px 12px 12px;
   background: color-mix(in srgb, var(--pc) 16%, #0d1420);
   border: 2px solid var(--pc);
   border-radius: 12px;
   text-align: center;
   box-shadow: 0 0 18px color-mix(in srgb, var(--pc) 35%, transparent);
+  transition: opacity 0.15s ease, filter 0.15s ease;
 }
 
 .player-card-label {
   color: #f1f4fa;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 800;
-  margin-bottom: 20px;
+  margin-bottom: 12px;
 }
 
 .player-card-slot {
@@ -1333,10 +1336,16 @@ body.hide-native-cursor * {
   font-size: 12px;
 }
 
-/* Cuando el jugador 2 es CPU: borde GRIS, pero el relleno conserva su color. */
+/* Cuando un jugador es CPU: borde GRIS, pero el relleno conserva su color. */
 .player-card.cpu {
   border-color: #9aa5be;
   box-shadow: 0 0 18px rgba(154, 165, 190, 0.35);
+}
+
+/* Slot deshabilitado: tarjeta atenuada. */
+.player-card.off {
+  opacity: 0.4;
+  filter: grayscale(0.8);
 }
 
 /* Pestañas Jugador / CPU dentro de la tarjeta del jugador 2. */

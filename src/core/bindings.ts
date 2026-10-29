@@ -38,14 +38,18 @@ export const ACTION_LABELS: Array<{ action: Action; label: string }> = [
 /** Un perfil de controles: una lista de teclas por acción. */
 export type KeyBindings = Record<Action, string[]>;
 
-/** Identificador de jugador para elegir perfil de teclas. */
-export type PlayerSlot = "p1" | "p2";
+/** Identificador de jugador para elegir perfil de teclas (hasta 4). */
+export type PlayerSlot = "p1" | "p2" | "p3" | "p4";
+
+/** Lista ordenada de slots, para iterar sin listar cada uno a mano. */
+export const PLAYER_SLOTS: PlayerSlot[] = ["p1", "p2", "p3", "p4"];
 
 /**
  * Perfiles por defecto.
- * P1 (izquierda del teclado): WASD para apuntar/mover, con salto en Espacio,
- * ligero J, fuerte K, escudo L. Ojo: W es solo "apuntar arriba", NO salta.
- * P2 (derecha del teclado): flechas + teclas del pad numérico/alrededores.
+ * P1 (izquierda): WASD + Espacio salto, J/K/L ataques. W es apuntar arriba.
+ * P2 (derecha): flechas + Enter salto, 1/2/3 ataques.
+ * P3 y P4: perfiles para humanos extra (poco cómodos a la vez en un teclado;
+ *   en la práctica P3/P4 se usan sobre todo como CPU). Remapeables igual.
  */
 export const DEFAULT_BINDINGS: Record<PlayerSlot, KeyBindings> = {
   p1: {
@@ -68,16 +72,37 @@ export const DEFAULT_BINDINGS: Record<PlayerSlot, KeyBindings> = {
     heavy: ["2"],
     shield: ["3"],
   },
+  p3: {
+    left: ["f"],
+    right: ["h"],
+    up: ["t"],
+    down: ["g"],
+    jump: ["y"],
+    light: ["u"],
+    heavy: ["i"],
+    shield: ["o"],
+  },
+  p4: {
+    left: ["4"],
+    right: ["6"],
+    up: ["8"],
+    down: ["5"],
+    jump: ["0"],
+    light: ["7"],
+    heavy: ["9"],
+    shield: ["-"],
+  },
 };
 
-const STORAGE_KEY = "smashb.bindings.v1";
+const STORAGE_KEY = "smashb.bindings.v2";
 
 /** Clona en profundidad un conjunto de perfiles. */
-function clone(src: Record<PlayerSlot, KeyBindings>): Record<PlayerSlot, KeyBindings> {
-  return {
-    p1: cloneBindings(src.p1),
-    p2: cloneBindings(src.p2),
-  };
+function clone(
+  src: Record<PlayerSlot, KeyBindings>,
+): Record<PlayerSlot, KeyBindings> {
+  const out = {} as Record<PlayerSlot, KeyBindings>;
+  for (const slot of PLAYER_SLOTS) out[slot] = cloneBindings(src[slot]);
+  return out;
 }
 
 function cloneBindings(b: KeyBindings): KeyBindings {
@@ -96,12 +121,15 @@ function loadBindings(): Record<PlayerSlot, KeyBindings> {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
-      const parsed = JSON.parse(raw) as Record<PlayerSlot, KeyBindings>;
-      // Completamos acciones que falten (p. ej. tras añadir "shield").
-      return {
-        p1: mergeDefaults(parsed.p1, DEFAULT_BINDINGS.p1),
-        p2: mergeDefaults(parsed.p2, DEFAULT_BINDINGS.p2),
-      };
+      const parsed = JSON.parse(raw) as Partial<
+        Record<PlayerSlot, KeyBindings>
+      >;
+      // Completamos acciones/slots que falten (p. ej. tras añadir P3/P4).
+      const out = {} as Record<PlayerSlot, KeyBindings>;
+      for (const slot of PLAYER_SLOTS) {
+        out[slot] = mergeDefaults(parsed[slot], DEFAULT_BINDINGS[slot]);
+      }
+      return out;
     }
   } catch {
     // Si localStorage falla o el JSON está corrupto, usamos los defaults.
