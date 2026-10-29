@@ -65,7 +65,7 @@ export const CAMERA = {
   baseCenterOffsetY: -120,
 
   /** Margen extra alrededor del contenido a encuadrar (px de mundo). */
-  margin: 90,
+  margin: 20,
 
   /** Topes de zoom para que nunca se acerque o aleje demasiado. */
   minZoom: 0.5,

@@ -1,6 +1,7 @@
 import "./style.css";
 import { World, type GameMode, type MatchConfig } from "./game/world.ts";
 import { CharacterSelect, StageSelect } from "./ui/selectScreens.ts";
+import { HandCursor } from "./ui/handCursor.ts";
 import { Renderer } from "./render/renderer.ts";
 import { Camera } from "./render/camera.ts";
 import { GameLoop } from "./game/loop.ts";
@@ -53,6 +54,8 @@ class App {
   private readonly loading = new LoadingScreen();
   private readonly countdown = new Countdown();
   private readonly koFlash = new KOFlash();
+  /** Cursor de mano cartoon (sustituye al cursor nativo). */
+  private readonly hand = new HandCursor();
 
   private readonly mainMenu = new MainMenu({
     onPlay: (mode) => this.onPlay(mode),
@@ -60,36 +63,42 @@ class App {
   });
 
   // Selección de personajes (batalla).
-  private readonly charSelect = new CharacterSelect({
-    onBack: () => {
-      void this.transition(() => {
-        this.charSelect.hide();
-        this.mainMenu.show();
-      });
+  private readonly charSelect = new CharacterSelect(
+    {
+      onBack: () => {
+        void this.transition(() => {
+          this.charSelect.hide();
+          this.showMenu();
+        });
+      },
+      onConfirm: (characters) => {
+        this.pendingConfig = { ...this.pendingConfig, characters };
+        void this.transition(() => {
+          this.charSelect.hide();
+          this.stageSelect.show();
+        });
+      },
     },
-    onConfirm: (characters) => {
-      this.pendingConfig = { ...this.pendingConfig, characters };
-      void this.transition(() => {
-        this.charSelect.hide();
-        this.stageSelect.show();
-      });
-    },
-  });
+    this.hand,
+  );
 
   // Selección de escenario (batalla).
-  private readonly stageSelect = new StageSelect({
-    onBack: () => {
-      void this.transition(() => {
+  private readonly stageSelect = new StageSelect(
+    {
+      onBack: () => {
+        void this.transition(() => {
+          this.stageSelect.hide();
+          this.charSelect.show();
+        });
+      },
+      onConfirm: (stage) => {
+        this.pendingConfig = { ...this.pendingConfig, stage };
         this.stageSelect.hide();
-        this.charSelect.show();
-      });
+        void this.startMatch("versus", this.pendingConfig);
+      },
     },
-    onConfirm: (stage) => {
-      this.pendingConfig = { ...this.pendingConfig, stage };
-      this.stageSelect.hide();
-      void this.startMatch("versus", this.pendingConfig);
-    },
-  });
+    this.hand,
+  );
 
   private readonly matchOver = new MatchOverScreen({
     onRematch: () => {
@@ -123,9 +132,10 @@ class App {
    */
   private onPlay(mode: GameMode): void {
     if (mode === "versus") {
-      // Transición de iris del menú a la selección de personajes.
+      // Transición de iris del menú a la selección de personajes. Paramos el
+      // fondo de replays: las pantallas de selección van sobre fondo negro.
       void this.transition(() => {
-        this.mainMenu.hide();
+        this.hideMenu();
         this.charSelect.show();
       });
     } else {

@@ -1179,25 +1179,23 @@ body {
   color: #06220f;
 }
 
-/* ===== Cursor personalizado (todo el juego) ===== */
-/* Un puntero con forma de "chevron" del color del juego, con un borde oscuro
-   para que destaque sobre cualquier fondo. Data-URI SVG, sin assets. */
-html,
-body {
-  cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'><path d='M4 2 L4 22 L10 16 L14 24 L18 22 L14 14 L22 14 Z' fill='%237fb2ff' stroke='%230b1220' stroke-width='1.6' stroke-linejoin='round'/></svg>") 3 2, auto;
+/* ===== Cursor de mano (DOM) ===== */
+/* Ocultamos el cursor nativo: lo dibuja #hand-cursor siguiendo al ratón. */
+body.hide-native-cursor,
+body.hide-native-cursor * {
+  cursor: none !important;
 }
 
-/* Elementos interactivos: cursor con acento azul más vivo. */
-button,
-.mode-row,
-.portrait,
-.stage-cell,
-.char-cell,
-input[type="range"],
-input[type="checkbox"],
-label,
-.replay-btn {
-  cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='30' height='30' viewBox='0 0 28 28'><path d='M4 2 L4 22 L10 16 L14 24 L18 22 L14 14 L22 14 Z' fill='%232f6bff' stroke='%23ffffff' stroke-width='1.8' stroke-linejoin='round'/></svg>") 3 2, pointer;
+#hand-cursor {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 9999;
+  pointer-events: none;
+  /* El SVG se ancla por su "punta" (la base de la muñeca queda abajo). */
+  margin-left: -8px;
+  margin-top: -4px;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.5));
 }
 
 /* ===== Pantallas de selección (personajes / escenario) estilo Smash ===== */
@@ -1210,11 +1208,8 @@ label,
   align-items: center;
   justify-content: center;
   gap: 20px;
-  background: radial-gradient(
-    ellipse at center,
-    rgba(6, 10, 20, 0.78),
-    rgba(6, 10, 20, 0.94)
-  );
+  /* Fondo negro liso (sin el replay detrás). */
+  background: #05070c;
 }
 
 .select-screen.open {
@@ -1293,39 +1288,93 @@ label,
   letter-spacing: 0.5px;
 }
 
-/* Ficha-cursor (la "mano" de Smash) que flota sobre el retrato elegido. */
-.css-token {
+/* Parrilla de personajes con espacio abajo para las tarjetas de jugador. */
+.char-stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+}
+
+/* Tarjetas de jugador (abajo): el "home" de cada ficha. */
+.player-cards {
+  display: flex;
+  gap: 40px;
+}
+
+.player-card {
+  --pc: #2f6bff;
+  width: 180px;
+  padding: 10px 14px 16px;
+  background: color-mix(in srgb, var(--pc) 16%, #0d1420);
+  border: 2px solid var(--pc);
+  border-radius: 12px;
+  text-align: center;
+  box-shadow: 0 0 18px color-mix(in srgb, var(--pc) 35%, transparent);
+}
+
+.player-card-label {
+  color: #f1f4fa;
+  font-size: 16px;
+  font-weight: 800;
+  margin-bottom: 20px;
+}
+
+.player-card-slot {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 12px;
+}
+
+/* FICHA arrastrable (la "mano" / token de Smash). */
+.token-chip {
   --tc: #2f6bff;
   position: absolute;
   left: 0;
   top: 0;
-  width: 34px;
-  height: 34px;
+  width: 48px;
+  height: 48px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 50% 50% 50% 4px; /* gota/ficha */
-  background: var(--tc);
+  border-radius: 50% 50% 50% 6px; /* gota/ficha */
+  background: radial-gradient(circle at 35% 30%, #fff 0 10%, var(--tc) 55%);
   color: #fff;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 900;
-  border: 2px solid #fff;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
-  pointer-events: none;
-  z-index: 3;
-  /* El deslizamiento suave de la ficha al cambiar de celda. */
-  transition: left 0.22s cubic-bezier(0.22, 0.61, 0.36, 1),
-    top 0.22s cubic-bezier(0.22, 0.61, 0.36, 1);
+  border: 3px solid #fff;
+  box-shadow: 0 5px 14px rgba(0, 0, 0, 0.55);
+  z-index: 4;
+  touch-action: none;
+  /* Deslizamiento suave al soltar/volver (se desactiva al arrastrar). */
+  transition: left 0.18s cubic-bezier(0.22, 0.61, 0.36, 1),
+    top 0.18s cubic-bezier(0.22, 0.61, 0.36, 1), transform 0.1s ease;
 }
 
-.stage-token {
+.token-chip:hover {
+  transform: scale(1.08);
+}
+
+/* Mientras se arrastra, sin transición (sigue al cursor al instante). */
+.token-chip.dragging {
+  transition: transform 0.1s ease;
+  transform: scale(1.15);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.6);
+}
+
+.stage-chip {
   border-radius: 50%;
-  font-size: 22px;
+  font-size: 24px;
   color: #ffd84d;
-  background: #1a2233;
+  background: radial-gradient(circle at 35% 30%, #fff 0 8%, #e0a800 60%);
+  border-color: #fff;
+}
+
+/* Resaltado del retrato/escenario bajo la ficha al arrastrar. */
+.portrait.hover-drop,
+.stage-cell.hover-drop {
   border-color: #ffd84d;
-  width: 44px;
-  height: 44px;
+  box-shadow: 0 0 26px rgba(255, 216, 77, 0.6);
+  transform: translateY(-4px);
 }
 
 /* --- Selección de escenario con vista previa --- */
@@ -1413,4 +1462,10 @@ label,
 .select-go:hover {
   background: #2f6bff;
   color: #fff;
+}
+
+.select-go:disabled,
+.select-go.disabled {
+  opacity: 0.4;
+  pointer-events: none;
 }
