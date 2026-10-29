@@ -16,6 +16,13 @@ pnpm-debug.log*
 .vite/
 *.local
 
+# Secretos / variables de entorno (NUNCA subir al repo)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
 # Editor / SO
 .vscode/*
 !.vscode/extensions.json
