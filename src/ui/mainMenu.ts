@@ -16,10 +16,28 @@ export interface MainMenuCallbacks {
   onPlay: (mode: GameMode) => void;
   /** Abrir la lista de repeticiones guardadas. */
   onOpenReplays: () => void;
+  /** Abrir el tutorial. */
+  onOpenTutorial: () => void;
 }
 
-/** Valor de una opción del menú: modo jugable, ver replay, o dev (no terminada). */
-type MenuOption = GameMode | "replay" | "dev";
+/** Valor de una opción del menú: modo jugable, ver replay o tutorial. */
+type MenuOption = GameMode | "replay" | "tutorial";
+
+/** Clave de localStorage: ¿el jugador ya ha hecho el tutorial alguna vez? */
+const TUTORIAL_DONE_KEY = "smashb.tutorialDone.v1";
+
+/** ¿Se ha completado el tutorial alguna vez? (para el parpadeo del menú). */
+export function isTutorialDone(): boolean {
+  return localStorage.getItem(TUTORIAL_DONE_KEY) === "1";
+}
+/** Marca el tutorial como completado (deja de parpadear en el menú). */
+export function markTutorialDone(): void {
+  try {
+    localStorage.setItem(TUTORIAL_DONE_KEY, "1");
+  } catch {
+    /* localStorage no disponible: no pasa nada, solo seguirá parpadeando. */
+  }
+}
 
 interface ModeDef {
   value: MenuOption;
@@ -54,11 +72,11 @@ const MODES: ModeDef[] = [
     accent: "#f0b429",
   },
   {
-    value: "dev",
-    label: "dev",
-    hint: "Herramientas de desarrollo. Opción no terminada todavía.",
-    playable: false,
-    accent: "#b0b8c8",
+    value: "tutorial",
+    label: "Tutorial",
+    hint: "Aprende los controles: moverte, saltar, atacar, el escudo y más, completando objetivos.",
+    playable: true,
+    accent: "#9b6bff",
   },
 ];
 
@@ -141,6 +159,10 @@ export class MainMenu {
     this.hintEl.textContent = "Selecciona un modo.";
     this.hintEl.style.color = "";
     this.playBtn.disabled = true;
+
+    // Reevaluamos el parpadeo del Tutorial (puede haberse completado ya).
+    const tut = this.rows.get("tutorial");
+    if (tut) tut.classList.toggle("nudge", !isTutorialDone());
   }
 
   hide(): void {
@@ -169,10 +191,14 @@ export class MainMenu {
   private tryPlay(): void {
     if (!this.selected) return;
     const def = MODES.find((m) => m.value === this.selected);
-    if (!def || !def.playable) return; // dev no arranca
+    if (!def || !def.playable) return;
     if (this.selected === "replay") {
       // La opción Replay abre la lista de repeticiones guardadas.
       this.cb.onOpenReplays();
+      return;
+    }
+    if (this.selected === "tutorial") {
+      this.cb.onOpenTutorial();
       return;
     }
     this.cb.onPlay(this.selected as GameMode);
@@ -183,6 +209,11 @@ export class MainMenu {
     btn.type = "button";
     btn.className = "mode-row";
     btn.style.setProperty("--accent", def.accent);
+
+    // El Tutorial parpadea (clase "nudge") si el jugador nunca lo ha completado.
+    if (def.value === "tutorial" && !isTutorialDone()) {
+      btn.classList.add("nudge");
+    }
 
     // Indicador ">" que aparece solo en el seleccionado.
     const caret = document.createElement("span");

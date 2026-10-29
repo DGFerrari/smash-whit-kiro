@@ -7,6 +7,7 @@ import { Camera } from "./render/camera.ts";
 import { GameLoop } from "./game/loop.ts";
 import { PauseMenu } from "./ui/pauseMenu.ts";
 import { MainMenu, MatchOverScreen, type FighterResult } from "./ui/mainMenu.ts";
+import { TutorialScreen } from "./ui/tutorialScreen.ts";
 import { LoadingScreen, Countdown, KOFlash } from "./ui/overlays.ts";
 import { ReplayScreen } from "./ui/replayScreen.ts";
 import { ReplayListScreen } from "./ui/replayListScreen.ts";
@@ -64,6 +65,12 @@ class App {
   private readonly mainMenu = new MainMenu({
     onPlay: (mode) => this.onPlay(mode),
     onOpenReplays: () => void this.openReplayList(),
+    onOpenTutorial: () => void this.openTutorial(),
+  });
+
+  private readonly tutorialScreen = new TutorialScreen(renderer, camera, {
+    // Al salir/completar el tutorial, volvemos al menú.
+    onExit: () => void this.toMenu(),
   });
 
   // Selección de personajes (batalla).
@@ -385,6 +392,19 @@ class App {
     this.teardownMatch();
     await this.loading.fill(400);
     this.replayListScreen.show();
+    await this.loading.reveal();
+    this.busy = false;
+  }
+
+  /** Abre el tutorial (modo guiado sobre el mapa de entrenamiento). */
+  private async openTutorial(): Promise<void> {
+    if (this.busy) return;
+    this.busy = true;
+    await this.loading.cover();
+    this.hideMenu();
+    this.teardownMatch();
+    await this.loading.fill(600);
+    this.tutorialScreen.start();
     await this.loading.reveal();
     this.busy = false;
   }

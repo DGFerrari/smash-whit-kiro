@@ -907,6 +907,24 @@ body {
   transform: translateX(6px);
 }
 
+/* Parpadeo "llamada de atención" (p. ej. Tutorial sin completar). Se desactiva
+   mientras el modo está seleccionado para no competir con el deslizamiento. */
+.mode-row.nudge:not(.selected) {
+  animation: modeNudge 1.1s ease-in-out infinite;
+}
+
+@keyframes modeNudge {
+  0%,
+  100% {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 60%, transparent);
+  }
+  50% {
+    border-color: #ffffff;
+    box-shadow: 0 0 18px 2px color-mix(in srgb, var(--accent) 55%, transparent);
+  }
+}
+
 /* El modo seleccionado SOBRESALE hacia la derecha (deslizamiento suave). */
 .mode-row.selected {
   transform: translateX(32px);
@@ -1869,4 +1887,102 @@ body.hide-native-cursor * {
 
 .confirm-btn-ok:hover {
   background: #4680ff;
+}
+
+/* ===== Tutorial ===== */
+/* Panel de objetivo, arriba centrado. */
+#tutorial-panel {
+  position: fixed;
+  top: 22px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-16px);
+  z-index: 24;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 420px;
+  max-width: 80vw;
+  padding: 14px 26px;
+  background: rgba(10, 14, 22, 0.86);
+  border: 1px solid #3a4560;
+  border-radius: 14px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+#tutorial-panel.open {
+  display: flex;
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.tutorial-progress {
+  color: #9b6bff;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.tutorial-title {
+  color: #f1f4fa;
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.tutorial-instr {
+  color: #cdd6e4;
+  font-size: 15px;
+  text-align: center;
+  line-height: 1.4;
+}
+
+/* Tecla resaltada dentro de las instrucciones. */
+.tutorial-key {
+  display: inline-block;
+  min-width: 20px;
+  padding: 1px 8px;
+  margin: 0 2px;
+  background: #2f3b57;
+  border: 1px solid #5a6886;
+  border-radius: 6px;
+  color: #fff;
+  font-weight: 800;
+}
+
+/* Cartel grande de tutorial completado. */
+#tutorial-done {
+  position: fixed;
+  top: 40%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0.6);
+  z-index: 33;
+  color: #9b6bff;
+  font-size: 56px;
+  font-weight: 900;
+  letter-spacing: 2px;
+  text-shadow: 0 0 30px rgba(155, 107, 255, 0.7), 0 10px 30px rgba(0, 0, 0, 0.7);
+  opacity: 0;
+  pointer-events: none;
+}
+
+#tutorial-done.show {
+  animation: tutorialDone 1s cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+}
+
+@keyframes tutorialDone {
+  0% {
+    transform: translate(-50%, -50%) scale(0.4);
+    opacity: 0;
+  }
+  30% {
+    transform: translate(-50%, -50%) scale(1.12);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
 }
