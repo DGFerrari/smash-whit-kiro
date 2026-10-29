@@ -7,45 +7,50 @@
  * Son ligeros y desacoplados: el loop/app los enciende y apaga.
  */
 
+/**
+ * Pantalla de carga estilo "iris" (Looney Tunes): un velo oscuro cubre la
+ * pantalla y, abajo a la derecha, un CÍRCULO se va llenando de abajo a arriba
+ * indicando el progreso de carga. Al llegar al 100% el iris se cierra/abre y
+ * resuelve la promesa.
+ */
 export class LoadingScreen {
   private readonly root: HTMLDivElement;
-  private readonly bar: HTMLDivElement;
+  /** Relleno que sube dentro del círculo (altura 0%..100%). */
+  private readonly fill: HTMLDivElement;
   private raf = 0;
 
   constructor() {
     this.root = document.createElement("div");
     this.root.id = "loading-screen";
 
-    const inner = document.createElement("div");
-    inner.className = "loading-inner";
+    // Círculo abajo a la derecha (el "iris").
+    const circle = document.createElement("div");
+    circle.className = "loading-iris";
 
-    const spinner = document.createElement("div");
-    spinner.className = "loading-spinner";
-    inner.appendChild(spinner);
+    this.fill = document.createElement("div");
+    this.fill.className = "loading-iris-fill";
+    circle.appendChild(this.fill);
+
+    const ring = document.createElement("div");
+    ring.className = "loading-iris-ring";
+    circle.appendChild(ring);
 
     const label = document.createElement("div");
-    label.className = "loading-label";
-    label.textContent = "Cargando…";
-    inner.appendChild(label);
+    label.className = "loading-iris-label";
+    label.textContent = "That's all folks… cargando";
+    circle.appendChild(label);
 
-    const track = document.createElement("div");
-    track.className = "loading-track";
-    this.bar = document.createElement("div");
-    this.bar.className = "loading-bar";
-    track.appendChild(this.bar);
-    inner.appendChild(track);
-
-    this.root.appendChild(inner);
+    this.root.appendChild(circle);
     document.body.appendChild(this.root);
   }
 
   /**
-   * Muestra la pantalla de carga durante `duration` ms con una barra animada y
-   * resuelve la promesa al terminar (para encadenar menú -> partida).
+   * Muestra la pantalla de carga durante `duration` ms; el círculo se llena de
+   * abajo a arriba y la promesa resuelve al terminar.
    */
   show(duration = 900): Promise<void> {
     this.root.classList.add("open");
-    this.bar.style.width = "0%";
+    this.fill.style.height = "0%";
     const start = performance.now();
     cancelAnimationFrame(this.raf);
 
@@ -54,7 +59,7 @@ export class LoadingScreen {
         const t = Math.min(1, (now - start) / duration);
         // Curva con un pequeño "tirón" al final para que se sienta dinámica.
         const eased = t < 0.9 ? t * 0.85 : 0.765 + (t - 0.9) * 2.35;
-        this.bar.style.width = `${Math.min(100, eased * 100)}%`;
+        this.fill.style.height = `${Math.min(100, eased * 100)}%`;
         if (t < 1) {
           this.raf = requestAnimationFrame(tick);
         } else {

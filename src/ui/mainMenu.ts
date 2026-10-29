@@ -1,111 +1,175 @@
 import type { GameMode } from "../game/world.ts";
 
 /**
- * Menú principal del juego. Pantalla inicial donde se elige el modo de juego:
- *  - Entrenamiento: un jugador + un dummy de pruebas.
- *  - Versus local: dos jugadores humanos en el mismo teclado.
+ * Menú principal del juego, en dos fases:
+ *  1. TÍTULO: logo provisional + "Press start"; se entra con Enter (o clic).
+ *  2. SELECCIÓN: título arriba a la izquierda, lista de modos a la izquierda
+ *     (con indicador ">" en el seleccionado), botón Jugar abajo a la derecha, y
+ *     la descripción del modo abajo en el centro.
  *
- * Es un overlay DOM a pantalla completa. Al elegir un modo, llama a onPlay con
- * el modo elegido; la capa de app (main.ts) se encarga de arrancar la partida.
+ * Es un overlay DOM. Al pulsar Jugar con un modo jugable elegido, llama a
+ * onPlay. La opción "dev" se puede seleccionar pero deshabilita Jugar (no está
+ * terminada).
  */
 export interface MainMenuCallbacks {
   onPlay: (mode: GameMode) => void;
 }
 
+/** Valor de una opción del menú: un modo jugable o la opción no terminada. */
+type MenuOption = GameMode | "dev";
+
 interface ModeDef {
-  mode: GameMode;
+  value: MenuOption;
   label: string;
   hint: string;
-  /** Color de acento del modo (botón seleccionado, fondo, descripción). */
+  /** ¿Es jugable? (dev no lo es: deshabilita el botón Jugar). */
+  playable: boolean;
+  /** Color de acento del modo. */
   accent: string;
 }
 
 const MODES: ModeDef[] = [
   {
-    mode: "training",
+    value: "versus",
+    label: "1vs1",
+    hint: "Dos jugadores en el mismo teclado. Se pierde al quedarte sin vidas; gana el último en pie.",
+    playable: true,
+    accent: "#ff6a8b",
+  },
+  {
+    value: "training",
     label: "Entrenamiento",
     hint: "Practica combos y recuperaciones contra un dummy configurable en un escenario con regla de distancias.",
+    playable: true,
     accent: "#45c88a",
   },
   {
-    mode: "versus",
-    label: "Versus local",
-    hint: "Dos jugadores en el mismo teclado. Se pierde al quedarte sin vidas; gana el último en pie.",
-    accent: "#ff6a8b",
+    value: "dev",
+    label: "dev",
+    hint: "Herramientas de desarrollo. Opción no terminada todavía.",
+    playable: false,
+    accent: "#b0b8c8",
   },
 ];
 
 export class MainMenu {
   private readonly root: HTMLDivElement;
-  private readonly cards = new Map<GameMode, HTMLButtonElement>();
+  private readonly titlePhase: HTMLDivElement;
+  private readonly selectPhase: HTMLDivElement;
+  private readonly rows = new Map<MenuOption, HTMLButtonElement>();
   private readonly hintEl: HTMLParagraphElement;
   private readonly playBtn: HTMLButtonElement;
-  private selected: GameMode | null = null;
+  private selected: MenuOption | null = null;
+  private phase: "title" | "select" = "title";
 
   constructor(private readonly cb: MainMenuCallbacks) {
     this.root = document.createElement("div");
     this.root.id = "main-menu";
 
-    const panel = document.createElement("div");
-    panel.className = "menu-panel";
+    // --- Fase 1: título ---
+    this.titlePhase = document.createElement("div");
+    this.titlePhase.className = "menu-title-phase";
+    const logo = document.createElement("h1");
+    logo.className = "menu-logo";
+    logo.textContent = "Título";
+    this.titlePhase.appendChild(logo);
+    const press = document.createElement("div");
+    press.className = "menu-press-start";
+    press.textContent = "Press start";
+    this.titlePhase.appendChild(press);
+    this.titlePhase.addEventListener("click", () => this.enterSelect());
+    this.root.appendChild(this.titlePhase);
+
+    // --- Fase 2: selección ---
+    this.selectPhase = document.createElement("div");
+    this.selectPhase.className = "menu-select-phase";
 
     const title = document.createElement("h1");
-    title.className = "menu-title";
-    title.textContent = "smash-B";
-    panel.appendChild(title);
+    title.className = "menu-select-title";
+    title.textContent = "Título";
+    this.selectPhase.appendChild(title);
 
-    const subtitle = document.createElement("p");
-    subtitle.className = "menu-subtitle";
-    subtitle.textContent = "Platform fighter 2D — elige un modo";
-    panel.appendChild(subtitle);
-
-    // Tarjetas de modo (seleccionables, no arrancan la partida al pulsar).
-    const grid = document.createElement("div");
-    grid.className = "mode-grid";
+    // Lista de modos (a la izquierda).
+    const list = document.createElement("div");
+    list.className = "mode-list";
     for (const def of MODES) {
-      const card = this.buildModeCard(def);
-      this.cards.set(def.mode, card);
-      grid.appendChild(card);
+      const row = this.buildModeRow(def);
+      this.rows.set(def.value, row);
+      list.appendChild(row);
     }
-    panel.appendChild(grid);
+    this.selectPhase.appendChild(list);
 
-    // Descripción del modo seleccionado.
+    // Descripción del modo (abajo, centrada).
     this.hintEl = document.createElement("p");
     this.hintEl.className = "mode-hint";
-    this.hintEl.textContent = "Selecciona un modo para empezar.";
-    panel.appendChild(this.hintEl);
+    this.hintEl.textContent = "Selecciona un modo.";
+    this.selectPhase.appendChild(this.hintEl);
 
-    // Botón Jugar (deshabilitado hasta elegir modo).
+    // Botón Jugar (abajo a la derecha).
     this.playBtn = document.createElement("button");
     this.playBtn.type = "button";
     this.playBtn.className = "menu-btn play-btn";
-    this.playBtn.textContent = "Jugar";
+    this.playBtn.textContent = "jugar";
     this.playBtn.disabled = true;
-    this.playBtn.addEventListener("click", () => {
-      if (this.selected) this.cb.onPlay(this.selected);
-    });
-    panel.appendChild(this.playBtn);
+    this.playBtn.addEventListener("click", () => this.tryPlay());
+    this.selectPhase.appendChild(this.playBtn);
 
-    this.root.appendChild(panel);
+    this.root.appendChild(this.selectPhase);
     document.body.appendChild(this.root);
+
+    window.addEventListener("keydown", this.onKey);
   }
 
   show(): void {
-    this.root.classList.add("open");
+    this.phase = "title";
+    this.root.classList.remove("in-select");
+    this.root.classList.add("open", "in-title");
   }
 
   hide(): void {
     this.root.classList.remove("open");
   }
 
-  private buildModeCard(def: ModeDef): HTMLButtonElement {
+  private onKey = (e: KeyboardEvent): void => {
+    if (!this.root.classList.contains("open")) return;
+    if (this.phase === "title" && e.key === "Enter") {
+      e.preventDefault();
+      this.enterSelect();
+    } else if (this.phase === "select" && e.key === "Enter") {
+      e.preventDefault();
+      this.tryPlay();
+    }
+  };
+
+  /** Pasa de la fase título a la de selección. */
+  private enterSelect(): void {
+    if (this.phase === "select") return;
+    this.phase = "select";
+    this.root.classList.remove("in-title");
+    this.root.classList.add("in-select");
+  }
+
+  private tryPlay(): void {
+    if (!this.selected) return;
+    const def = MODES.find((m) => m.value === this.selected);
+    if (!def || !def.playable) return; // dev no arranca
+    this.cb.onPlay(this.selected as GameMode);
+  }
+
+  private buildModeRow(def: ModeDef): HTMLButtonElement {
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.className = "mode-card";
+    btn.className = "mode-row";
     btn.style.setProperty("--accent", def.accent);
 
+    // Indicador ">" que aparece solo en el seleccionado.
+    const caret = document.createElement("span");
+    caret.className = "mode-caret";
+    caret.textContent = "❯";
+    btn.appendChild(caret);
+
     const name = document.createElement("span");
-    name.className = "mode-card-label";
+    name.className = "mode-row-label";
     name.textContent = def.label;
     btn.appendChild(name);
 
@@ -114,17 +178,17 @@ export class MainMenu {
   }
 
   private select(def: ModeDef): void {
-    this.selected = def.mode;
-    // Marca la tarjeta elegida y desmarca las demás.
-    for (const [mode, card] of this.cards) {
-      card.classList.toggle("selected", mode === def.mode);
+    this.selected = def.value;
+    for (const [value, row] of this.rows) {
+      row.classList.toggle("selected", value === def.value);
     }
-    // Acento del fondo y de la descripción según el modo.
     this.root.style.setProperty("--menu-accent", def.accent);
     this.root.classList.add("mode-chosen");
     this.hintEl.textContent = def.hint;
     this.hintEl.style.color = def.accent;
-    this.playBtn.disabled = false;
+
+    // La opción "dev" no es jugable: deshabilita Jugar.
+    this.playBtn.disabled = !def.playable;
     this.playBtn.style.setProperty("--accent", def.accent);
   }
 }
