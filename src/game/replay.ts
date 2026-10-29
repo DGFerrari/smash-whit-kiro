@@ -16,8 +16,39 @@ import type { StageId } from "./stages.ts";
  * en un entero de bits + ejes, así el archivo es pequeño.
  */
 
-/** v2 añade personajes + escenario. v1 (sin ellos) se sigue pudiendo cargar. */
-export const REPLAY_VERSION = 2;
+/**
+ * v3 añade el resumen de resultado (result) para la lista de replays.
+ * v2 añadió personajes + escenario. v1 (sin ellos) se sigue pudiendo cargar.
+ */
+export const REPLAY_VERSION = 3;
+
+/**
+ * Resumen de un jugador para la ficha del replay (lista + panel de detalle).
+ * Se guarda junto al replay para no tener que re-simular para mostrarlo.
+ */
+export interface ReplayFighterSummary {
+  label: string;
+  color: string;
+  /** Id de personaje (para mostrar su nombre con getCharacter). */
+  character: CharacterId;
+  dealt: number;
+  taken: number;
+  blocked: number;
+  kos: number;
+  deaths: number;
+  isWinner: boolean;
+}
+
+/** Metadatos de resultado de la partida (v3+). Lo que muestra la lista. */
+export interface ReplayResult {
+  /** Etiqueta del ganador ("P1"/"P2"/"Empate") y su color. */
+  winnerLabel: string;
+  winnerColor: string;
+  draw: boolean;
+  /** Duración en segundos (steps / 60). */
+  durationSec: number;
+  fighters: ReplayFighterSummary[];
+}
 
 export interface ReplayData {
   version: number;
@@ -33,6 +64,8 @@ export interface ReplayData {
   players: number;
   /** Pasos: cada uno es un array de inputs empaquetados (uno por jugador). */
   steps: number[][];
+  /** Resumen de resultado para la lista/detalle (v3+). Opcional por compat. */
+  result?: ReplayResult;
 }
 
 // --- Empaquetado de un InputState en un entero ------------------------------
@@ -106,8 +139,8 @@ export class ReplayRecorder {
     return this.steps.length;
   }
 
-  /** Construye el objeto serializable del replay. */
-  build(): ReplayData {
+  /** Construye el objeto serializable del replay, con resultado opcional. */
+  build(result?: ReplayResult): ReplayData {
     return {
       version: REPLAY_VERSION,
       mode: this.mode,
@@ -117,6 +150,7 @@ export class ReplayRecorder {
       recordedAt: new Date().toISOString(),
       players: 2,
       steps: this.steps,
+      result,
     };
   }
 }

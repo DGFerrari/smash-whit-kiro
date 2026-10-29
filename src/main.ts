@@ -9,13 +9,16 @@ import { PauseMenu } from "./ui/pauseMenu.ts";
 import { MainMenu, MatchOverScreen, type FighterResult } from "./ui/mainMenu.ts";
 import { LoadingScreen, Countdown, KOFlash } from "./ui/overlays.ts";
 import { ReplayScreen } from "./ui/replayScreen.ts";
+import { ReplayListScreen } from "./ui/replayListScreen.ts";
 import { MenuBackground } from "./ui/menuBackground.ts";
 import {
   ReplayRecorder,
   downloadReplay,
   loadReplayFile,
   type ReplayData,
+  type ReplayResult,
 } from "./game/replay.ts";
+import { saveReplay } from "./game/replayStore.ts";
 
 const canvas = document.querySelector<HTMLCanvasElement>("#game");
 if (!canvas) {
@@ -59,7 +62,7 @@ class App {
 
   private readonly mainMenu = new MainMenu({
     onPlay: (mode) => this.onPlay(mode),
-    onLoadReplay: (file) => void this.openReplay(file),
+    onOpenReplays: () => void this.openReplayList(),
   });
 
   // Selección de personajes (batalla).
@@ -116,7 +119,18 @@ class App {
   });
 
   private readonly replayScreen = new ReplayScreen(renderer, camera, {
-    onExit: () => void this.toMenu(),
+    // Al salir del reproductor volvemos a la lista, no al menú.
+    onExit: () => void this.backToReplayList(),
+  });
+
+  private readonly replayListScreen = new ReplayListScreen({
+    onPlay: (data) => void this.playReplayFromList(data),
+    onExport: (data) => downloadReplay(data),
+    onImportFile: (file) => loadReplayFile(file),
+    onBack: () => {
+      this.replayListScreen.hide();
+      this.showMenu();
+    },
   });
 
   /** Fondo animado del menú (replays en bucle). Se inicia perezosamente. */
@@ -265,9 +279,37 @@ class App {
       isWinner: f.index === winnerIndex,
     }));
 
+    // Resumen de resultado que se guarda dentro del replay (para la lista).
+    const replayResult: ReplayResult | undefined = world
+      ? {
+          winnerLabel: label,
+          winnerColor: color,
+          draw: isDraw,
+          durationSec: this.recorder ? this.recorder.length / 60 : 0,
+          fighters: world.fighters.map((f) => ({
+            label: f.label,
+            color: f.color,
+            character: f.characterId,
+            dealt: f.player.stats.dealt,
+            taken: f.player.stats.taken,
+            blocked: f.player.stats.blocked,
+            kos: f.player.stats.kos,
+            deaths: f.player.stats.deaths,
+            isWinner: f.index === winnerIndex,
+          })),
+        }
+      : undefined;
+
     // Finalizamos el replay grabado (el podio ofrecerá descargarlo).
     this.lastReplay =
-      this.recorder && this.recorder.length > 0 ? this.recorder.build() : null;
+      this.recorder && this.recorder.length > 0
+        ? this.recorder.build(replayResult)
+        : null;
+
+    // Guardado AUTOMÁTICO dentro del navegador (si hubo algo que grabar).
+    if (this.lastReplay) {
+      saveReplay(this.lastReplay);
+    }
 
     this.teardownMatch();
     this.koFlash.set(0);
@@ -291,22 +333,43 @@ class App {
     this.recorder = null;
   }
 
-  /** Carga un archivo de replay y lo reproduce en el ReplayScreen. */
-  private async openReplay(file: File): Promise<void> {
+  /** Abre la lista de repeticiones guardadas (desde el menú). */
+  private async openReplayList(): Promise<void> {
+    if (this.busy) return;
+    this.busy = true;
+    await this.transition(() => {
+      this.hideMenu();
+      this.replayListScreen.show();
+    });
+    this.busy = false;
+  }
+
+  /** Vuelve del reproductor a la lista de repeticiones. */
+  private async backToReplayList(): Promise<void> {
+    if (this.busy) return;
+    this.busy = true;
+    await this.loading.cover();
+    this.teardownMatch();
+    this.replayListScreen.show();
+    await this.loading.reveal();
+    this.busy = false;
+  }
+
+  /** Reproduce un replay elegido en la lista. */
+  private async playReplayFromList(data: ReplayData): Promise<void> {
     if (this.busy) return;
     this.busy = true;
     try {
-      const data = await loadReplayFile(file);
       await this.loading.cover();
-      this.hideMenu();
+      this.replayListScreen.hide();
       this.teardownMatch();
       await this.loading.fill(500);
       this.replayScreen.start(data);
       await this.loading.reveal();
     } catch (err) {
       console.error(err);
-      window.alert("No se pudo cargar el replay: archivo no válido.");
-      this.showMenu();
+      window.alert("No se pudo reproducir el replay.");
+      this.replayListScreen.show();
     } finally {
       this.busy = false;
     }

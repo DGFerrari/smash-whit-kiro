@@ -14,8 +14,8 @@ import type { GameMode } from "../game/world.ts";
 export interface MainMenuCallbacks {
   /** Inicia una partida en el modo dado (siempre se graba el replay). */
   onPlay: (mode: GameMode) => void;
-  /** El usuario eligió un archivo de replay para reproducir. */
-  onLoadReplay: (file: File) => void;
+  /** Abrir la lista de repeticiones guardadas. */
+  onOpenReplays: () => void;
 }
 
 /** Valor de una opción del menú: modo jugable, ver replay, o dev (no terminada). */
@@ -49,7 +49,7 @@ const MODES: ModeDef[] = [
   {
     value: "replay",
     label: "Replay",
-    hint: "Carga un archivo de replay y velo como un vídeo: pausa, velocidad, avance/retroceso y cámara libre.",
+    hint: "Tus partidas se guardan solas. Míralas desde la lista (o importa un .json): pausa, velocidad, avance/retroceso y cámara libre.",
     playable: true,
     accent: "#f0b429",
   },
@@ -69,7 +69,6 @@ export class MainMenu {
   private readonly rows = new Map<MenuOption, HTMLButtonElement>();
   private readonly hintEl: HTMLParagraphElement;
   private readonly playBtn: HTMLButtonElement;
-  private readonly fileInput: HTMLInputElement;
   /** Logo compartido entre fases: se desliza del centro a arriba-izquierda. */
   private readonly logo: HTMLHeadingElement;
   private selected: MenuOption | null = null;
@@ -115,18 +114,6 @@ export class MainMenu {
     this.hintEl.className = "mode-hint";
     this.hintEl.textContent = "Selecciona un modo.";
     this.selectPhase.appendChild(this.hintEl);
-
-    // Selector de archivo oculto, para la opción "Replay".
-    this.fileInput = document.createElement("input");
-    this.fileInput.type = "file";
-    this.fileInput.accept = "application/json,.json";
-    this.fileInput.style.display = "none";
-    this.fileInput.addEventListener("change", () => {
-      const file = this.fileInput.files?.[0];
-      if (file) this.cb.onLoadReplay(file);
-      this.fileInput.value = ""; // permite recargar el mismo archivo
-    });
-    this.selectPhase.appendChild(this.fileInput);
 
     // Botón Jugar (abajo a la derecha).
     this.playBtn = document.createElement("button");
@@ -184,8 +171,8 @@ export class MainMenu {
     const def = MODES.find((m) => m.value === this.selected);
     if (!def || !def.playable) return; // dev no arranca
     if (this.selected === "replay") {
-      // La opción Replay abre el selector de archivo.
-      this.fileInput.click();
+      // La opción Replay abre la lista de repeticiones guardadas.
+      this.cb.onOpenReplays();
       return;
     }
     this.cb.onPlay(this.selected as GameMode);
