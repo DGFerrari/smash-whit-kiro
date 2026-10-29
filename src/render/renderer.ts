@@ -355,14 +355,13 @@ export class Renderer {
     const zBack = -DEPTH.platformBack;
 
     if (p.oneWay) {
-      // Plataforma atravesable: una sola caja (sin tapa superpuesta).
+      // Plataforma atravesable: una sola caja de color SÓLIDO (sin
+      // transparencia) para que se vea nítida y no se funda con el fondo.
       const mat = this.surfaceMaterial({
         color: theme.oneWay,
         texture: TEXTURES.oneWay,
         surfaceW: w,
         surfaceH: h,
-        transparent: true,
-        opacity: 0.55,
       });
       const mesh = new THREE.Mesh(this.boxGeo, mat);
       mesh.scale.set(w, h, depth);

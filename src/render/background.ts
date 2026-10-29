@@ -3,42 +3,34 @@ import type { Camera } from "./camera.ts";
 import type { StageBackdrop } from "../game/stages.ts";
 
 /**
- * Fondo de ciudad neón por CAPAS en 3D. En vez de simular el parallax a mano,
- * colocamos planos con siluetas de edificios a distintas PROFUNDIDADES (Z) y
- * dejamos que la perspectiva de la cámara genere el parallax automáticamente:
- * las capas lejanas (Z muy negativa) se mueven poco; las cercanas, más.
+ * Fondo por CAPAS en 3D. Colocamos planos a distintas PROFUNDIDADES (Z) y
+ * dejamos que la perspectiva de la cámara genere el parallax: las capas lejanas
+ * (Z muy negativa) se mueven poco; las cercanas, más. Cada capa es un plano
+ * grande con una textura generada por canvas.
  *
- * Cada capa es un plano grande con una textura generada (canvas) de siluetas y
- * ventanas de neón. Los planos siguen a la cámara en X/Y (para cubrir siempre
- * la vista) pero mantienen su Z, de modo que el desplazamiento relativo entre
- * capas da el efecto 3D.
+ * Soporta varios ESTILOS (backdrop), cada uno con su propio dibujo de capas:
+ *  - neonCity: skyline de ciudad neón (isla Neón).
+ *  - meadow: cielo pastel con colinas lejanas (isla Pradera).
+ *  - sanctuary: cielo nuboso pastel con mar, montaña y sol (isla Santuario).
+ *  - grid: oculto (lo usa el escenario de entrenamiento; el renderer dibuja la
+ *    rejilla y un color de fondo plano).
  *
- * En el modo "trainingGrid" el fondo se oculta (la escena usa un color plano
- * blanco y la rejilla la dibuja el renderer).
+ * Al cambiar de backdrop se REGENERAN las texturas de las capas, así cada
+ * escenario tiene un fondo claramente distinto (no un simple tinte).
  */
 
 interface LayerDef {
   z: number; // profundidad (más negativo = más lejos)
-  base: string; // color de las siluetas
-  neon: string; // color de ventanas/bordes
-  heightFrac: number; // altura máx de edificios respecto a la textura
   seed: number;
 }
 
+/** 4 capas a distintas profundidades; la textura la decide el backdrop. */
 const LAYERS: LayerDef[] = [
-  { z: -2600, base: "#121a33", neon: "#26407a", heightFrac: 0.45, seed: 11 },
-  { z: -1900, base: "#16203f", neon: "#2f5bd0", heightFrac: 0.6, seed: 29 },
-  { z: -1300, base: "#1b2650", neon: "#8a3df0", heightFrac: 0.75, seed: 47 },
-  { z: -800, base: "#202a4d", neon: "#ff3d8b", heightFrac: 0.9, seed: 83 },
+  { z: -2600, seed: 11 },
+  { z: -1900, seed: 29 },
+  { z: -1300, seed: 47 },
+  { z: -800, seed: 83 },
 ];
-
-/** Tinte por backdrop para diferenciar visualmente las variantes de escenario. */
-const BACKDROP_TINT: Record<StageBackdrop, number> = {
-  neonCity: 0xffffff, // sin tinte (colores originales)
-  sunset: 0xffb27a, // cálido anaranjado
-  void: 0x5fe8c8, // frío verde-azulado tenue
-  grid: 0xffffff, // no se usa (grid oculta el fondo)
-};
 
 export class Background3D {
   private readonly group = new THREE.Group();
@@ -52,24 +44,38 @@ export class Background3D {
       this.group.add(plane);
     }
     this.scene.add(this.group);
+    this.applyBackdrop("neonCity");
   }
 
-  /** Elige el estilo de fondo. "grid" lo oculta; el resto tiñe las capas. */
+  /** Elige el estilo de fondo. "grid" lo oculta; el resto regenera capas. */
   setBackdrop(backdrop: StageBackdrop): void {
+    if (backdrop === this.backdrop) {
+      this.group.visible = backdrop !== "grid";
+      return;
+    }
     this.backdrop = backdrop;
+    this.applyBackdrop(backdrop);
+  }
+
+  private applyBackdrop(backdrop: StageBackdrop): void {
     const visible = backdrop !== "grid";
     this.group.visible = visible;
-    const tint = BACKDROP_TINT[backdrop];
-    for (const plane of this.planes) {
+    if (!visible) return;
+    this.planes.forEach((plane, i) => {
+      const def = LAYERS[i];
+      const depth = i / (LAYERS.length - 1); // 0 = más lejos, 1 = más cerca
+      const tex = this.makeTexture(backdrop, def, depth);
       const mat = plane.material as THREE.MeshBasicMaterial;
-      mat.color.setHex(tint);
-    }
+      if (mat.map) mat.map.dispose();
+      mat.map = tex;
+      mat.color.setHex(0xffffff);
+      mat.needsUpdate = true;
+    });
   }
 
   /**
    * Coloca las capas centradas en la X/Y de la cámara (para cubrir la vista),
-   * manteniendo su Z. El tamaño de cada plano es grande y proporcional a su
-   * distancia para llenar el encuadre.
+   * manteniendo su Z.
    */
   update(camera: Camera): void {
     if (this.backdrop === "grid") return;
@@ -82,15 +88,11 @@ export class Background3D {
   }
 
   private buildLayer(def: LayerDef): THREE.Mesh {
-    const tex = this.makeTexture(def);
-    // El plano se dimensiona según su distancia para cubrir sobradamente la
-    // vista; cuanto más lejos, más grande para no quedarse corto.
     const dist = Math.abs(def.z);
     const w = dist * 3.2;
     const h = dist * 1.9;
     const geo = new THREE.PlaneGeometry(w, h);
     const mat = new THREE.MeshBasicMaterial({
-      map: tex,
       transparent: true,
       depthWrite: false,
     });
@@ -100,8 +102,12 @@ export class Background3D {
     return mesh;
   }
 
-  /** Genera la textura de una capa (siluetas de edificios + ventanas neón). */
-  private makeTexture(def: LayerDef): THREE.CanvasTexture {
+  /** Genera la textura de una capa según el estilo de fondo. */
+  private makeTexture(
+    backdrop: StageBackdrop,
+    def: LayerDef,
+    depth: number,
+  ): THREE.CanvasTexture {
     const W = 1024;
     const H = 512;
     const canvas = document.createElement("canvas");
@@ -109,39 +115,69 @@ export class Background3D {
     canvas.height = H;
     const ctx = canvas.getContext("2d")!;
 
-    // Cielo con un leve degradado (transparente arriba para fundir con la
-    // escena; el color de fondo lo pone la escena).
-    const sky = ctx.createLinearGradient(0, 0, 0, H);
-    sky.addColorStop(0, "rgba(10,15,36,0)");
-    sky.addColorStop(1, "rgba(20,14,43,0.4)");
-    ctx.fillStyle = sky;
-    ctx.fillRect(0, 0, W, H);
-
-    // PRNG estable.
+    // PRNG estable por capa.
     let s = def.seed;
     const rand = (): number => {
       s = (s * 1103515245 + 12345) & 0x7fffffff;
       return s / 0x7fffffff;
     };
 
-    // Edificios desde la base (abajo) hacia arriba.
+    switch (backdrop) {
+      case "meadow":
+        this.drawMeadow(ctx, W, H, depth, rand);
+        break;
+      case "sanctuary":
+        this.drawSanctuary(ctx, W, H, depth, rand);
+        break;
+      case "neonCity":
+      default:
+        this.drawNeonCity(ctx, W, H, depth, rand);
+        break;
+    }
+
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.minFilter = THREE.LinearFilter;
+    return tex;
+  }
+
+  // --- Estilos de fondo -----------------------------------------------------
+
+  /** Ciudad neón: siluetas de edificios con ventanas luminosas. */
+  private drawNeonCity(
+    ctx: CanvasRenderingContext2D,
+    W: number,
+    H: number,
+    depth: number,
+    rand: () => number,
+  ): void {
+    // Paleta por profundidad: las capas cercanas más saturadas.
+    const bases = ["#121a33", "#16203f", "#1b2650", "#202a4d"];
+    const neons = ["#26407a", "#2f5bd0", "#8a3df0", "#ff3d8b"];
+    const idx = Math.round(depth * 3);
+    const base = bases[idx];
+    const neon = neons[idx];
+    const heightFrac = 0.45 + depth * 0.45;
+
+    const sky = ctx.createLinearGradient(0, 0, 0, H);
+    sky.addColorStop(0, "rgba(10,15,36,0)");
+    sky.addColorStop(1, "rgba(20,14,43,0.4)");
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, W, H);
+
     let x = 0;
     while (x < W) {
       const bw = 40 + rand() * 100;
-      const bh = (0.25 + rand() * def.heightFrac) * H;
+      const bh = (0.25 + rand() * heightFrac) * H;
       const top = H - bh;
-
-      ctx.fillStyle = def.base;
+      ctx.fillStyle = base;
       ctx.fillRect(x, top, bw, bh);
-      ctx.fillStyle = def.neon;
+      ctx.fillStyle = neon;
       ctx.globalAlpha = 0.6;
       ctx.fillRect(x, top, bw, 3);
       ctx.globalAlpha = 1;
-
-      // Ventanas.
       const cols = Math.max(1, Math.floor(bw / 14));
       const rows = Math.max(1, Math.floor(bh / 18));
-      ctx.fillStyle = def.neon;
+      ctx.fillStyle = neon;
       for (let c = 0; c < cols; c++) {
         for (let r = 0; r < rows; r++) {
           if (rand() > 0.74) {
@@ -153,9 +189,125 @@ export class Background3D {
       ctx.globalAlpha = 1;
       x += bw + 8 + rand() * 36;
     }
+  }
 
-    const tex = new THREE.CanvasTexture(canvas);
-    tex.minFilter = THREE.LinearFilter;
-    return tex;
+  /** Pradera: cielo pastel claro con colinas verdes lejanas y alguna nube. */
+  private drawMeadow(
+    ctx: CanvasRenderingContext2D,
+    W: number,
+    H: number,
+    depth: number,
+    rand: () => number,
+  ): void {
+    // Cielo: azul muy suave arriba, casi blanco cálido abajo.
+    const sky = ctx.createLinearGradient(0, 0, 0, H);
+    sky.addColorStop(0, "rgba(150,195,225,0.55)");
+    sky.addColorStop(0.6, "rgba(206,224,235,0.35)");
+    sky.addColorStop(1, "rgba(232,240,228,0.25)");
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, W, H);
+
+    // Nubes suaves (más en las capas lejanas).
+    const clouds = depth < 0.6 ? 3 + Math.floor(rand() * 3) : 1 + Math.floor(rand() * 2);
+    for (let i = 0; i < clouds; i++) {
+      const cx = rand() * W;
+      const cy = H * (0.1 + rand() * 0.4);
+      const r = 26 + rand() * 60;
+      this.softBlob(ctx, cx, cy, r, "rgba(255,255,255,0.55)");
+    }
+
+    // Colinas verdes en el horizonte (más altas y oscuras cuanto más cerca).
+    const hillColors = ["#9bc47f", "#84b667", "#6fa551", "#5c9344"];
+    const col = hillColors[Math.round(depth * 3)];
+    const baseY = H * (0.72 - depth * 0.12);
+    ctx.fillStyle = col;
+    ctx.beginPath();
+    ctx.moveTo(0, H);
+    ctx.lineTo(0, baseY);
+    let x = 0;
+    while (x < W) {
+      const peak = baseY - (20 + rand() * 70) * (0.5 + depth);
+      const nx = x + 80 + rand() * 160;
+      ctx.quadraticCurveTo((x + nx) / 2, peak, nx, baseY - rand() * 20);
+      x = nx;
+    }
+    ctx.lineTo(W, H);
+    ctx.closePath();
+    ctx.globalAlpha = 0.9;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  /** Santuario: cielo nuboso pastel con un sol tenue, montaña y mar al fondo. */
+  private drawSanctuary(
+    ctx: CanvasRenderingContext2D,
+    W: number,
+    H: number,
+    depth: number,
+    rand: () => number,
+  ): void {
+    // Cielo rosado-azulado pastel.
+    const sky = ctx.createLinearGradient(0, 0, 0, H);
+    sky.addColorStop(0, "rgba(201,214,232,0.55)");
+    sky.addColorStop(0.5, "rgba(232,210,220,0.4)");
+    sky.addColorStop(1, "rgba(244,228,224,0.3)");
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, W, H);
+
+    // Sol/brillo suave (solo en la capa más lejana).
+    if (depth < 0.35) {
+      this.softBlob(ctx, W * 0.3, H * 0.28, 150, "rgba(255,248,224,0.5)");
+    }
+
+    // Montaña rosada al fondo (capas lejanas).
+    if (depth < 0.6) {
+      ctx.fillStyle = "rgba(196,150,160,0.5)";
+      ctx.beginPath();
+      ctx.moveTo(W * 0.55, H * 0.72);
+      ctx.lineTo(W * 0.82, H * 0.3);
+      ctx.lineTo(W * 1.05, H * 0.72);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // Nubes esponjosas pastel.
+    const clouds = 4 + Math.floor(rand() * 4);
+    for (let i = 0; i < clouds; i++) {
+      const cx = rand() * W;
+      const cy = H * (0.08 + rand() * 0.5);
+      const r = 30 + rand() * 70;
+      this.softBlob(ctx, cx, cy, r, "rgba(255,255,255,0.6)");
+      this.softBlob(ctx, cx + r * 0.7, cy + r * 0.2, r * 0.7, "rgba(255,255,255,0.5)");
+    }
+
+    // Mar turquesa claro en la franja inferior (capas cercanas).
+    if (depth > 0.4) {
+      const seaY = H * 0.74;
+      const sea = ctx.createLinearGradient(0, seaY, 0, H);
+      sea.addColorStop(0, "rgba(150,210,205,0.55)");
+      sea.addColorStop(1, "rgba(120,185,190,0.5)");
+      ctx.fillStyle = sea;
+      ctx.fillRect(0, seaY, W, H - seaY);
+      // Espuma/orilla clara.
+      ctx.fillStyle = "rgba(235,245,240,0.5)";
+      ctx.fillRect(0, seaY, W, 6);
+    }
+  }
+
+  /** Dibuja un círculo con degradado radial suave (nube/sol). */
+  private softBlob(
+    ctx: CanvasRenderingContext2D,
+    cx: number,
+    cy: number,
+    r: number,
+    color: string,
+  ): void {
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+    g.addColorStop(0, color);
+    g.addColorStop(1, color.replace(/[\d.]+\)$/, "0)"));
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
   }
 }

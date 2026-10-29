@@ -33,8 +33,13 @@ export interface MatchConfig {
    * De momento solo el índice 1 puede ser "cpu" (elegible en la selección).
    */
   controllers?: Controller[];
-  /** Dificultad de la CPU del índice 1 (si es CPU). Por defecto "normal". */
-  cpuDifficulty?: CpuDifficulty;
+  /**
+   * Dificultad de la CPU. Puede ser:
+   *  - un ARRAY por índice de combatiente (cada CPU con su dificultad), o
+   *  - un valor único (compat. con replays antiguos: misma para todas).
+   * Por defecto "normal".
+   */
+  cpuDifficulty?: CpuDifficulty | CpuDifficulty[];
 }
 
 /**
@@ -164,8 +169,8 @@ export class World {
   readonly stageId: StageId;
   /** Personajes de cada combatiente (para render y el replay). */
   readonly characters: CharacterId[];
-  /** Dificultad de la CPU (si la hay). */
-  readonly cpuDifficulty: CpuDifficulty;
+  /** Dificultad de la CPU por índice de combatiente (cada CPU la suya). */
+  readonly cpuDifficulties: CpuDifficulty[];
   readonly fighters: Fighter[] = [];
 
   /** Plataformas fijas del nivel (isla + flotantes). */
@@ -231,7 +236,12 @@ export class World {
     // Escenario: por defecto training-grid en entrenamiento; isla neón en versus.
     this.stageId = config?.stage ?? (mode === "training" ? "training" : "neonIsland");
     this.stage = getStage(this.stageId).kind;
-    this.cpuDifficulty = config?.cpuDifficulty ?? "normal";
+    // Normalizamos la dificultad a un array por índice. Admitimos un valor
+    // único (replays antiguos) rellenando todos los slots con él.
+    const diff = config?.cpuDifficulty;
+    this.cpuDifficulties = Array.isArray(diff)
+      ? this.characters.map((_, i) => diff[i] ?? "normal")
+      : this.characters.map(() => diff ?? "normal");
     this.buildStage();
 
     // Creamos N combatientes (2..4) repartidos simétricamente sobre el suelo.
@@ -387,7 +397,9 @@ export class World {
       this.updateDummy(f, dt, platforms);
     } else if (f.cpu) {
       // CPU: la IA genera su InputState a partir del estado del mundo.
-      if (!f.brain) f.brain = new CpuBrain(this.cpuDifficulty, f.index);
+      if (!f.brain) {
+        f.brain = new CpuBrain(this.cpuDifficulties[f.index] ?? "normal", f.index);
+      }
       const foe = this.opponentOf(f);
       const aiInput = f.brain.think(f.player, foe, platforms);
       f.player.fixedUpdate(aiInput, platforms, dt);

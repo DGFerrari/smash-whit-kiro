@@ -218,7 +218,8 @@ export class ReplayScreen {
     this.world = new World(this.player.data.mode, this.player.data.seed, {
       characters: this.player.data.characters,
       controllers: this.player.data.controllers,
-      cpuDifficulty: this.player.data.cpuDifficulty,
+      // v5: array por slot; v4 antiguos: valor único. World admite ambos.
+      cpuDifficulty: this.player.data.cpuDifficulties ?? this.player.data.cpuDifficulty,
       stage: this.player.data.stage,
     });
     this.camera.clearCinematic();

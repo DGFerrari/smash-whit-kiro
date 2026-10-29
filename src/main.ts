@@ -82,12 +82,12 @@ class App {
           this.showMenu();
         });
       },
-      onConfirm: (characters, controllers, cpuDifficulty) => {
+      onConfirm: (characters, controllers, cpuDifficulties) => {
         this.pendingConfig = {
           ...this.pendingConfig,
           characters,
           controllers,
-          cpuDifficulty,
+          cpuDifficulty: cpuDifficulties,
         };
         void this.transition(() => {
           this.charSelect.hide();
@@ -241,13 +241,19 @@ class App {
 
     // Siempre grabamos (para la lista de repeticiones). Guardamos también los
     // controllers para reproducir bien las partidas con CPU.
+    // Normalizamos la dificultad a array por slot para el replay (v5).
+    const cpuDiffs = Array.isArray(config.cpuDifficulty)
+      ? config.cpuDifficulty
+      : config.cpuDifficulty
+        ? config.characters.map(() => config.cpuDifficulty as "easy" | "normal" | "hard")
+        : undefined;
     this.recorder = new ReplayRecorder(
       mode,
       world.seed,
       config.characters,
       config.stage,
       config.controllers,
-      config.cpuDifficulty,
+      cpuDiffs,
     );
 
     camera.resize(renderer.cssWidth, renderer.cssHeight);

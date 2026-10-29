@@ -12,9 +12,21 @@
 /** Tipo de geometría del escenario. */
 export type StageKind = "island" | "trainingGrid";
 
-/** Estilo de fondo que dibuja el renderer. */
-export type StageBackdrop = "neonCity" | "grid" | "sunset" | "void";
+/**
+ * Estilo de fondo que dibuja el renderer.
+ *  - neonCity: skyline de ciudad neón (isla Neón).
+ *  - meadow: cielo pastel suave estilo pradera/acantilado (isla Pradera).
+ *  - sanctuary: cielo nuboso pastel con mar y montaña (isla Santuario).
+ *  - grid: oculto, el renderer dibuja la rejilla (entrenamiento).
+ */
+export type StageBackdrop = "neonCity" | "grid" | "meadow" | "sanctuary";
 
+/**
+ * Los ids NO cambian (se guardan en los replays): `sunsetIsland` y `voidIsland`
+ * son ahora, respectivamente, la isla PRADERA y la isla SANTUARIO (solo cambia
+ * su tema visual, nombre y fondo; la geometría sigue igual para no tocar el
+ * balance).
+ */
 export type StageId =
   | "neonIsland"
   | "sunsetIsland"
@@ -50,19 +62,23 @@ export const STAGES: Record<StageId, StageDef> = {
     backdrop: "neonCity",
     theme: { solidSide: 0x3a4a66, solidTop: 0x5b7fa6, oneWay: 0x7fb2ff, background: 0x0a0f24 },
   },
+  // Isla PRADERA: acantilado rocoso marrón con tapa de hierba verde, cielo
+  // pastel suave (inspirada en una pradera sobre un risco).
   sunsetIsland: {
     id: "sunsetIsland",
-    name: "Isla Ocaso",
+    name: "Isla Pradera",
     kind: "island",
-    backdrop: "sunset",
-    theme: { solidSide: 0x6b3a2e, solidTop: 0xc27b4a, oneWay: 0xffb36b, background: 0x3a1430 },
+    backdrop: "meadow",
+    theme: { solidSide: 0x6b5a42, solidTop: 0x5fa045, oneWay: 0x8cc06a, background: 0xbcd6e8 },
   },
+  // Isla SANTUARIO: roca musgosa oscura con tapa verde frondosa y plataformas
+  // tipo cristal, sobre un cielo nuboso pastel con mar y montaña.
   voidIsland: {
     id: "voidIsland",
-    name: "Isla Vacío",
+    name: "Isla Santuario",
     kind: "island",
-    backdrop: "void",
-    theme: { solidSide: 0x2a2f3a, solidTop: 0x4a5566, oneWay: 0x9fe6d0, background: 0x05060a },
+    backdrop: "sanctuary",
+    theme: { solidSide: 0x3c3a30, solidTop: 0x4e8a3e, oneWay: 0x9fd8e8, background: 0xe9d6dc },
   },
   training: {
     id: "training",

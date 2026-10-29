@@ -17,11 +17,13 @@ import type { StageId } from "./stages.ts";
  */
 
 /**
- * v4 añade los controllers (human/cpu) para reproducir partidas con CPU.
+ * v5 cambia la dificultad de la CPU a por-slot (cpuDifficulties[]), cada CPU
+ * con la suya. Los replays v4 (un único cpuDifficulty) se siguen leyendo.
+ * v4 añadió los controllers (human/cpu) para reproducir partidas con CPU.
  * v3 añadió el resumen de resultado. v2 añadió personajes + escenario.
  * v1 (sin nada de eso) se sigue pudiendo cargar.
  */
-export const REPLAY_VERSION = 4;
+export const REPLAY_VERSION = 5;
 
 /**
  * Resumen de un jugador para la ficha del replay (lista + panel de detalle).
@@ -65,8 +67,16 @@ export interface ReplayData {
    * debe saber que ese slot es CPU para regenerarla). Opcional por compat.
    */
   controllers?: ("human" | "cpu")[];
-  /** Dificultad de la CPU (v4+); afecta a la IA y por tanto a la simulación. */
+  /**
+   * Dificultad de la CPU del índice 1 (v4): un único valor común. Se conserva
+   * solo para LEER replays v4 antiguos.
+   */
   cpuDifficulty?: "easy" | "normal" | "hard";
+  /**
+   * Dificultad de la CPU por índice de combatiente (v5+): cada CPU la suya.
+   * Al reproducir, tiene prioridad sobre `cpuDifficulty`.
+   */
+  cpuDifficulties?: ("easy" | "normal" | "hard")[];
   /** Fecha ISO de grabación (informativo). */
   recordedAt: string;
   /** Nº de jugadores (2). */
@@ -139,7 +149,7 @@ export class ReplayRecorder {
     private readonly characters: CharacterId[],
     private readonly stage: StageId,
     private readonly controllers?: ("human" | "cpu")[],
-    private readonly cpuDifficulty?: "easy" | "normal" | "hard",
+    private readonly cpuDifficulties?: ("easy" | "normal" | "hard")[],
   ) {}
 
   record(inputs: InputState[]): void {
@@ -159,7 +169,7 @@ export class ReplayRecorder {
       characters: this.characters,
       stage: this.stage,
       controllers: this.controllers,
-      cpuDifficulty: this.cpuDifficulty,
+      cpuDifficulties: this.cpuDifficulties,
       recordedAt: new Date().toISOString(),
       players: this.characters.length,
       steps: this.steps,

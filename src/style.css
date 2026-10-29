@@ -1283,11 +1283,8 @@ body.hide-native-cursor * {
     box-shadow 0.2s ease;
 }
 
-.portrait:hover {
-  transform: translateY(-3px);
-  border-color: var(--c);
-  box-shadow: 0 0 22px color-mix(in srgb, var(--c) 45%, transparent);
-}
+/* El resaltado al pasar el ratón se ha retirado: los retratos solo se
+   resaltan cuando la FICHA pasa por encima (.portrait.hover-drop). */
 
 .portrait-face {
   position: relative;
@@ -1535,10 +1532,8 @@ body.hide-native-cursor * {
     box-shadow 0.2s ease;
 }
 
-.stage-cell:hover {
-  transform: translateY(-2px);
-  border-color: #7fb2ff;
-}
+/* Sin resaltado por ratón: los escenarios solo se resaltan cuando la FICHA
+   pasa por encima (.stage-cell.hover-drop). */
 
 .stage-thumb {
   width: 134px;

@@ -50,12 +50,14 @@ export interface CharacterSelectCallbacks {
    * Confirma la selección. Se pasan solo los slots ACTIVOS (2..4), en orden:
    *  - characters: personaje de cada jugador activo.
    *  - controllers: "human" | "cpu" por jugador activo.
-   *  - cpuDifficulty: dificultad común de las CPU (simple: una para todas).
+   *  - cpuDifficulties: dificultad de CADA jugador activo (alineada con los
+   *    anteriores). Para los humanos el valor es irrelevante pero se incluye
+   *    para mantener los arrays alineados por índice.
    */
   onConfirm: (
     characters: CharacterId[],
     controllers: ("human" | "cpu")[],
-    cpuDifficulty: CpuDiff,
+    cpuDifficulties: CpuDiff[],
   ) => void;
   onBack: () => void;
 }
@@ -74,8 +76,8 @@ export class CharacterSelect {
    * (el jugador activa los que quiera; mínimo 2 para empezar).
    */
   private readonly control: SlotControl[] = ["human", "off", "off", "off"];
-  /** Dificultad común de las CPU. */
-  private cpuDifficulty: CpuDiff = "normal";
+  /** Dificultad de CADA slot (independiente): cada CPU puede tener la suya. */
+  private readonly cpuDifficulty: CpuDiff[] = ["normal", "normal", "normal", "normal"];
   /** Para re-sincronizar las tarjetas tras cambios. */
   private syncers: Array<() => void> = [];
 
@@ -190,12 +192,14 @@ export class CharacterSelect {
     if (!this.canStart()) return;
     const characters: CharacterId[] = [];
     const controllers: ("human" | "cpu")[] = [];
+    const cpuDifficulties: CpuDiff[] = [];
     for (let p = 0; p < MAX_SLOTS; p++) {
       if (!this.isActive(p)) continue;
       characters.push(this.picks[p] as CharacterId);
       controllers.push(this.control[p] as "human" | "cpu");
+      cpuDifficulties.push(this.cpuDifficulty[p]);
     }
-    this.cb.onConfirm(characters, controllers, this.cpuDifficulty);
+    this.cb.onConfirm(characters, controllers, cpuDifficulties);
   }
 
   /**
@@ -248,7 +252,7 @@ export class CharacterSelect {
       const ctrl = this.control[p];
       for (const [val, btn] of tabButtons) btn.classList.toggle("active", val === ctrl);
       for (const [val, btn] of diffButtons) {
-        btn.classList.toggle("active", val === this.cpuDifficulty);
+        btn.classList.toggle("active", val === this.cpuDifficulty[p]);
       }
       card.classList.toggle("cpu", ctrl === "cpu");
       card.classList.toggle("off", ctrl === "off");
@@ -288,7 +292,7 @@ export class CharacterSelect {
       btn.textContent = opt.label;
       btn.addEventListener("click", (e) => {
         e.preventDefault();
-        this.cpuDifficulty = opt.value;
+        this.cpuDifficulty[p] = opt.value;
         this.syncAll();
       });
       diffButtons.set(opt.value, btn);
@@ -324,9 +328,30 @@ export class CharacterSelect {
     });
   }
 
+  /**
+   * Modelo CLIC-PARA-COGER / CLIC-PARA-SOLTAR (no arrastre con botón pulsado):
+   *  - Si no hay ficha en la mano, un clic sobre una ficha la "coge": a partir
+   *    de ahí sigue al cursor (listener de pointermove persistente) hasta el
+   *    siguiente clic.
+   *  - Si ya hay una ficha en la mano, el clic la suelta donde esté el cursor.
+   * Esto evita el fallo de "la ficha se queda donde clicaste".
+   */
+  private heldChip: Chip | null = null;
+  private heldMove: ((ev: PointerEvent) => void) | null = null;
+  private heldClick: ((ev: PointerEvent) => void) | null = null;
+
   private onChipDown(e: PointerEvent, chip: Chip): void {
     if (!this.isActive(chip.player)) return;
     e.preventDefault();
+    // Si justo esta ficha ya está en la mano, este clic la suelta (lo gestiona
+    // el listener de clic global); no hacemos nada aquí.
+    if (this.heldChip) return;
+    this.pickUpChip(chip);
+  }
+
+  /** Coge una ficha: empieza a seguir al cursor hasta el próximo clic. */
+  private pickUpChip(chip: Chip): void {
+    this.heldChip = chip;
     chip.dragging = true;
     chip.el.classList.add("dragging");
     this.hand.setGrabbing(true);
@@ -338,16 +363,34 @@ export class CharacterSelect {
       this.moveChip(chip, x, y);
       this.highlightHover(ev);
     };
-    const up = (ev: PointerEvent): void => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-      chip.dragging = false;
-      chip.el.classList.remove("dragging");
-      this.hand.setGrabbing(false);
-      this.dropChip(chip, ev);
+    // El clic para soltar: lo capturamos en el próximo pointerdown de la
+    // ventana. Lo registramos en el siguiente tick para no confundirlo con el
+    // mismo pointerdown que cogió la ficha.
+    const click = (ev: PointerEvent): void => {
+      ev.preventDefault();
+      this.releaseHeldChip(ev);
     };
+    this.heldMove = move;
+    this.heldClick = click;
     window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
+    window.setTimeout(() => {
+      window.addEventListener("pointerdown", click);
+    }, 0);
+  }
+
+  /** Suelta la ficha que está en la mano en la posición del cursor. */
+  private releaseHeldChip(ev: PointerEvent): void {
+    const chip = this.heldChip;
+    if (!chip) return;
+    if (this.heldMove) window.removeEventListener("pointermove", this.heldMove);
+    if (this.heldClick) window.removeEventListener("pointerdown", this.heldClick);
+    this.heldMove = null;
+    this.heldClick = null;
+    this.heldChip = null;
+    chip.dragging = false;
+    chip.el.classList.remove("dragging");
+    this.hand.setGrabbing(false);
+    this.dropChip(chip, ev);
   }
 
   private moveChip(chip: Chip, left: number, top: number): void {
@@ -495,7 +538,8 @@ export class StageSelect {
       name.textContent = def.name;
       cell.appendChild(name);
       cell.addEventListener("click", (e) => e.preventDefault());
-      cell.addEventListener("mouseenter", () => this.preview(id));
+      // Sin preview por ratón: la vista previa solo cambia cuando la FICHA
+      // pasa sobre un escenario (ver onChipDown).
       this.cells.set(id, cell);
       grid.appendChild(cell);
     }
@@ -570,11 +614,23 @@ export class StageSelect {
     }
   }
 
+  /** ¿Está la ficha "en la mano" (siguiendo al cursor)? */
+  private held = false;
+  private heldMove: ((ev: PointerEvent) => void) | null = null;
+  private heldClick: ((ev: PointerEvent) => void) | null = null;
+
+  /**
+   * Clic para coger / clic para soltar (igual que en CharacterSelect). Al coger
+   * la ficha sigue al cursor hasta el próximo clic, que la suelta.
+   */
   private onChipDown(e: PointerEvent): void {
     e.preventDefault();
+    if (this.held) return; // el clic de soltar lo gestiona el listener global
+    this.held = true;
     this.chip.el.classList.add("dragging");
     this.hand.setGrabbing(true);
     const sRect = this.stage.getBoundingClientRect();
+
     const move = (ev: PointerEvent): void => {
       this.chip.el.style.left = `${ev.clientX - sRect.left - 22}px`;
       this.chip.el.style.top = `${ev.clientY - sRect.top - 22}px`;
@@ -585,32 +641,44 @@ export class StageSelect {
         if (on) this.preview(id);
       }
     };
-    const up = (ev: PointerEvent): void => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-      this.chip.el.classList.remove("dragging");
-      this.hand.setGrabbing(false);
-      for (const [, cell] of this.cells) cell.classList.remove("hover-drop");
-      const hit = this.cellAt(ev.clientX, ev.clientY);
-      let id: StageId | null = null;
-      if (hit) for (const [sid, cell] of this.cells) if (cell === hit) id = sid;
-      if (id) {
-        this.pick = id;
-        this.chip.placedOn = id;
-        this.preview(id);
-        const cRect = hit!.getBoundingClientRect();
-        this.chip.el.style.left = `${cRect.left - sRect.left + cRect.width / 2 - 22}px`;
-        this.chip.el.style.top = `${cRect.top - sRect.top + cRect.height / 2 - 22}px`;
-      } else {
-        this.chip.el.style.left = `${this.chip.homeLeft}px`;
-        this.chip.el.style.top = `${this.chip.homeTop}px`;
-        if (!this.chip.placedOn) this.pick = null;
-      }
-      for (const [sid, cell] of this.cells) cell.classList.toggle("selected", this.pick === sid);
-      this.updateGo();
+    const click = (ev: PointerEvent): void => {
+      ev.preventDefault();
+      this.releaseChip(ev, sRect);
     };
+    this.heldMove = move;
+    this.heldClick = click;
     window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
+    window.setTimeout(() => {
+      window.addEventListener("pointerdown", click);
+    }, 0);
+  }
+
+  private releaseChip(ev: PointerEvent, sRect: DOMRect): void {
+    if (this.heldMove) window.removeEventListener("pointermove", this.heldMove);
+    if (this.heldClick) window.removeEventListener("pointerdown", this.heldClick);
+    this.heldMove = null;
+    this.heldClick = null;
+    this.held = false;
+    this.chip.el.classList.remove("dragging");
+    this.hand.setGrabbing(false);
+    for (const [, cell] of this.cells) cell.classList.remove("hover-drop");
+    const hit = this.cellAt(ev.clientX, ev.clientY);
+    let id: StageId | null = null;
+    if (hit) for (const [sid, cell] of this.cells) if (cell === hit) id = sid;
+    if (id) {
+      this.pick = id;
+      this.chip.placedOn = id;
+      this.preview(id);
+      const cRect = hit!.getBoundingClientRect();
+      this.chip.el.style.left = `${cRect.left - sRect.left + cRect.width / 2 - 22}px`;
+      this.chip.el.style.top = `${cRect.top - sRect.top + cRect.height / 2 - 22}px`;
+    } else {
+      this.chip.el.style.left = `${this.chip.homeLeft}px`;
+      this.chip.el.style.top = `${this.chip.homeTop}px`;
+      if (!this.chip.placedOn) this.pick = null;
+    }
+    for (const [sid, cell] of this.cells) cell.classList.toggle("selected", this.pick === sid);
+    this.updateGo();
   }
 
   private cellAt(clientX: number, clientY: number): HTMLElement | null {

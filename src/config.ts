@@ -100,8 +100,8 @@ export const CAMERA = {
  */
 export const POV = {
   min: 0.7,
-  max: 1.4,
-  default: 1,
+  max: 1.6,
+  default: 1.2,
   /** Paso del slider en Opciones. */
   step: 0.05,
 } as const;
