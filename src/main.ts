@@ -20,7 +20,16 @@ import {
 } from "./engine/game/replay.ts";
 import { downloadReplay, loadReplayFile } from "./ui/replayFile.ts";
 import { saveReplay } from "./game/replayStore.ts";
-import { getMe, startGoogleLogin, logout } from "./net/api.ts";
+import {
+  getMe,
+  startGoogleLogin,
+  logout,
+  submitMatch,
+  updateNickname,
+  type AuthUser,
+} from "./net/api.ts";
+import { NicknameDialog } from "./ui/nicknameDialog.ts";
+import { RankingScreen } from "./ui/rankingScreen.ts";
 
 const canvas = document.querySelector<HTMLCanvasElement>("#game");
 if (!canvas) {
@@ -66,8 +75,44 @@ class App {
     onPlay: (mode) => this.onPlay(mode),
     onOpenReplays: () => void this.openReplayList(),
     onOpenTutorial: () => void this.openTutorial(),
+    onOpenRanking: () => void this.openRanking(),
     onLogin: () => startGoogleLogin(),
     onLogout: () => void this.onLogout(),
+    onChangeNickname: () => this.openNicknameDialog(),
+  });
+
+  /** Pantalla de clasificación (ranking). */
+  private readonly rankingScreen = new RankingScreen({
+    onBack: () => {
+      void this.transition(() => {
+        this.rankingScreen.hide();
+        this.showMenu();
+      });
+    },
+  });
+
+  /** Usuario con sesión actual (o null). Para precargar el apodo en el diálogo. */
+  private currentUser: AuthUser | null = null;
+
+  /** Diálogo para cambiar el apodo (guarda en el servidor). */
+  private readonly nicknameDialog = new NicknameDialog({
+    onSave: async (nickname) => {
+      const res = await updateNickname(nickname);
+      if (res.kind === "ok") {
+        // Refrescamos el widget del menú con el nuevo apodo.
+        if (this.currentUser) this.currentUser.nickname = res.nickname;
+        this.mainMenu.setUser(
+          this.currentUser
+            ? { nickname: res.nickname, avatarUrl: this.currentUser.avatarUrl }
+            : null,
+        );
+        // Y el selector de personajes (etiqueta de P1), que si no se quedaba
+        // con el apodo anterior al entrar a Batalla.
+        this.charSelect.setLocalNickname(res.nickname);
+        return { ok: true as const, nickname: res.nickname };
+      }
+      return { ok: false as const, message: res.message };
+    },
   });
 
   private readonly tutorialScreen = new TutorialScreen(renderer, camera, {
@@ -84,12 +129,13 @@ class App {
           this.showMenu();
         });
       },
-      onConfirm: (characters, controllers, cpuDifficulties) => {
+      onConfirm: (characters, controllers, cpuDifficulties, labels) => {
         this.pendingConfig = {
           ...this.pendingConfig,
           characters,
           controllers,
           cpuDifficulty: cpuDifficulties,
+          labels,
         };
         void this.transition(() => {
           this.charSelect.hide();
@@ -172,13 +218,31 @@ class App {
       window.history.replaceState(null, "", clean);
     }
     const user = await getMe();
-    this.mainMenu.setUser(user ? { name: user.name, avatarUrl: user.avatarUrl } : null);
+    this.currentUser = user;
+    this.mainMenu.setUser(
+      user ? { nickname: user.nickname, avatarUrl: user.avatarUrl } : null,
+    );
+    // El selector de personajes necesita el apodo para la etiqueta de P1.
+    this.charSelect.setLocalNickname(user?.nickname ?? null);
+
+    // Primer login: obligamos a elegir apodo (no se puede cerrar hasta guardar).
+    if (user && !user.nicknameChosen) {
+      this.nicknameDialog.open(user.nickname, true);
+    }
   }
 
   /** Cierra sesión y refresca el widget del menú. */
   private async onLogout(): Promise<void> {
     await logout();
+    this.currentUser = null;
     this.mainMenu.setUser(null);
+    this.charSelect.setLocalNickname(null);
+  }
+
+  /** Abre el diálogo para cambiar el apodo (precargado con el actual). */
+  private openNicknameDialog(): void {
+    if (!this.currentUser) return;
+    this.nicknameDialog.open(this.currentUser.nickname);
   }
 
   /**
@@ -280,6 +344,7 @@ class App {
       config.stage,
       config.controllers,
       cpuDiffs,
+      config.labels,
     );
 
     camera.resize(renderer.cssWidth, renderer.cssHeight);
@@ -372,6 +437,42 @@ class App {
     this.koFlash.set(0);
     this.countdown.set(null);
     this.matchOver.show(label, color, results);
+
+    // Puntuación: solo las partidas de VERSUS puntúan (el servidor lo valida).
+    // Enviamos el replay y mostramos las monedas ganadas en el podio. No
+    // bloquea la UI: el podio se ve ya y la recompensa se rellena al responder.
+    if (this.pendingMode === "versus" && this.lastReplay) {
+      void this.submitForRewards(this.lastReplay);
+    }
+  }
+
+  /**
+   * Envía la partida al servidor para puntuar y refleja el resultado en el
+   * podio (monedas ganadas, o un aviso si no puntúa). Si el usuario no tiene
+   * sesión, se invita a iniciarla. Toda la espera tiene indicador de carga.
+   */
+  private async submitForRewards(replay: ReplayData): Promise<void> {
+    this.matchOver.showRewardLoading();
+    const outcome = await submitMatch(replay);
+    switch (outcome.kind) {
+      case "ok":
+        this.matchOver.setReward(
+          `monedas · ${outcome.reward.grade}`,
+          outcome.reward.coinsEarned,
+        );
+        // Refrescamos el saldo del menú (por si se mira luego).
+        void this.checkAuth();
+        break;
+      case "no-session":
+        this.matchOver.setReward("Inicia sesión para ganar monedas", null);
+        break;
+      case "not-ranked":
+        this.matchOver.setReward(outcome.message, null);
+        break;
+      case "error":
+        this.matchOver.setReward(outcome.message, null);
+        break;
+    }
   }
 
   /** Para y elimina la partida actual (loop + menú de pausa + mundo). */
@@ -413,6 +514,14 @@ class App {
     await this.transition(() => {
       this.hideMenu();
       this.replayListScreen.show();
+    });
+  }
+
+  /** Abre la clasificación (ranking) desde el menú. */
+  private async openRanking(): Promise<void> {
+    await this.transition(() => {
+      this.hideMenu();
+      this.rankingScreen.show();
     });
   }
 

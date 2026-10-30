@@ -58,6 +58,8 @@ export interface CharacterSelectCallbacks {
     characters: CharacterId[],
     controllers: ("human" | "cpu")[],
     cpuDifficulties: CpuDiff[],
+    /** Etiqueta/nombre de cada jugador activo (apodo del usuario en P1). */
+    labels: string[],
   ) => void;
   onBack: () => void;
 }
@@ -72,14 +74,22 @@ export class CharacterSelect {
   /** Personaje elegido por cada slot (null = sin elegir). */
   private readonly picks: Array<CharacterId | null> = [null, null, null, null];
   /**
-   * Control de cada slot. P1 siempre humano; P2/P3/P4 arrancan DESHABILITADOS
-   * (el jugador activa los que quiera; mínimo 2 para empezar).
+   * Control de cada slot. TODOS arrancan DESHABILITADOS: el jugador activa los
+   * que quiera (mínimo 2 para empezar).
    */
-  private readonly control: SlotControl[] = ["human", "off", "off", "off"];
+  private readonly control: SlotControl[] = ["off", "off", "off", "off"];
   /** Dificultad de CADA slot (independiente): cada CPU puede tener la suya. */
   private readonly cpuDifficulty: CpuDiff[] = ["normal", "normal", "normal", "normal"];
+  /** Apodo del usuario con sesión (etiqueta de P1 si es "Jugador"). null = sin sesión. */
+  private localNickname: string | null = null;
   /** Para re-sincronizar las tarjetas tras cambios. */
   private syncers: Array<() => void> = [];
+
+  /** Fija el apodo del usuario logueado (lo usa la etiqueta del Jugador 1). */
+  setLocalNickname(nickname: string | null): void {
+    this.localNickname = nickname;
+    if (this.syncers.length > 0) this.syncAll();
+  }
 
   constructor(
     private readonly cb: CharacterSelectCallbacks,
@@ -193,13 +203,23 @@ export class CharacterSelect {
     const characters: CharacterId[] = [];
     const controllers: ("human" | "cpu")[] = [];
     const cpuDifficulties: CpuDiff[] = [];
+    const labels: string[] = [];
     for (let p = 0; p < MAX_SLOTS; p++) {
       if (!this.isActive(p)) continue;
+      const ctrl = this.control[p] as "human" | "cpu";
       characters.push(this.picks[p] as CharacterId);
-      controllers.push(this.control[p] as "human" | "cpu");
+      controllers.push(ctrl);
       cpuDifficulties.push(this.cpuDifficulty[p]);
+      // Etiqueta: P1 humano con sesión -> apodo; otros humanos -> "P{n}";
+      // las CPU se etiquetan en el World (CPU/CPUn), así que mandamos "" y el
+      // World decide (mantiene su lógica de nombres de CPU).
+      if (ctrl === "human") {
+        labels.push(p === 0 && this.localNickname ? this.localNickname : `P${p + 1}`);
+      } else {
+        labels.push("");
+      }
     }
-    this.cb.onConfirm(characters, controllers, cpuDifficulties);
+    this.cb.onConfirm(characters, controllers, cpuDifficulties, labels);
   }
 
   /**
@@ -254,6 +274,12 @@ export class CharacterSelect {
       card.classList.toggle("off", ctrl === "off");
       diff.classList.toggle("show", ctrl === "cpu");
       slotHint.style.visibility = ctrl === "off" ? "hidden" : "visible";
+      // P1, si es "Jugador" y hay sesión, muestra el apodo del usuario; si no,
+      // la etiqueta genérica "Jugador 1".
+      label.textContent =
+        p === 0 && ctrl === "human" && this.localNickname
+          ? this.localNickname
+          : `Jugador ${p + 1}`;
     };
     this.syncers.push(sync);
 

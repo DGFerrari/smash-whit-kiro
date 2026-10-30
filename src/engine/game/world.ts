@@ -40,6 +40,12 @@ export interface MatchConfig {
    * Por defecto "normal".
    */
   cpuDifficulty?: CpuDifficulty | CpuDifficulty[];
+  /**
+   * Etiqueta/nombre de cada combatiente (por índice). Se usa para P1 el apodo
+   * del usuario con sesión. Si falta o está vacía, el World pone una por
+   * defecto (P1/P2… o CPU). Se guarda en el replay para reproducir los nombres.
+   */
+  labels?: string[];
 }
 
 /**
@@ -257,11 +263,16 @@ export class World {
         spawnY,
       );
       const isCpu = config?.controllers?.[i] === "cpu";
+      // Etiqueta personalizada (p. ej. el apodo del usuario en P1) si viene y
+      // no es CPU/dummy; si no, la etiqueta por defecto.
+      const customLabel = config?.labels?.[i]?.trim();
       const label = c.sandbag
         ? "DUMMY"
         : isCpu
           ? `CPU${n > 2 ? i + 1 : ""}`
-          : FIGHTER_LABELS[i] ?? `P${i + 1}`;
+          : customLabel
+            ? customLabel
+            : FIGHTER_LABELS[i] ?? `P${i + 1}`;
       // El fighter 0 (jugador principal) y los humanos tienen vidas normales en
       // versus; en entrenamiento el dummy es infinito.
       const lives =

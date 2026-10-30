@@ -73,6 +73,7 @@ export class MenuBackground {
       controllers: data.controllers,
       // v5: array por slot; v4 antiguos: valor único. World admite ambos.
       cpuDifficulty: data.cpuDifficulties ?? data.cpuDifficulty,
+      labels: data.labels,
     });
     this.step = 0;
     this.phase = "in";

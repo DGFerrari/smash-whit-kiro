@@ -254,6 +254,7 @@ export class ReplayScreen {
       controllers: this.player.data.controllers,
       // v5: array por slot; v4 antiguos: valor único. World admite ambos.
       cpuDifficulty: this.player.data.cpuDifficulties ?? this.player.data.cpuDifficulty,
+      labels: this.player.data.labels,
       stage: this.player.data.stage,
     });
     this.camera.clearCinematic();

@@ -15,7 +15,11 @@ services:
     plan: free
     region: frankfurt # Europa, cerca de la BD (Neon London) y de los jugadores
     rootDir: server
-    buildCommand: npm install && npm run build
+    # El server se ejecuta con tsx (no se compila con tsc), así que el build
+    # solo instala dependencias. tsx está en `dependencies` para estar también
+    # en producción. El motor compartido se importa desde ../src/engine (Render
+    # clona todo el repo, así que es accesible aunque rootDir sea `server`).
+    buildCommand: npm install
     startCommand: npm start
     healthCheckPath: /api/health
     envVars:

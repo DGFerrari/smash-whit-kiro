@@ -177,19 +177,26 @@ Se trabaja en la branch `fase2-backend` y se integrará por pull request.
 
 Aquí entra en juego el determinismo. Empezar por lo fácil de validar.
 
-- [ ] Al acabar una partida, el cliente **envía el replay** (semilla + inputs +
-      config) al servidor. No envía "he ganado": envía la partida.
-- [ ] El servidor **re-simula** el replay con el motor compartido y obtiene el
-      resultado real. Si el cliente mintió, el servidor lo ignora.
-- [ ] Empezar por partidas **contra la CPU** (más fáciles de validar: no hay
-      otro humano) y luego partidas locales.
-- [ ] El servidor calcula y guarda los **puntos** del usuario.
-- [ ] Tabla de **ranking** (ordenar por puntos). El cliente solo la lee.
-- [ ] Pantalla de ranking en el juego.
-- [ ] Protección básica anti-abuso: límites de envío, rechazar replays
-      imposibles o demasiado largos, etc.
+- [x] Al acabar una partida de versus, el cliente **envía el replay** al
+      servidor (`POST /api/match/submit`). No envía "he ganado": envía la partida.
+- [x] El servidor **re-simula** el replay con el motor compartido
+      (`match/validate.ts`) y obtiene el resultado real. Rechaza replays
+      inválidos, no-versus, sin humano o demasiado largos.
+- [x] El servidor calcula y guarda las **monedas**/stats del usuario
+      (`player_stats`): ganar +100, bonus por grado S/A/B/C/D (100/70/40/20/0),
+      +15 por KO. Puntuación compartida en `engine/game/scoring.ts`.
+- [x] **Ranking** ordenado en el servidor (`/api/ranking?sort=&order=`, lista
+      blanca de campos: wins/kills/deaths/coins) + posición del usuario.
+- [x] **Pantalla de ranking** en el juego (opción del menú): tabla con columnas
+      ordenables, fila propia resaltada, botón "¿Dónde estoy?", pantalla de carga.
+- [x] Protección básica anti-abuso: requiere sesión, rechaza replays largos
+      (>20 min) o con formato inválido.
+- [x] **Apodo** editable + onboarding de primer login (se muestra en partida,
+      podio, replays y ranking).
 
-**Entregable:** jugar da puntos verificados y hay una clasificación real.
+**Fase 3 COMPLETA.** Monedas + ranking validados en servidor, con apodos.
+
+**Entregable:** jugar da monedas verificadas y hay una clasificación real.
 
 > Límite honesto: la validación por re-simulación es sólida contra "inventar el
 > resultado", pero un replay puede ser de una partida real jugada de forma

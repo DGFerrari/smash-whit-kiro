@@ -18,20 +18,25 @@ export interface MainMenuCallbacks {
   onOpenReplays: () => void;
   /** Abrir el tutorial. */
   onOpenTutorial: () => void;
+  /** Abrir la clasificación (ranking). */
+  onOpenRanking: () => void;
   /** Iniciar sesión con Google (redirección al servidor). */
   onLogin: () => void;
   /** Cerrar sesión. */
   onLogout: () => void;
+  /** Abrir el diálogo para cambiar el apodo. */
+  onChangeNickname: () => void;
 }
 
 /** Datos del usuario con sesión (para el widget del menú). */
 export interface MenuUser {
-  name: string;
+  /** Apodo que se muestra (editable por el usuario). */
+  nickname: string;
   avatarUrl: string | null;
 }
 
-/** Valor de una opción del menú: modo jugable, ver replay o tutorial. */
-type MenuOption = GameMode | "replay" | "tutorial";
+/** Valor de una opción del menú: modo jugable, ver replay, tutorial o ranking. */
+type MenuOption = GameMode | "replay" | "tutorial" | "ranking";
 
 /** Clave de localStorage: ¿el jugador ya ha hecho el tutorial alguna vez? */
 const TUTORIAL_DONE_KEY = "smashb.tutorialDone.v1";
@@ -87,6 +92,13 @@ const MODES: ModeDef[] = [
     hint: "Aprende los controles: moverte, saltar, atacar, el escudo y más, completando objetivos.",
     playable: true,
     accent: "#9b6bff",
+  },
+  {
+    value: "ranking",
+    label: "Clasificación",
+    hint: "Tabla de jugadores: victorias, kills, muertes y monedas. Ordena por cualquier columna y encuentra tu posición.",
+    playable: true,
+    accent: "#4dd0e1",
   },
 ];
 
@@ -166,6 +178,8 @@ export class MainMenu {
     document.body.appendChild(this.root);
 
     window.addEventListener("keydown", this.onKey);
+    // Clic fuera del chip de usuario: cierra su desplegable.
+    document.addEventListener("click", () => this.closeUserMenu());
   }
 
   show(): void {
@@ -219,6 +233,10 @@ export class MainMenu {
     }
     if (this.selected === "tutorial") {
       this.cb.onOpenTutorial();
+      return;
+    }
+    if (this.selected === "ranking") {
+      this.cb.onOpenRanking();
       return;
     }
     this.cb.onPlay(this.selected as GameMode);
@@ -297,6 +315,11 @@ export class MainMenu {
     const chip = document.createElement("div");
     chip.className = "user-chip";
 
+    // El chip es un BOTÓN que despliega un menú (cambiar apodo / cerrar sesión).
+    const trigger = document.createElement("button");
+    trigger.type = "button";
+    trigger.className = "user-chip-trigger";
+
     const avatar = document.createElement("div");
     avatar.className = "user-avatar";
     if (user.avatarUrl) {
@@ -306,24 +329,58 @@ export class MainMenu {
       img.referrerPolicy = "no-referrer"; // avatares de Google
       avatar.appendChild(img);
     } else {
-      avatar.textContent = user.name.slice(0, 1).toUpperCase();
+      avatar.textContent = Array.from(user.nickname)[0]?.toUpperCase() ?? "?";
     }
-    chip.appendChild(avatar);
+    trigger.appendChild(avatar);
 
     const name = document.createElement("span");
     name.className = "user-name";
-    name.textContent = user.name;
-    chip.appendChild(name);
+    name.textContent = user.nickname;
+    trigger.appendChild(name);
 
-    const out = document.createElement("button");
-    out.type = "button";
-    out.className = "user-logout";
-    out.title = "Cerrar sesión";
-    out.textContent = "⎋";
-    out.addEventListener("click", () => this.cb.onLogout());
-    chip.appendChild(out);
+    const caret = document.createElement("span");
+    caret.className = "user-caret";
+    caret.textContent = "▾";
+    trigger.appendChild(caret);
+
+    chip.appendChild(trigger);
+
+    // Menú desplegable (oculto hasta pulsar el chip).
+    const menu = document.createElement("div");
+    menu.className = "user-menu";
+
+    const renameOpt = document.createElement("button");
+    renameOpt.type = "button";
+    renameOpt.className = "user-menu-item";
+    renameOpt.textContent = "Cambiar apodo";
+    renameOpt.addEventListener("click", () => {
+      this.closeUserMenu();
+      this.cb.onChangeNickname();
+    });
+    menu.appendChild(renameOpt);
+
+    const logoutOpt = document.createElement("button");
+    logoutOpt.type = "button";
+    logoutOpt.className = "user-menu-item danger";
+    logoutOpt.textContent = "Cerrar sesión";
+    logoutOpt.addEventListener("click", () => {
+      this.closeUserMenu();
+      this.cb.onLogout();
+    });
+    menu.appendChild(logoutOpt);
+
+    chip.appendChild(menu);
+    trigger.addEventListener("click", (e) => {
+      e.stopPropagation();
+      chip.classList.toggle("open");
+    });
 
     this.accountEl.appendChild(chip);
+  }
+
+  /** Cierra el desplegable del chip de usuario, si está abierto. */
+  private closeUserMenu(): void {
+    this.accountEl.querySelector(".user-chip")?.classList.remove("open");
   }
 }
 
@@ -356,6 +413,8 @@ export class MatchOverScreen {
   private readonly panel: HTMLDivElement;
   private readonly titleEl: HTMLHeadingElement;
   private readonly podium: HTMLDivElement;
+  /** Fila de monedas ganadas (solo en partidas que puntúan). */
+  private readonly rewardEl: HTMLDivElement;
   private finishTimer = 0;
 
   constructor(private readonly cb: MatchOverCallbacks) {
@@ -379,6 +438,12 @@ export class MatchOverScreen {
     this.podium = document.createElement("div");
     this.podium.className = "podium";
     this.panel.appendChild(this.podium);
+
+    // Fila de RECOMPENSA (monedas ganadas). Oculta por defecto; se muestra solo
+    // en partidas que puntúan (versus con sesión). Empieza en "cargando".
+    this.rewardEl = document.createElement("div");
+    this.rewardEl.className = "match-reward";
+    this.panel.appendChild(this.rewardEl);
 
     const actions = document.createElement("div");
     actions.className = "results-actions";
@@ -432,7 +497,54 @@ export class MatchOverScreen {
     this.root.classList.add("open");
     this.finishEl.classList.remove("show");
     this.buildPodium(winnerLabel, winnerColor, results);
+    this.hideReward(); // por defecto sin recompensa; la app la activa si procede
     this.panel.classList.add("show");
+  }
+
+  /** Oculta la fila de recompensa (partidas que no puntúan). */
+  hideReward(): void {
+    this.rewardEl.classList.remove("show", "loading");
+    this.rewardEl.replaceChildren();
+  }
+
+  /** Estado "enviando partida al servidor" (spinner + texto). */
+  showRewardLoading(): void {
+    this.rewardEl.classList.add("show", "loading");
+    this.rewardEl.replaceChildren();
+    const spin = document.createElement("span");
+    spin.className = "match-reward-spinner";
+    const txt = document.createElement("span");
+    txt.textContent = "Guardando resultado…";
+    this.rewardEl.appendChild(spin);
+    this.rewardEl.appendChild(txt);
+  }
+
+  /**
+   * Muestra el resultado del envío: monedas ganadas, o un aviso si no puntuó
+   * (sin sesión / error). `coins` es null cuando no hubo recompensa.
+   */
+  setReward(message: string, coins: number | null): void {
+    this.rewardEl.classList.remove("loading");
+    this.rewardEl.classList.add("show");
+    this.rewardEl.replaceChildren();
+    if (coins !== null) {
+      const amount = document.createElement("span");
+      amount.className = "match-reward-coins";
+      amount.textContent = `+${coins}`;
+      const icon = document.createElement("span");
+      icon.className = "match-reward-icon";
+      icon.textContent = "🪙";
+      const label = document.createElement("span");
+      label.textContent = message;
+      this.rewardEl.appendChild(amount);
+      this.rewardEl.appendChild(icon);
+      this.rewardEl.appendChild(label);
+    } else {
+      const label = document.createElement("span");
+      label.className = "match-reward-note";
+      label.textContent = message;
+      this.rewardEl.appendChild(label);
+    }
   }
 
   private buildPodium(
