@@ -29,6 +29,7 @@ import {
   type AuthUser,
 } from "./net/api.ts";
 import { NicknameDialog } from "./ui/nicknameDialog.ts";
+import { RankingScreen } from "./ui/rankingScreen.ts";
 
 const canvas = document.querySelector<HTMLCanvasElement>("#game");
 if (!canvas) {
@@ -74,9 +75,20 @@ class App {
     onPlay: (mode) => this.onPlay(mode),
     onOpenReplays: () => void this.openReplayList(),
     onOpenTutorial: () => void this.openTutorial(),
+    onOpenRanking: () => void this.openRanking(),
     onLogin: () => startGoogleLogin(),
     onLogout: () => void this.onLogout(),
     onChangeNickname: () => this.openNicknameDialog(),
+  });
+
+  /** Pantalla de clasificación (ranking). */
+  private readonly rankingScreen = new RankingScreen({
+    onBack: () => {
+      void this.transition(() => {
+        this.rankingScreen.hide();
+        this.showMenu();
+      });
+    },
   });
 
   /** Usuario con sesión actual (o null). Para precargar el apodo en el diálogo. */
@@ -502,6 +514,14 @@ class App {
     await this.transition(() => {
       this.hideMenu();
       this.replayListScreen.show();
+    });
+  }
+
+  /** Abre la clasificación (ranking) desde el menú. */
+  private async openRanking(): Promise<void> {
+    await this.transition(() => {
+      this.hideMenu();
+      this.rankingScreen.show();
     });
   }
 

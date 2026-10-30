@@ -120,6 +120,45 @@ export async function updateNickname(nickname: string): Promise<NicknameResult> 
   }
 }
 
+/** Campo y orden del ranking. */
+export type RankField = "wins" | "kills" | "deaths" | "coins";
+export type RankOrder = "asc" | "desc";
+
+/** Una fila del ranking. */
+export interface RankRow {
+  rank: number;
+  userId: string;
+  nickname: string;
+  avatarUrl: string | null;
+  wins: number;
+  kills: number;
+  deaths: number;
+  coins: number;
+}
+
+/** Respuesta del ranking. */
+export interface RankingData {
+  sort: RankField;
+  order: RankOrder;
+  total: number;
+  myRank: number | null;
+  myUserId: string | null;
+  rows: RankRow[];
+}
+
+/** Pide el ranking ordenado por `sort`/`order` (la ordenación la hace el servidor). */
+export async function getRanking(sort: RankField, order: RankOrder): Promise<RankingData | null> {
+  try {
+    const res = await fetch(`${API_BASE}/api/ranking?sort=${sort}&order=${order}`, {
+      credentials: "include",
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as RankingData;
+  } catch {
+    return null;
+  }
+}
+
 /** Cierra la sesión en el servidor. Nunca lanza. */
 export async function logout(): Promise<void> {
   try {

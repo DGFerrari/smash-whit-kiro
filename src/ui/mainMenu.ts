@@ -18,6 +18,8 @@ export interface MainMenuCallbacks {
   onOpenReplays: () => void;
   /** Abrir el tutorial. */
   onOpenTutorial: () => void;
+  /** Abrir la clasificación (ranking). */
+  onOpenRanking: () => void;
   /** Iniciar sesión con Google (redirección al servidor). */
   onLogin: () => void;
   /** Cerrar sesión. */
@@ -33,8 +35,8 @@ export interface MenuUser {
   avatarUrl: string | null;
 }
 
-/** Valor de una opción del menú: modo jugable, ver replay o tutorial. */
-type MenuOption = GameMode | "replay" | "tutorial";
+/** Valor de una opción del menú: modo jugable, ver replay, tutorial o ranking. */
+type MenuOption = GameMode | "replay" | "tutorial" | "ranking";
 
 /** Clave de localStorage: ¿el jugador ya ha hecho el tutorial alguna vez? */
 const TUTORIAL_DONE_KEY = "smashb.tutorialDone.v1";
@@ -90,6 +92,13 @@ const MODES: ModeDef[] = [
     hint: "Aprende los controles: moverte, saltar, atacar, el escudo y más, completando objetivos.",
     playable: true,
     accent: "#9b6bff",
+  },
+  {
+    value: "ranking",
+    label: "Clasificación",
+    hint: "Tabla de jugadores: victorias, kills, muertes y monedas. Ordena por cualquier columna y encuentra tu posición.",
+    playable: true,
+    accent: "#4dd0e1",
   },
 ];
 
@@ -224,6 +233,10 @@ export class MainMenu {
     }
     if (this.selected === "tutorial") {
       this.cb.onOpenTutorial();
+      return;
+    }
+    if (this.selected === "ranking") {
+      this.cb.onOpenRanking();
       return;
     }
     this.cb.onPlay(this.selected as GameMode);
