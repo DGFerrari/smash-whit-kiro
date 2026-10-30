@@ -61,8 +61,29 @@ export const env = {
   serverUrl: optional("SERVER_URL", `http://localhost:${optional("PORT", "8787")}`)!,
 };
 
-/** URL del cliente a la que se vuelve tras el login (el primer origen). */
+/**
+ * URL COMPLETA del cliente a la que se vuelve tras el login (el primero de la
+ * lista). Puede incluir ruta/subcarpeta, p. ej.
+ * https://dgferrari.github.io/smash-whit-kiro
+ */
 export const primaryClientUrl = env.clientUrls[0] ?? "http://localhost:5173";
+
+/**
+ * ORÍGENES del cliente (esquema + host + puerto, SIN ruta) para la comparación
+ * de CORS. Un "Origin" HTTP nunca lleva ruta, así que de cada CLIENT_URL
+ * configurada extraemos solo su origen. Esto evita el fallo típico de poner la
+ * subcarpeta de GitHub Pages en CLIENT_URL (necesaria para el redirect) y que
+ * entonces CORS no reconozca el origen `https://usuario.github.io`.
+ */
+export const clientOrigins: string[] = env.clientUrls
+  .map((u) => {
+    try {
+      return new URL(u).origin;
+    } catch {
+      return null;
+    }
+  })
+  .filter((o): o is string => o !== null);
 
 /** ¿Está configurado el login con Google? (hay client id y secret). */
 export const googleOAuthReady = Boolean(env.googleClientId && env.googleClientSecret);

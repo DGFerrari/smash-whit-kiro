@@ -2,7 +2,7 @@ import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { sql } from "drizzle-orm";
-import { env } from "./env.ts";
+import { env, clientOrigins } from "./env.ts";
 import { db } from "./db/client.ts";
 import { authRoutes } from "./auth/routes.ts";
 
@@ -23,8 +23,9 @@ const app = new Hono();
 app.use(
   "/api/*",
   cors({
-    // Permite cualquiera de los orígenes configurados (local y/o producción).
-    origin: (origin) => (env.clientUrls.includes(origin) ? origin : null),
+    // Comparamos por ORIGEN (esquema+host), no por URL completa: el navegador
+    // manda solo el origen, sin la subcarpeta de Pages. Ver env.clientOrigins.
+    origin: (origin) => (clientOrigins.includes(origin) ? origin : null),
     credentials: true,
   }),
 );
