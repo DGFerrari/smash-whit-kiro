@@ -6,10 +6,14 @@ import type { ReplayData } from "./replay.ts";
  * su .json en esa carpeta: `import.meta.glob` los descubre en build-time, así
  * que no hay que listarlos a mano.
  *
+ * Nota de ruta: este archivo vive en `src/engine/game/`, y los replays están en
+ * `src/replays/`, así que hay que subir DOS niveles (`../../replays`). (Antes
+ * del traslado del motor a `engine/` era `../replays`.)
+ *
  * Son estáticos (eager): se incluyen en el bundle. Para muchos/grandes replays
  * convendría cargarlos bajo demanda, pero para unos pocos de menú va de sobra.
  */
-const modules = import.meta.glob<ReplayData>("../replays/*.json", {
+const modules = import.meta.glob<ReplayData>("../../replays/*.json", {
   eager: true,
   import: "default",
 });
