@@ -20,7 +20,7 @@ import {
 } from "./engine/game/replay.ts";
 import { downloadReplay, loadReplayFile } from "./ui/replayFile.ts";
 import { saveReplay } from "./game/replayStore.ts";
-import { getMe, startGoogleLogin, logout } from "./net/api.ts";
+import { getMe, startGoogleLogin, logout, submitMatch } from "./net/api.ts";
 
 const canvas = document.querySelector<HTMLCanvasElement>("#game");
 if (!canvas) {
@@ -372,6 +372,42 @@ class App {
     this.koFlash.set(0);
     this.countdown.set(null);
     this.matchOver.show(label, color, results);
+
+    // Puntuación: solo las partidas de VERSUS puntúan (el servidor lo valida).
+    // Enviamos el replay y mostramos las monedas ganadas en el podio. No
+    // bloquea la UI: el podio se ve ya y la recompensa se rellena al responder.
+    if (this.pendingMode === "versus" && this.lastReplay) {
+      void this.submitForRewards(this.lastReplay);
+    }
+  }
+
+  /**
+   * Envía la partida al servidor para puntuar y refleja el resultado en el
+   * podio (monedas ganadas, o un aviso si no puntúa). Si el usuario no tiene
+   * sesión, se invita a iniciarla. Toda la espera tiene indicador de carga.
+   */
+  private async submitForRewards(replay: ReplayData): Promise<void> {
+    this.matchOver.showRewardLoading();
+    const outcome = await submitMatch(replay);
+    switch (outcome.kind) {
+      case "ok":
+        this.matchOver.setReward(
+          `monedas · ${outcome.reward.grade}`,
+          outcome.reward.coinsEarned,
+        );
+        // Refrescamos el saldo del menú (por si se mira luego).
+        void this.checkAuth();
+        break;
+      case "no-session":
+        this.matchOver.setReward("Inicia sesión para ganar monedas", null);
+        break;
+      case "not-ranked":
+        this.matchOver.setReward(outcome.message, null);
+        break;
+      case "error":
+        this.matchOver.setReward(outcome.message, null);
+        break;
+    }
   }
 
   /** Para y elimina la partida actual (loop + menú de pausa + mundo). */

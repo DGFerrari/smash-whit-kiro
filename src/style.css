@@ -2221,3 +2221,67 @@ body.hide-native-cursor * {
   border-color: #ff5a6e;
   color: #ff8a98;
 }
+
+/* ===== Recompensa de partida (monedas ganadas en el podio) ===== */
+.match-reward {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 14px auto 0;
+  padding: 10px 18px;
+  min-height: 24px;
+  background: rgba(240, 180, 41, 0.08);
+  border: 1px solid rgba(240, 180, 41, 0.35);
+  border-radius: 12px;
+  color: #f1f4fa;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.match-reward.show {
+  display: flex;
+  animation: rewardIn 0.4s ease both;
+}
+
+@keyframes rewardIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.match-reward-coins {
+  font-size: 20px;
+  font-weight: 900;
+  color: #f0b429;
+}
+
+.match-reward-icon {
+  font-size: 18px;
+}
+
+.match-reward-note {
+  color: #cdd6e4;
+  font-weight: 600;
+}
+
+/* Spinner mientras se envía la partida al servidor. */
+.match-reward-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(240, 180, 41, 0.3);
+  border-top-color: #f0b429;
+  border-radius: 50%;
+  animation: rewardSpin 0.7s linear infinite;
+}
+
+@keyframes rewardSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}

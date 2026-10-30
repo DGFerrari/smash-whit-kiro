@@ -356,6 +356,8 @@ export class MatchOverScreen {
   private readonly panel: HTMLDivElement;
   private readonly titleEl: HTMLHeadingElement;
   private readonly podium: HTMLDivElement;
+  /** Fila de monedas ganadas (solo en partidas que puntúan). */
+  private readonly rewardEl: HTMLDivElement;
   private finishTimer = 0;
 
   constructor(private readonly cb: MatchOverCallbacks) {
@@ -379,6 +381,12 @@ export class MatchOverScreen {
     this.podium = document.createElement("div");
     this.podium.className = "podium";
     this.panel.appendChild(this.podium);
+
+    // Fila de RECOMPENSA (monedas ganadas). Oculta por defecto; se muestra solo
+    // en partidas que puntúan (versus con sesión). Empieza en "cargando".
+    this.rewardEl = document.createElement("div");
+    this.rewardEl.className = "match-reward";
+    this.panel.appendChild(this.rewardEl);
 
     const actions = document.createElement("div");
     actions.className = "results-actions";
@@ -432,7 +440,54 @@ export class MatchOverScreen {
     this.root.classList.add("open");
     this.finishEl.classList.remove("show");
     this.buildPodium(winnerLabel, winnerColor, results);
+    this.hideReward(); // por defecto sin recompensa; la app la activa si procede
     this.panel.classList.add("show");
+  }
+
+  /** Oculta la fila de recompensa (partidas que no puntúan). */
+  hideReward(): void {
+    this.rewardEl.classList.remove("show", "loading");
+    this.rewardEl.replaceChildren();
+  }
+
+  /** Estado "enviando partida al servidor" (spinner + texto). */
+  showRewardLoading(): void {
+    this.rewardEl.classList.add("show", "loading");
+    this.rewardEl.replaceChildren();
+    const spin = document.createElement("span");
+    spin.className = "match-reward-spinner";
+    const txt = document.createElement("span");
+    txt.textContent = "Guardando resultado…";
+    this.rewardEl.appendChild(spin);
+    this.rewardEl.appendChild(txt);
+  }
+
+  /**
+   * Muestra el resultado del envío: monedas ganadas, o un aviso si no puntuó
+   * (sin sesión / error). `coins` es null cuando no hubo recompensa.
+   */
+  setReward(message: string, coins: number | null): void {
+    this.rewardEl.classList.remove("loading");
+    this.rewardEl.classList.add("show");
+    this.rewardEl.replaceChildren();
+    if (coins !== null) {
+      const amount = document.createElement("span");
+      amount.className = "match-reward-coins";
+      amount.textContent = `+${coins}`;
+      const icon = document.createElement("span");
+      icon.className = "match-reward-icon";
+      icon.textContent = "🪙";
+      const label = document.createElement("span");
+      label.textContent = message;
+      this.rewardEl.appendChild(amount);
+      this.rewardEl.appendChild(icon);
+      this.rewardEl.appendChild(label);
+    } else {
+      const label = document.createElement("span");
+      label.className = "match-reward-note";
+      label.textContent = message;
+      this.rewardEl.appendChild(label);
+    }
   }
 
   private buildPodium(
