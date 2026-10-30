@@ -22,11 +22,14 @@ export interface MainMenuCallbacks {
   onLogin: () => void;
   /** Cerrar sesión. */
   onLogout: () => void;
+  /** Abrir el diálogo para cambiar el apodo. */
+  onChangeNickname: () => void;
 }
 
 /** Datos del usuario con sesión (para el widget del menú). */
 export interface MenuUser {
-  name: string;
+  /** Apodo que se muestra (editable por el usuario). */
+  nickname: string;
   avatarUrl: string | null;
 }
 
@@ -166,6 +169,8 @@ export class MainMenu {
     document.body.appendChild(this.root);
 
     window.addEventListener("keydown", this.onKey);
+    // Clic fuera del chip de usuario: cierra su desplegable.
+    document.addEventListener("click", () => this.closeUserMenu());
   }
 
   show(): void {
@@ -297,6 +302,11 @@ export class MainMenu {
     const chip = document.createElement("div");
     chip.className = "user-chip";
 
+    // El chip es un BOTÓN que despliega un menú (cambiar apodo / cerrar sesión).
+    const trigger = document.createElement("button");
+    trigger.type = "button";
+    trigger.className = "user-chip-trigger";
+
     const avatar = document.createElement("div");
     avatar.className = "user-avatar";
     if (user.avatarUrl) {
@@ -306,24 +316,58 @@ export class MainMenu {
       img.referrerPolicy = "no-referrer"; // avatares de Google
       avatar.appendChild(img);
     } else {
-      avatar.textContent = user.name.slice(0, 1).toUpperCase();
+      avatar.textContent = Array.from(user.nickname)[0]?.toUpperCase() ?? "?";
     }
-    chip.appendChild(avatar);
+    trigger.appendChild(avatar);
 
     const name = document.createElement("span");
     name.className = "user-name";
-    name.textContent = user.name;
-    chip.appendChild(name);
+    name.textContent = user.nickname;
+    trigger.appendChild(name);
 
-    const out = document.createElement("button");
-    out.type = "button";
-    out.className = "user-logout";
-    out.title = "Cerrar sesión";
-    out.textContent = "⎋";
-    out.addEventListener("click", () => this.cb.onLogout());
-    chip.appendChild(out);
+    const caret = document.createElement("span");
+    caret.className = "user-caret";
+    caret.textContent = "▾";
+    trigger.appendChild(caret);
+
+    chip.appendChild(trigger);
+
+    // Menú desplegable (oculto hasta pulsar el chip).
+    const menu = document.createElement("div");
+    menu.className = "user-menu";
+
+    const renameOpt = document.createElement("button");
+    renameOpt.type = "button";
+    renameOpt.className = "user-menu-item";
+    renameOpt.textContent = "Cambiar apodo";
+    renameOpt.addEventListener("click", () => {
+      this.closeUserMenu();
+      this.cb.onChangeNickname();
+    });
+    menu.appendChild(renameOpt);
+
+    const logoutOpt = document.createElement("button");
+    logoutOpt.type = "button";
+    logoutOpt.className = "user-menu-item danger";
+    logoutOpt.textContent = "Cerrar sesión";
+    logoutOpt.addEventListener("click", () => {
+      this.closeUserMenu();
+      this.cb.onLogout();
+    });
+    menu.appendChild(logoutOpt);
+
+    chip.appendChild(menu);
+    trigger.addEventListener("click", (e) => {
+      e.stopPropagation();
+      chip.classList.toggle("open");
+    });
 
     this.accountEl.appendChild(chip);
+  }
+
+  /** Cierra el desplegable del chip de usuario, si está abierto. */
+  private closeUserMenu(): void {
+    this.accountEl.querySelector(".user-chip")?.classList.remove("open");
   }
 }
 

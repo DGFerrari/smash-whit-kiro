@@ -20,7 +20,15 @@ import {
 } from "./engine/game/replay.ts";
 import { downloadReplay, loadReplayFile } from "./ui/replayFile.ts";
 import { saveReplay } from "./game/replayStore.ts";
-import { getMe, startGoogleLogin, logout, submitMatch } from "./net/api.ts";
+import {
+  getMe,
+  startGoogleLogin,
+  logout,
+  submitMatch,
+  updateNickname,
+  type AuthUser,
+} from "./net/api.ts";
+import { NicknameDialog } from "./ui/nicknameDialog.ts";
 
 const canvas = document.querySelector<HTMLCanvasElement>("#game");
 if (!canvas) {
@@ -68,6 +76,31 @@ class App {
     onOpenTutorial: () => void this.openTutorial(),
     onLogin: () => startGoogleLogin(),
     onLogout: () => void this.onLogout(),
+    onChangeNickname: () => this.openNicknameDialog(),
+  });
+
+  /** Usuario con sesión actual (o null). Para precargar el apodo en el diálogo. */
+  private currentUser: AuthUser | null = null;
+
+  /** Diálogo para cambiar el apodo (guarda en el servidor). */
+  private readonly nicknameDialog = new NicknameDialog({
+    onSave: async (nickname) => {
+      const res = await updateNickname(nickname);
+      if (res.kind === "ok") {
+        // Refrescamos el widget del menú con el nuevo apodo.
+        if (this.currentUser) this.currentUser.nickname = res.nickname;
+        this.mainMenu.setUser(
+          this.currentUser
+            ? { nickname: res.nickname, avatarUrl: this.currentUser.avatarUrl }
+            : null,
+        );
+        // Y el selector de personajes (etiqueta de P1), que si no se quedaba
+        // con el apodo anterior al entrar a Batalla.
+        this.charSelect.setLocalNickname(res.nickname);
+        return { ok: true as const, nickname: res.nickname };
+      }
+      return { ok: false as const, message: res.message };
+    },
   });
 
   private readonly tutorialScreen = new TutorialScreen(renderer, camera, {
@@ -84,12 +117,13 @@ class App {
           this.showMenu();
         });
       },
-      onConfirm: (characters, controllers, cpuDifficulties) => {
+      onConfirm: (characters, controllers, cpuDifficulties, labels) => {
         this.pendingConfig = {
           ...this.pendingConfig,
           characters,
           controllers,
           cpuDifficulty: cpuDifficulties,
+          labels,
         };
         void this.transition(() => {
           this.charSelect.hide();
@@ -172,13 +206,31 @@ class App {
       window.history.replaceState(null, "", clean);
     }
     const user = await getMe();
-    this.mainMenu.setUser(user ? { name: user.name, avatarUrl: user.avatarUrl } : null);
+    this.currentUser = user;
+    this.mainMenu.setUser(
+      user ? { nickname: user.nickname, avatarUrl: user.avatarUrl } : null,
+    );
+    // El selector de personajes necesita el apodo para la etiqueta de P1.
+    this.charSelect.setLocalNickname(user?.nickname ?? null);
+
+    // Primer login: obligamos a elegir apodo (no se puede cerrar hasta guardar).
+    if (user && !user.nicknameChosen) {
+      this.nicknameDialog.open(user.nickname, true);
+    }
   }
 
   /** Cierra sesión y refresca el widget del menú. */
   private async onLogout(): Promise<void> {
     await logout();
+    this.currentUser = null;
     this.mainMenu.setUser(null);
+    this.charSelect.setLocalNickname(null);
+  }
+
+  /** Abre el diálogo para cambiar el apodo (precargado con el actual). */
+  private openNicknameDialog(): void {
+    if (!this.currentUser) return;
+    this.nicknameDialog.open(this.currentUser.nickname);
   }
 
   /**
@@ -280,6 +332,7 @@ class App {
       config.stage,
       config.controllers,
       cpuDiffs,
+      config.labels,
     );
 
     camera.resize(renderer.cssWidth, renderer.cssHeight);

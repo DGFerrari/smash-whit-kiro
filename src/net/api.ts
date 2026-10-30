@@ -16,6 +16,10 @@ const API_BASE: string =
 export interface AuthUser {
   id: string;
   name: string;
+  /** Apodo elegido por el usuario (lo que se muestra en partida y rankings). */
+  nickname: string;
+  /** ¿Ya eligió apodo? Si es false, es su primer login (onboarding). */
+  nicknameChosen: boolean;
   email: string;
   avatarUrl: string | null;
 }
@@ -86,6 +90,31 @@ export async function submitMatch(replay: unknown): Promise<SubmitOutcome> {
     }
     const data = (await res.json()) as { result: MatchReward; stats: PlayerStats };
     return { kind: "ok", reward: data.result, stats: data.stats };
+  } catch {
+    return { kind: "error", message: "No se pudo contactar con el servidor." };
+  }
+}
+
+/** Resultado de intentar cambiar el apodo. */
+export type NicknameResult =
+  | { kind: "ok"; nickname: string }
+  | { kind: "error"; message: string };
+
+/** Cambia el apodo del usuario en el servidor (requiere sesión). */
+export async function updateNickname(nickname: string): Promise<NicknameResult> {
+  try {
+    const res = await fetch(`${API_BASE}/api/auth/nickname`, {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ nickname }),
+    });
+    if (res.ok) {
+      const data = (await res.json()) as { nickname: string };
+      return { kind: "ok", nickname: data.nickname };
+    }
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    return { kind: "error", message: data.error ?? `Error (${res.status}).` };
   } catch {
     return { kind: "error", message: "No se pudo contactar con el servidor." };
   }

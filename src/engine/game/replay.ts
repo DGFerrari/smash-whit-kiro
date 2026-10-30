@@ -26,7 +26,7 @@ import type { StageId } from "./stages.ts";
  * v3 añadió el resumen de resultado. v2 añadió personajes + escenario.
  * v1 (sin nada de eso) se sigue pudiendo cargar.
  */
-export const REPLAY_VERSION = 6;
+export const REPLAY_VERSION = 7;
 
 /**
  * Resumen de un jugador para la ficha del replay (lista + panel de detalle).
@@ -87,6 +87,8 @@ export interface ReplayData {
    * Al reproducir, tiene prioridad sobre `cpuDifficulty`.
    */
   cpuDifficulties?: ("easy" | "normal" | "hard")[];
+  /** Etiquetas/nombres de cada combatiente (v7+): apodo del usuario en P1. */
+  labels?: string[];
   /** Fecha ISO de grabación (informativo). */
   recordedAt: string;
   /** Nº de jugadores (2). */
@@ -160,6 +162,7 @@ export class ReplayRecorder {
     private readonly stage: StageId,
     private readonly controllers?: ("human" | "cpu")[],
     private readonly cpuDifficulties?: ("easy" | "normal" | "hard")[],
+    private readonly labels?: string[],
   ) {}
 
   record(inputs: InputState[]): void {
@@ -181,6 +184,7 @@ export class ReplayRecorder {
       stage: this.stage,
       controllers: this.controllers,
       cpuDifficulties: this.cpuDifficulties,
+      labels: this.labels,
       recordedAt: new Date().toISOString(),
       players: this.characters.length,
       steps: this.steps,

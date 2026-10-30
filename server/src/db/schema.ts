@@ -1,4 +1,4 @@
-import { integer, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { boolean, integer, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 
 /**
  * Tabla de USUARIOS. Un usuario se crea la primera vez que inicia sesión con
@@ -15,7 +15,19 @@ export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
   googleId: text("google_id").notNull().unique(),
   email: text("email").notNull(),
+  /** Nombre del perfil de Google (no editable; referencia). */
   name: text("name").notNull(),
+  /**
+   * Apodo que ELIGE el usuario (editable). Es el que se muestra en partida y en
+   * rankings. Por defecto es el nombre de Google (recortado) al darse de alta.
+   */
+  nickname: text("nickname").notNull(),
+  /**
+   * ¿El usuario ya ELIGIÓ su apodo explícitamente? Al crearse es false (el
+   * apodo es el de Google por defecto); pasa a true cuando lo cambia. El
+   * cliente usa esto para forzar elegir apodo en el primer inicio de sesión.
+   */
+  nicknameChosen: boolean("nickname_chosen").notNull().default(false),
   avatarUrl: text("avatar_url"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

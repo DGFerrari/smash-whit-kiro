@@ -3,7 +3,7 @@ import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import { googleOAuthReady, primaryClientUrl } from "../env.ts";
 import { buildGoogleAuthUrl, getGoogleProfileFromCode } from "./google.ts";
 import { setSession, getSessionUserId, clearSession } from "./session.ts";
-import { upsertFromGoogle, findUserById } from "../db/users.ts";
+import { upsertFromGoogle, findUserById, updateNickname } from "../db/users.ts";
 
 /**
  * Rutas de autenticación con Google OAuth:
@@ -81,10 +81,43 @@ authRoutes.get("/me", async (c) => {
     user: {
       id: user.id,
       name: user.name,
+      nickname: user.nickname,
+      nicknameChosen: user.nicknameChosen,
       email: user.email,
       avatarUrl: user.avatarUrl,
     },
   });
+});
+
+/**
+ * Cambia el apodo del usuario. Reglas: 3–16 caracteres (contados por puntos de
+ * código, así un emoji cuenta como 1), sin saltos de línea ni espacios al
+ * borde. Permite emojis y texto normal.
+ */
+authRoutes.patch("/nickname", async (c) => {
+  const userId = await getSessionUserId(c);
+  if (!userId) return c.json({ error: "No has iniciado sesión." }, 401);
+
+  let body: { nickname?: unknown };
+  try {
+    body = (await c.req.json()) as { nickname?: unknown };
+  } catch {
+    return c.json({ error: "Cuerpo no válido." }, 400);
+  }
+
+  const raw = typeof body.nickname === "string" ? body.nickname.trim() : "";
+  if (/[\r\n\t]/.test(raw)) {
+    return c.json({ error: "El apodo no puede tener saltos de línea." }, 422);
+  }
+  // Longitud por puntos de código (un emoji = 1). Array.from respeta surrogates.
+  const len = Array.from(raw).length;
+  if (len < 3 || len > 16) {
+    return c.json({ error: "El apodo debe tener entre 3 y 16 caracteres." }, 422);
+  }
+
+  const updated = await updateNickname(userId, raw);
+  if (!updated) return c.json({ error: "No se pudo actualizar." }, 500);
+  return c.json({ nickname: updated.nickname });
 });
 
 // Logout.
