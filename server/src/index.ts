@@ -1,8 +1,10 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
+import { cors } from "hono/cors";
 import { sql } from "drizzle-orm";
 import { env } from "./env.ts";
 import { db } from "./db/client.ts";
+import { authRoutes } from "./auth/routes.ts";
 
 /**
  * Backend de smash-B (Fase 2+).
@@ -15,6 +17,19 @@ import { db } from "./db/client.ts";
  */
 
 const app = new Hono();
+
+// CORS: el cliente (localhost:5173 / GitHub Pages) y el server están en
+// orígenes distintos. `credentials: true` permite que viaje la cookie de sesión.
+app.use(
+  "/api/*",
+  cors({
+    origin: env.clientUrl,
+    credentials: true,
+  }),
+);
+
+// Rutas de autenticación (Google OAuth + sesión).
+app.route("/api/auth", authRoutes);
 
 /** Raíz informativa (no expone nada sensible). */
 app.get("/", (c) => c.text("smash-B server OK"));

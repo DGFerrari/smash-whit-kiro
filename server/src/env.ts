@@ -36,4 +36,22 @@ export const env = {
   databaseUrl: required("DATABASE_URL"),
   /** Puerto HTTP (el hosting inyecta el suyo; en local 8787). */
   port: Number(optional("PORT", "8787")),
+
+  /**
+   * Credenciales de Google OAuth. Opcionales: si faltan, el servidor ARRANCA
+   * igual (BD y salud siguen OK), pero el login con Google responde un error
+   * explicando que no está configurado. Así se puede trabajar antes de tener
+   * las credenciales.
+   */
+  googleClientId: optional("GOOGLE_CLIENT_ID"),
+  googleClientSecret: optional("GOOGLE_CLIENT_SECRET"),
+  /** Secreto para firmar la cookie de sesión. */
+  sessionSecret: optional("SESSION_SECRET", "dev-insecure-secret-change-me"),
+  /** URL del cliente a la que se vuelve tras el login. */
+  clientUrl: optional("CLIENT_URL", "http://localhost:5173")!,
+  /** URL base del propio servidor (para construir el redirect de OAuth). */
+  serverUrl: optional("SERVER_URL", `http://localhost:${optional("PORT", "8787")}`)!,
 };
+
+/** ¿Está configurado el login con Google? (hay client id y secret). */
+export const googleOAuthReady = Boolean(env.googleClientId && env.googleClientSecret);
