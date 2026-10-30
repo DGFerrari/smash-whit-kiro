@@ -146,10 +146,12 @@ Se trabaja en la branch `fase2-backend` y se integrará por pull request.
 
 - [x] Montar un **servidor** (Node + TypeScript con Hono). Esqueleto con
       `/api/health` corriendo en local (`server/`).
-- [ ] Conectar la **base de datos** Neon (Postgres) + migraciones (Drizzle).
+- [x] Conectar la **base de datos** Neon (Postgres) + migraciones (Drizzle).
+      Driver `pg` (server Node de larga duración); endpoint `/api/db-check`
+      probado (SELECT 1 ok) con dev y con build compilado.
 - [ ] **Login con Google** (OAuth) para no gestionar contraseñas.
-- [ ] Modelo de datos inicial: `usuario` (id de Google, nombre, email, avatar,
-      fecha de alta).
+- [x] Modelo de datos inicial: tabla `users` (id uuid, google_id único, email,
+      name, avatar_url, created_at) — migración aplicada a Neon.
 - [x] Config por **variables de entorno** (`server/.env` local + `.env.example`;
       secretos en el hosting).
 - [ ] El cliente guarda la sesión y sabe "quién soy".
