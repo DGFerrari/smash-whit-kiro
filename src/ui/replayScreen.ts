@@ -161,6 +161,11 @@ export class ReplayScreen {
    * del motor (`data.engineVersion`); si no coincide con la actual (o falta,
    * porque es de antes de etiquetar versiones), la partida puede NO reproducirse
    * igual tras cambios de física/balance. Avisamos en vez de fingir que cuadra.
+   *
+   * IMPORTANTE: es solo un AVISO informativo, NO bloquea la reproducción: los
+   * replays antiguos se ven igualmente. Y esto es exclusivo del reproductor
+   * (ReplayScreen); el fondo del menú (MenuBackground) ni lo usa, así que los
+   * replays del menú se ejecutan sin ningún aviso.
    */
   private updateVersionWarning(data: ReplayData): void {
     const v = data.engineVersion;
