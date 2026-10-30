@@ -2115,36 +2115,50 @@ body.hide-native-cursor * {
 }
 
 /* ===== Cuenta (login / usuario) en el menú principal ===== */
-/* Widget arriba a la derecha, visible en ambas fases del menú. */
+/* Widget arriba a la derecha. Solo visible en la fase de SELECCIÓN (no en la
+   pantalla de "Press start"), igual que el resto de opciones del menú. */
 .menu-account {
   position: absolute;
   top: 22px;
   right: 24px;
   z-index: 6;
-  display: flex;
+  display: none;
   align-items: center;
 }
 
-/* Botón "Iniciar sesión": reutiliza el look de .menu-btn con una G de Google. */
+#main-menu.in-select .menu-account {
+  display: flex;
+}
+
+/* Botón "Iniciar sesión": reutiliza el look de .menu-btn, pero en UNA fila
+   (texto + logo de Google a su derecha), no apilado como los botones grandes. */
 .login-btn {
-  display: inline-flex;
+  flex-direction: row;
   align-items: center;
+  justify-content: center;
   gap: 8px;
+  width: auto;
   padding: 8px 14px;
   font-size: 14px;
+  font-weight: 700;
+  text-align: center;
 }
 
+/* Logo oficial de Google (SVG), a la derecha del texto, sobre una base blanca
+   redondeada para que el multicolor resalte sobre el botón oscuro. */
 .login-g {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   background: #fff;
-  color: #4285f4;
-  font-weight: 900;
-  font-family: Arial, sans-serif;
+  flex: 0 0 auto;
+}
+
+.login-g svg {
+  display: block;
 }
 
 /* Chip del usuario con sesión: avatar + nombre + cerrar sesión. */
