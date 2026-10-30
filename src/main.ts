@@ -15,11 +15,10 @@ import { MenuBackground } from "./ui/menuBackground.ts";
 import { confirmDialog } from "./ui/confirmDialog.ts";
 import {
   ReplayRecorder,
-  downloadReplay,
-  loadReplayFile,
   type ReplayData,
   type ReplayResult,
 } from "./engine/game/replay.ts";
+import { downloadReplay, loadReplayFile } from "./ui/replayFile.ts";
 import { saveReplay } from "./game/replayStore.ts";
 
 const canvas = document.querySelector<HTMLCanvasElement>("#game");

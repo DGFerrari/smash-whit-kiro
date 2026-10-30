@@ -205,28 +205,6 @@ export class ReplayPlayer {
   }
 }
 
-/** Descarga un replay como archivo .json. */
-export function downloadReplay(data: ReplayData): void {
-  const blob = new Blob([JSON.stringify(data)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  const stamp = data.recordedAt.replace(/[:.]/g, "-");
-  a.download = `smashb-replay-${data.mode}-${stamp}.json`;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-/** Lee y valida un replay desde un File (input type=file). */
-export async function loadReplayFile(file: File): Promise<ReplayData> {
-  const text = await file.text();
-  const data = JSON.parse(text) as ReplayData;
-  if (
-    typeof data.version !== "number" ||
-    typeof data.seed !== "number" ||
-    !Array.isArray(data.steps)
-  ) {
-    throw new Error("Archivo de replay no válido.");
-  }
-  return data;
-}
+// NOTA: `downloadReplay`/`loadReplayFile` (import/export como archivo .json)
+// viven en la capa de cliente (`src/ui/replayFile.ts`) porque usan APIs de
+// navegador (document/Blob/File). El motor no debe depender del DOM.
