@@ -72,7 +72,9 @@ simulación en el navegador y en un servidor Node**.
 - [ ] Extraer el **motor puro** a un módulo compartido sin dependencias de
       navegador ni de Three.js: `src/game`, `src/physics`, `src/combat`,
       `src/entities`, `src/core` (tipos/input) y los datos de `config.ts`.
-  - [ ] Verificar que ese módulo **no importa nada de `render/` ni del DOM**.
+  - [x] Verificar que ese módulo **no importa nada de `render/` ni del DOM**.
+        (Confirmado: `src/engine/` no importa de `debug/`, `ui/` ni `render/`,
+        y no usa APIs de navegador en código ejecutable.)
   - [ ] Que compile y corra en Node (una prueba: simular un replay por consola
         y comprobar el resultado).
 - [x] Añadir **tests de determinismo**: dado un replay (semilla + inputs), el
@@ -301,6 +303,7 @@ y al despliegue), pero eso es optimización, no un bloqueo.
 | 2026-10 | Auditoría de dependencias de navegador del motor | Fase 1 |
 | 2026-10 | core/input.ts partido: inputState.ts (puro) vs KeyboardInput; motor sin localStorage | Fase 1 |
 | 2026-10 | Motor movido a src/engine/ (core/physics/combat/entities/game + config); cliente en render/ui/core-input/loop | Fase 1 |
+| 2026-10 | downloadReplay/loadReplayFile movidos a ui/replayFile.ts (engine sin DOM) | Fase 1 |
+| 2026-10 | Opciones de dummy movidas a engine/game/trainingOptions.ts; engine ya no importa debug/ui/render | Fase 1 |
 | _(pendiente)_ | Capturas/GIF en README | Fase 0 |
-| _(deuda)_ | world.ts lee debug/debugState (opciones de dummy): mover a config del engine | Fase 1 |
-| _(siguiente)_ | Sacar downloadReplay/loadReplayFile de engine a helper de cliente | Fase 1 |
+| _(siguiente)_ | Prueba de que el engine corre en Node puro + versionar formato de simulación | Fase 1 |

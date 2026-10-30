@@ -23,22 +23,9 @@ export interface DebugState {
    * el jugador usa siempre su color base. Útil para ver el estado de un vistazo.
    */
   showStateColors: boolean;
-  /**
-   * Comportamiento del dummy de entrenamiento:
-   *  - "free": física normal, recibe golpes y knockback.
-   *  - "freeze": clavado donde está, inmóvil, ignora el knockback.
-   *  - "reposition": recibe golpes, pero si se queda quieto en el suelo unos
-   *    segundos vuelve solo al centro del mapa.
-   */
-  dummyBehavior: "free" | "freeze" | "reposition";
-  /**
-   * Ataque que el dummy debe REPETIR de forma continua. null = no ataca.
-   * El World lo ejecuta en bucle: el ligero con un intervalo entre golpes
-   * (anti-spam) y el fuerte siempre a carga completa.
-   */
-  dummyAttack:
-    | { kind: "light" | "heavy"; dir: "neutral" | "side" | "up" | "down" }
-    | null;
+  // Nota: las opciones del DUMMY de entrenamiento (comportamiento y ataque
+  // repetido) ya NO viven aquí: afectan a la simulación, así que están en el
+  // engine (engine/game/trainingOptions.ts). La UI las edita desde allí.
   /**
    * Avisar visualmente cuando un jugador se queda sin saltos o sin usos de
    * ataque fuerte en el aire.
@@ -65,8 +52,6 @@ export const debug: DebugState = {
   showFps: false,
   showStun: false,
   showStateColors: true,
-  dummyBehavior: "free",
-  dummyAttack: null,
   showResources: false,
   povZoom: POV.default,
   showGameUi: true,

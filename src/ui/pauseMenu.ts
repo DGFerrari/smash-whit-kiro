@@ -8,6 +8,7 @@ import {
   type PlayerSlot,
 } from "../core/bindings.ts";
 import { debug, type DebugState } from "../debug/debugState.ts";
+import { trainingOptions, type DummyBehavior } from "../engine/game/trainingOptions.ts";
 import type { GameMode } from "../engine/game/world.ts";
 
 /**
@@ -547,7 +548,7 @@ export class PauseMenu {
     el.appendChild(behTitle);
 
     const behaviors: Array<{
-      value: DebugState["dummyBehavior"];
+      value: DummyBehavior;
       label: string;
       hint: string;
     }> = [
@@ -584,7 +585,7 @@ export class PauseMenu {
 
     // Botón para detener el bucle de ataques.
     const stop = this.menuButton("Parar ataques", () => {
-      debug.dummyAttack = null;
+      trainingOptions.dummyAttack = null;
       this.renderStack(); // refresca los resaltados
     });
     stop.classList.add("pause-btn-danger");
@@ -592,7 +593,7 @@ export class PauseMenu {
   }
 
   private buildDummyRadio(
-    value: DebugState["dummyBehavior"],
+    value: DummyBehavior,
     label: string,
     hint: string,
   ): HTMLElement {
@@ -602,9 +603,9 @@ export class PauseMenu {
     const radio = document.createElement("input");
     radio.type = "radio";
     radio.name = "dummy-behavior";
-    radio.checked = debug.dummyBehavior === value;
+    radio.checked = trainingOptions.dummyBehavior === value;
     radio.addEventListener("change", () => {
-      if (radio.checked) debug.dummyBehavior = value;
+      if (radio.checked) trainingOptions.dummyBehavior = value;
     });
 
     const text = document.createElement("div");
@@ -654,12 +655,13 @@ export class PauseMenu {
       b.title = d.dir;
       // Marca activo si coincide con la selección actual.
       const active =
-        debug.dummyAttack?.kind === kind && debug.dummyAttack?.dir === d.dir;
+        trainingOptions.dummyAttack?.kind === kind &&
+        trainingOptions.dummyAttack?.dir === d.dir;
       if (active) b.classList.add("active");
       b.addEventListener("click", () => {
-        const current = debug.dummyAttack;
+        const current = trainingOptions.dummyAttack;
         const isSame = current?.kind === kind && current?.dir === d.dir;
-        debug.dummyAttack = isSame ? null : { kind, dir: d.dir };
+        trainingOptions.dummyAttack = isSame ? null : { kind, dir: d.dir };
         this.renderStack(); // refresca resaltados de toda la página
       });
       btns.appendChild(b);

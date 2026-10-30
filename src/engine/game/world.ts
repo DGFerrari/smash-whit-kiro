@@ -5,12 +5,7 @@ import { Player } from "../entities/player.ts";
 import { Platform } from "../physics/platform.ts";
 import { overlaps } from "../physics/aabb.ts";
 import { createInputState, type InputState } from "../core/inputState.ts";
-// NOTA (deuda técnica, Fase 1): el motor lee opciones de entrenamiento (dummy)
-// desde el estado de depuración de la UI. `debugState` es un objeto puro (no
-// toca el navegador), así que el engine sigue corriendo en Node, pero
-// conceptualmente este acoplamiento motor->UI debería romperse moviendo las
-// opciones de dummy a un objeto de config del propio engine. Ver ROADMAP.
-import { debug } from "../../debug/debugState.ts";
+import { trainingOptions } from "./trainingOptions.ts";
 import { Rng, randomSeed } from "../core/rng.ts";
 import { getCharacter, type CharacterId } from "./characters.ts";
 import { getStage, type StageId, type StageKind } from "./stages.ts";
@@ -446,7 +441,7 @@ export class World {
   }
 
   /**
-   * Dummy de entrenamiento. Comportamiento según debug.dummyBehavior:
+   * Dummy de entrenamiento. Comportamiento según trainingOptions.dummyBehavior:
    *  - freeze: clavado donde está, inmóvil (ignora knockback).
    *  - reposition: física normal, pero vuelve al centro si queda quieto.
    *  - free: física normal.
@@ -458,7 +453,7 @@ export class World {
     // Ataque en bucle pedido desde el menú (si hay uno seleccionado).
     this.updateDummyAttack(f);
 
-    if (debug.dummyBehavior === "freeze") {
+    if (trainingOptions.dummyBehavior === "freeze") {
       // Clavado en su posición actual (solo fijamos velocidad y prevPos).
       dummy.vel.x = 0;
       dummy.vel.y = 0;
@@ -474,7 +469,7 @@ export class World {
 
     dummy.fixedUpdate(this.dummyInput, platforms, dt);
 
-    if (debug.dummyBehavior === "reposition") {
+    if (trainingOptions.dummyBehavior === "reposition") {
       this.repositionDummy(f, dt);
     }
   }
@@ -485,7 +480,7 @@ export class World {
    * completa (forceAttack ya usa carga 1 para el fuerte).
    */
   private updateDummyAttack(f: Fighter): void {
-    const sel = debug.dummyAttack;
+    const sel = trainingOptions.dummyAttack;
     if (!sel) {
       f.dummyAtkCooldown = 0;
       return;
