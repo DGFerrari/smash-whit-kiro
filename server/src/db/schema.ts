@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { integer, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 
 /**
  * Tabla de USUARIOS. Un usuario se crea la primera vez que inicia sesión con
@@ -9,8 +9,7 @@ import { pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
  *    identificador, no para comunicaciones).
  *  - createdAt: fecha de alta.
  *
- * Los PUNTOS y el ranking irán en su propia tabla en el paso siguiente; aquí
- * solo la identidad.
+ * El progreso del jugador (monedas, stats) vive en `playerStats`.
  */
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -23,3 +22,31 @@ export const users = pgTable("users", {
 
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
+
+/**
+ * PROGRESO del jugador (una fila por usuario). Separado de `users` porque es
+ * mutable y crecerá (hoy monedas + stats de ranking; mañana nivel, logros...).
+ *
+ *  - coins: moneda del juego. Se gana ganando partidas, por rango y por KOs.
+ *  - wins: partidas ganadas (para el ranking).
+ *  - kills: KOs totales infligidos (para el ranking).
+ *  - deaths: muertes totales (para el ranking).
+ *  - matchesPlayed: partidas validadas contabilizadas (informativo / anti-abuso).
+ *
+ * Todos los valores los calcula y escribe el SERVIDOR tras validar la partida
+ * re-simulando el replay; el cliente nunca los fija directamente.
+ */
+export const playerStats = pgTable("player_stats", {
+  userId: uuid("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  coins: integer("coins").notNull().default(0),
+  wins: integer("wins").notNull().default(0),
+  kills: integer("kills").notNull().default(0),
+  deaths: integer("deaths").notNull().default(0),
+  matchesPlayed: integer("matches_played").notNull().default(0),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type PlayerStats = typeof playerStats.$inferSelect;
+export type NewPlayerStats = typeof playerStats.$inferInsert;
