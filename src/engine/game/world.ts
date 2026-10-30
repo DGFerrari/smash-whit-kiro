@@ -5,7 +5,12 @@ import { Player } from "../entities/player.ts";
 import { Platform } from "../physics/platform.ts";
 import { overlaps } from "../physics/aabb.ts";
 import { createInputState, type InputState } from "../core/inputState.ts";
-import { debug } from "../debug/debugState.ts";
+// NOTA (deuda técnica, Fase 1): el motor lee opciones de entrenamiento (dummy)
+// desde el estado de depuración de la UI. `debugState` es un objeto puro (no
+// toca el navegador), así que el engine sigue corriendo en Node, pero
+// conceptualmente este acoplamiento motor->UI debería romperse moviendo las
+// opciones de dummy a un objeto de config del propio engine. Ver ROADMAP.
+import { debug } from "../../debug/debugState.ts";
 import { Rng, randomSeed } from "../core/rng.ts";
 import { getCharacter, type CharacterId } from "./characters.ts";
 import { getStage, type StageId, type StageKind } from "./stages.ts";

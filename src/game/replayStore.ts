@@ -1,4 +1,4 @@
-import type { ReplayData } from "./replay.ts";
+import type { ReplayData } from "../engine/game/replay.ts";
 
 /**
  * Almacén de replays DENTRO del navegador (localStorage), para no depender de

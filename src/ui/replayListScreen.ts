@@ -1,6 +1,6 @@
-import { getCharacter } from "../game/characters.ts";
-import { getStage } from "../game/stages.ts";
-import type { ReplayData } from "../game/replay.ts";
+import { getCharacter } from "../engine/game/characters.ts";
+import { getStage } from "../engine/game/stages.ts";
+import type { ReplayData } from "../engine/game/replay.ts";
 import {
   listReplays,
   deleteReplay,

@@ -1,9 +1,9 @@
-import { FIXED_DT, MAX_STEPS_PER_FRAME } from "../config.ts";
+import { FIXED_DT, MAX_STEPS_PER_FRAME } from "../engine/config.ts";
 import { createInputState, KeyboardInput, type InputState } from "../core/input.ts";
 import { PLAYER_SLOTS } from "../core/bindings.ts";
 import type { Renderer } from "../render/renderer.ts";
 import type { Camera } from "../render/camera.ts";
-import type { World } from "./world.ts";
+import type { World } from "../engine/game/world.ts";
 
 /** Avisos que el loop manda a la capa de presentación (overlays). */
 export interface LoopCallbacks {

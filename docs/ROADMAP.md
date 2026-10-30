@@ -300,5 +300,7 @@ y al despliegue), pero eso es optimización, no un bloqueo.
 | 2026-10 | Vitest + test de determinismo (menu1/2/3) | Fase 1 |
 | 2026-10 | Auditoría de dependencias de navegador del motor | Fase 1 |
 | 2026-10 | core/input.ts partido: inputState.ts (puro) vs KeyboardInput; motor sin localStorage | Fase 1 |
+| 2026-10 | Motor movido a src/engine/ (core/physics/combat/entities/game + config); cliente en render/ui/core-input/loop | Fase 1 |
 | _(pendiente)_ | Capturas/GIF en README | Fase 0 |
-| _(siguiente)_ | Mover el motor a src/engine/ (o similar) | Fase 1 |
+| _(deuda)_ | world.ts lee debug/debugState (opciones de dummy): mover a config del engine | Fase 1 |
+| _(siguiente)_ | Sacar downloadReplay/loadReplayFile de engine a helper de cliente | Fase 1 |

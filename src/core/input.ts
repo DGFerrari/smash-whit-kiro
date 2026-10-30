@@ -1,11 +1,11 @@
 import { bindings, type Action, type PlayerSlot } from "./bindings.ts";
-import { type InputState } from "./inputState.ts";
+import { type InputState } from "../engine/core/inputState.ts";
 
 // El tipo y su constructor viven en `inputState.ts` (módulo PURO, sin
 // navegador) para que el motor pueda importarlos sin arrastrar `localStorage`.
 // Los re-exportamos aquí por comodidad de los consumidores de cliente (loop,
 // pantallas) que ya importan ambas cosas desde "core/input.ts".
-export { createInputState, type InputState } from "./inputState.ts";
+export { createInputState, type InputState } from "../engine/core/inputState.ts";
 
 /**
  * Lee el teclado y produce InputState a partir de un perfil de teclas

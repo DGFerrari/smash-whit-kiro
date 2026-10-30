@@ -1,4 +1,4 @@
-import { POV } from "../config.ts";
+import { POV } from "../engine/config.ts";
 import {
   ACTION_LABELS,
   bindings,
@@ -8,7 +8,7 @@ import {
   type PlayerSlot,
 } from "../core/bindings.ts";
 import { debug, type DebugState } from "../debug/debugState.ts";
-import type { GameMode } from "../game/world.ts";
+import type { GameMode } from "../engine/game/world.ts";
 
 /**
  * Menú de pausa con navegación tipo "stack" horizontal.

@@ -1,5 +1,5 @@
 import "./style.css";
-import { World, type GameMode, type MatchConfig } from "./game/world.ts";
+import { World, type GameMode, type MatchConfig } from "./engine/game/world.ts";
 import { CharacterSelect, StageSelect } from "./ui/selectScreens.ts";
 import { HandCursor } from "./ui/handCursor.ts";
 import { Renderer } from "./render/renderer.ts";
@@ -19,7 +19,7 @@ import {
   loadReplayFile,
   type ReplayData,
   type ReplayResult,
-} from "./game/replay.ts";
+} from "./engine/game/replay.ts";
 import { saveReplay } from "./game/replayStore.ts";
 
 const canvas = document.querySelector<HTMLCanvasElement>("#game");

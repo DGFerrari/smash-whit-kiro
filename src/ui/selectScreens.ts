@@ -2,12 +2,12 @@ import {
   CHARACTERS,
   SELECTABLE_CHARACTERS,
   type CharacterId,
-} from "../game/characters.ts";
+} from "../engine/game/characters.ts";
 import {
   STAGES,
   SELECTABLE_STAGES,
   type StageId,
-} from "../game/stages.ts";
+} from "../engine/game/stages.ts";
 import type { HandCursor } from "./handCursor.ts";
 
 /**

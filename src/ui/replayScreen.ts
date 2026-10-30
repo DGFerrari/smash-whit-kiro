@@ -1,8 +1,8 @@
-import { FIXED_DT } from "../config.ts";
-import { World } from "../game/world.ts";
+import { FIXED_DT } from "../engine/config.ts";
+import { World } from "../engine/game/world.ts";
 import type { Renderer } from "../render/renderer.ts";
 import type { Camera } from "../render/camera.ts";
-import { ReplayPlayer, type ReplayData } from "../game/replay.ts";
+import { ReplayPlayer, type ReplayData } from "../engine/game/replay.ts";
 import { PauseMenu } from "./pauseMenu.ts";
 import { Countdown } from "./overlays.ts";
 

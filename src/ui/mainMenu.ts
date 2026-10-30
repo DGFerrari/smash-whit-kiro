@@ -1,4 +1,4 @@
-import type { GameMode } from "../game/world.ts";
+import type { GameMode } from "../engine/game/world.ts";
 
 /**
  * Menú principal del juego, en dos fases:

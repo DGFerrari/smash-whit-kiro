@@ -1,10 +1,10 @@
 import * as THREE from "three";
-import { BLAST_ZONE, DEPTH, TEXTURES, WORLD, type SurfaceTexture } from "../config.ts";
-import type { Player } from "../entities/player.ts";
-import type { Platform } from "../physics/platform.ts";
+import { BLAST_ZONE, DEPTH, TEXTURES, WORLD, type SurfaceTexture } from "../engine/config.ts";
+import type { Player } from "../engine/entities/player.ts";
+import type { Platform } from "../engine/physics/platform.ts";
 import { Camera } from "./camera.ts";
-import type { World, DeathEffect } from "../game/world.ts";
-import { getStage, type StageTheme } from "../game/stages.ts";
+import type { World, DeathEffect } from "../engine/game/world.ts";
+import { getStage, type StageTheme } from "../engine/game/stages.ts";
 import { debug } from "../debug/debugState.ts";
 import { drawPercentHud, type PercentEntry } from "../ui/percentHud.ts";
 import { Background3D } from "./background.ts";

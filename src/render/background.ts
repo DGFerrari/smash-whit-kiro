@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import type { Camera } from "./camera.ts";
-import type { StageBackdrop } from "../game/stages.ts";
+import type { StageBackdrop } from "../engine/game/stages.ts";
 
 /**
  * Fondo por CAPAS en 3D. Colocamos planos a distintas PROFUNDIDADES (Z) y

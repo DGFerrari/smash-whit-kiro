@@ -1,7 +1,7 @@
 import * as THREE from "three";
-import { CAMERA, VIEW, WORLD } from "../config.ts";
+import { CAMERA, VIEW, WORLD } from "../engine/config.ts";
 import { debug } from "../debug/debugState.ts";
-import type { World } from "../game/world.ts";
+import type { World } from "../engine/game/world.ts";
 
 /**
  * Cámara de encuadre estilo Smash, ahora en 3D (perspectiva) sobre Three.js.

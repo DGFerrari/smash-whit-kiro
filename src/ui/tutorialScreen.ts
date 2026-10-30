@@ -1,6 +1,6 @@
-import { FIXED_DT, RULES, WORLD } from "../config.ts";
-import { Player } from "../entities/player.ts";
-import { World } from "../game/world.ts";
+import { FIXED_DT, RULES, WORLD } from "../engine/config.ts";
+import { Player } from "../engine/entities/player.ts";
+import { World } from "../engine/game/world.ts";
 import { KeyboardInput, createInputState, type InputState } from "../core/input.ts";
 import { bindings, keyLabel } from "../core/bindings.ts";
 import type { Renderer } from "../render/renderer.ts";

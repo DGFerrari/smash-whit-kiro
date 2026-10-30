@@ -1,4 +1,4 @@
-import { POV } from "../config.ts";
+import { POV } from "../engine/config.ts";
 
 /**
  * Estado de depuración compartido. Un único objeto que el panel de

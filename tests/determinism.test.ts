@@ -3,9 +3,9 @@ import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { describe, it, expect } from "vitest";
 
-import { FIXED_DT } from "../src/config.ts";
-import { World } from "../src/game/world.ts";
-import { ReplayPlayer, type ReplayData } from "../src/game/replay.ts";
+import { FIXED_DT } from "../src/engine/config.ts";
+import { World } from "../src/engine/game/world.ts";
+import { ReplayPlayer, type ReplayData } from "../src/engine/game/replay.ts";
 
 /**
  * TEST DE DETERMINISMO (red de seguridad de la Fase 1).
