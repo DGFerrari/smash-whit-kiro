@@ -1,0 +1,40 @@
+# Infraestructura del backend en Render (capa gratuita).
+#
+# Render lee este archivo al conectar el repo ("Blueprint"). Describe un único
+# servicio web Node que vive en la carpeta `server/`. Las variables de entorno
+# con `sync: false` se rellenan a mano en el panel de Render (son secretos: no
+# se guardan en el repo).
+#
+# Nota: el plan gratuito "duerme" el servicio tras ~15 min de inactividad; la
+# primera petición después tarda unos segundos en despertar. Para portafolio y
+# amigos es suficiente.
+services:
+  - type: web
+    name: smash-b-server
+    runtime: node
+    plan: free
+    region: frankfurt # Europa, cerca de la BD (Neon London) y de los jugadores
+    rootDir: server
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false # secreto: pegar en el panel de Render
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: SESSION_SECRET
+        sync: false
+      # CLIENT_URL: orígenes del cliente permitidos (CORS) separados por comas.
+      # El primero es a donde se vuelve tras el login. Incluye la subcarpeta de
+      # GitHub Pages. Ej: https://dgferrari.github.io/smash-whit-kiro
+      - key: CLIENT_URL
+        sync: false
+      # SERVER_URL: la URL pública de ESTE servicio (para el redirect de OAuth).
+      # Ej: https://smash-b-server.onrender.com
+      - key: SERVER_URL
+        sync: false

@@ -47,11 +47,22 @@ export const env = {
   googleClientSecret: optional("GOOGLE_CLIENT_SECRET"),
   /** Secreto para firmar la cookie de sesión. */
   sessionSecret: optional("SESSION_SECRET", "dev-insecure-secret-change-me"),
-  /** URL del cliente a la que se vuelve tras el login. */
-  clientUrl: optional("CLIENT_URL", "http://localhost:5173")!,
+  /**
+   * Orígenes del cliente permitidos (CORS) separados por comas. El PRIMERO es
+   * además el destino del redirect tras el login. En local: localhost:5173; en
+   * producción: la URL de GitHub Pages (y se puede incluir localhost para poder
+   * probar en local contra el server desplegado).
+   */
+  clientUrls: (optional("CLIENT_URL", "http://localhost:5173") as string)
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean),
   /** URL base del propio servidor (para construir el redirect de OAuth). */
   serverUrl: optional("SERVER_URL", `http://localhost:${optional("PORT", "8787")}`)!,
 };
+
+/** URL del cliente a la que se vuelve tras el login (el primer origen). */
+export const primaryClientUrl = env.clientUrls[0] ?? "http://localhost:5173";
 
 /** ¿Está configurado el login con Google? (hay client id y secret). */
 export const googleOAuthReady = Boolean(env.googleClientId && env.googleClientSecret);

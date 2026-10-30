@@ -23,7 +23,8 @@ const app = new Hono();
 app.use(
   "/api/*",
   cors({
-    origin: env.clientUrl,
+    // Permite cualquiera de los orígenes configurados (local y/o producción).
+    origin: (origin) => (env.clientUrls.includes(origin) ? origin : null),
     credentials: true,
   }),
 );

@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
-import { env, googleOAuthReady } from "../env.ts";
+import { googleOAuthReady, primaryClientUrl } from "../env.ts";
 import { buildGoogleAuthUrl, getGoogleProfileFromCode } from "./google.ts";
 import { setSession, getSessionUserId, clearSession } from "./session.ts";
 import { upsertFromGoogle, findUserById } from "../db/users.ts";
@@ -54,17 +54,17 @@ authRoutes.get("/google/callback", async (c) => {
   deleteCookie(c, STATE_COOKIE, { path: "/" });
 
   if (!code || !state || !savedState || state !== savedState) {
-    return c.redirect(`${env.clientUrl}/?login=error`);
+    return c.redirect(`${primaryClientUrl}/?login=error`);
   }
 
   try {
     const profile = await getGoogleProfileFromCode(code);
     const user = await upsertFromGoogle(profile);
     await setSession(c, user.id);
-    return c.redirect(`${env.clientUrl}/?login=ok`);
+    return c.redirect(`${primaryClientUrl}/?login=ok`);
   } catch (err) {
     console.error("OAuth callback falló:", err);
-    return c.redirect(`${env.clientUrl}/?login=error`);
+    return c.redirect(`${primaryClientUrl}/?login=error`);
   }
 });
 
