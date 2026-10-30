@@ -158,7 +158,16 @@ Se trabaja en la branch `fase2-backend` y se integrará por pull request.
       (getMe/startGoogleLogin/logout con `credentials: include`), widget de
       cuenta en el menú (botón de login / chip con avatar+nombre+logout), y
       comprobación de sesión al arrancar. Probado login/logout/login end-to-end.
-- [ ] Desplegar el backend en **Render** (capa gratuita).
+- [x] Desplegar el backend en **Render** (capa gratuita):
+      https://smash-b-server.onrender.com. Login con Google funcionando en
+      producción (Pages ↔ Render). Notas: `SERVER_URL` debe ser la URL pública
+      (si no, el redirect de OAuth sale mal); CORS compara por ORIGEN, no por
+      URL (la cookie cross-site necesita allow-origin correcto + SameSite=None
+      Secure con NODE_ENV=production); el redirect de Google de producción debe
+      estar en las credenciales de Google Cloud. El plan free duerme tras ~15
+      min de inactividad (primer acceso tarda unos segundos).
+
+**Fase 2 COMPLETA.** Cimientos listos: servidor + BD + cuentas en producción.
 
 **Entregable:** puedes iniciar sesión, y el juego sabe quién eres.
 
