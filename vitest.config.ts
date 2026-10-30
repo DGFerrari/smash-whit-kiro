@@ -6,6 +6,8 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     environment: "node",
-    include: ["tests/**/*.test.ts"],
+    // Tests del motor/cliente (tests/) y del servidor (server/src/**). Ambos
+    // prueban lógica pura de simulación/validación, así que corren en Node.
+    include: ["tests/**/*.test.ts", "server/src/**/*.test.ts"],
   },
 });

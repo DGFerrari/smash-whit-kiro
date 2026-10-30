@@ -5,14 +5,13 @@
     "moduleResolution": "bundler",
     "lib": ["ES2022"],
     "types": ["node"],
-    "outDir": "dist",
-    "rootDir": "src",
 
-    // Permitimos imports con extensión .ts y dejamos que tsc los reescriba a
-    // .js al emitir (TS 5.7+). Así el código fuente usa `.ts` (coherente con el
-    // cliente) y el output es ESM válido para Node.
+    // El server se EJECUTA con tsx (esbuild) tanto en dev como en producción,
+    // así que tsc NO emite: solo comprueba tipos. Esto evita la restricción de
+    // rootDir al importar el motor compartido desde ../../src/engine, que es
+    // TypeScript puro. allowImportingTsExtensions permite los imports con `.ts`.
+    "noEmit": true,
     "allowImportingTsExtensions": true,
-    "rewriteRelativeImportExtensions": true,
 
     "strict": true,
     "noUnusedLocals": true,
@@ -23,5 +22,6 @@
     "esModuleInterop": true,
     "verbatimModuleSyntax": false
   },
-  "include": ["src"]
+  "include": ["src", "../src/engine"],
+  "exclude": ["../src/engine/game/menuReplays.ts"]
 }

@@ -5,6 +5,7 @@ import { sql } from "drizzle-orm";
 import { env, clientOrigins } from "./env.ts";
 import { db } from "./db/client.ts";
 import { authRoutes } from "./auth/routes.ts";
+import { matchRoutes } from "./match/routes.ts";
 
 /**
  * Backend de smash-B (Fase 2+).
@@ -32,6 +33,9 @@ app.use(
 
 // Rutas de autenticación (Google OAuth + sesión).
 app.route("/api/auth", authRoutes);
+
+// Rutas de partida (validación + puntuación).
+app.route("/api/match", matchRoutes);
 
 /** Raíz informativa (no expone nada sensible). */
 app.get("/", (c) => c.text("smash-B server OK"));
