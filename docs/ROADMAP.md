@@ -154,7 +154,10 @@ Se trabaja en la branch `fase2-backend` y se integrará por pull request.
       name, avatar_url, created_at) — migración aplicada a Neon.
 - [x] Config por **variables de entorno** (`server/.env` local + `.env.example`;
       secretos en el hosting).
-- [ ] El cliente guarda la sesión y sabe "quién soy".
+- [x] El cliente guarda la sesión y sabe "quién soy": módulo `src/net/api.ts`
+      (getMe/startGoogleLogin/logout con `credentials: include`), widget de
+      cuenta en el menú (botón de login / chip con avatar+nombre+logout), y
+      comprobación de sesión al arrancar. Probado login/logout/login end-to-end.
 - [ ] Desplegar el backend en **Render** (capa gratuita).
 
 **Entregable:** puedes iniciar sesión, y el juego sabe quién eres.
