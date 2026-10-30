@@ -1,4 +1,4 @@
-import { FIXED_DT } from "../engine/config.ts";
+import { FIXED_DT, ENGINE_VERSION } from "../engine/config.ts";
 import { World } from "../engine/game/world.ts";
 import type { Renderer } from "../render/renderer.ts";
 import type { Camera } from "../render/camera.ts";
@@ -39,6 +39,8 @@ export class ReplayScreen {
   private readonly freeCamBtn: HTMLButtonElement;
   /** Botón flotante para volver a mostrar la barra cuando está oculta. */
   private readonly showBarBtn: HTMLButtonElement;
+  /** Aviso cuando el replay es de otra versión del motor. */
+  private readonly versionWarn: HTMLDivElement;
   private pauseMenu: PauseMenu | null = null;
   /** ¿Está el menú de pausa abierto? (congela la reproducción). */
   private menuPaused = false;
@@ -147,6 +149,31 @@ export class ReplayScreen {
     this.showBarBtn.title = "Mostrar controles";
     this.showBarBtn.addEventListener("click", () => this.setBarHidden(false));
     document.body.appendChild(this.showBarBtn);
+
+    // Aviso (arriba) cuando el replay es de otra versión del motor.
+    this.versionWarn = document.createElement("div");
+    this.versionWarn.id = "replay-version-warn";
+    document.body.appendChild(this.versionWarn);
+  }
+
+  /**
+   * Muestra/oculta el aviso de versión. Un replay se grabó con cierta versión
+   * del motor (`data.engineVersion`); si no coincide con la actual (o falta,
+   * porque es de antes de etiquetar versiones), la partida puede NO reproducirse
+   * igual tras cambios de física/balance. Avisamos en vez de fingir que cuadra.
+   */
+  private updateVersionWarning(data: ReplayData): void {
+    const v = data.engineVersion;
+    let msg = "";
+    if (v === undefined) {
+      msg = `⚠ Replay de una versión antigua (sin etiquetar). Motor actual: v${ENGINE_VERSION}. Puede no reproducirse igual.`;
+    } else if (v < ENGINE_VERSION) {
+      msg = `⚠ Replay de una versión anterior del juego (motor v${v}; actual v${ENGINE_VERSION}). Puede no reproducirse igual.`;
+    } else if (v > ENGINE_VERSION) {
+      msg = `⚠ Replay de una versión MÁS NUEVA del juego (motor v${v}; actual v${ENGINE_VERSION}). Puede no reproducirse igual.`;
+    }
+    this.versionWarn.textContent = msg;
+    this.versionWarn.classList.toggle("show", msg !== "");
   }
 
   /** Oculta/muestra la barra de controles (ver gameplay limpio). */
@@ -158,6 +185,7 @@ export class ReplayScreen {
   /** Carga un replay y empieza a reproducir desde el principio. */
   start(data: ReplayData): void {
     this.player = new ReplayPlayer(data);
+    this.updateVersionWarning(data);
     this.rebuildWorld();
     this.currentStep = 0;
     this.seek.max = String(Math.max(0, this.player.totalSteps - 1));
@@ -203,6 +231,7 @@ export class ReplayScreen {
     cancelAnimationFrame(this.rafId);
     this.root.classList.remove("open");
     this.setBarHidden(false);
+    this.versionWarn.classList.remove("show");
     this.detachCamControls();
     this.camera.clearCinematic();
     if (this.pauseMenu) {

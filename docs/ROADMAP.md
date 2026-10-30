@@ -81,9 +81,10 @@ simulación en el navegador y en un servidor Node**.
       resultado final es siempre el mismo. — Hecho con **Vitest**
       (`tests/determinism.test.ts`): reproduce `menu1/2/3.json` dos veces y
       compara el estado final de los combatientes.
-- [ ] Versionar el **formato de simulación** (ya versionas replays): si cambias
-      física/combate, una partida vieja puede no reproducirse igual. Decidir
-      política: "los replays guardan la versión del motor".
+- [x] Versionar el **formato de simulación**: `ENGINE_VERSION` en
+      `engine/config.ts` (se sube a mano al cambiar física/balance). Cada replay
+      guarda `engineVersion`; al reproducir, si no coincide con la actual, la
+      pantalla de replay muestra un aviso ("puede no reproducirse igual").
 
 **Entregable:** un paquete `engine` reutilizable en cliente y servidor, con una
 prueba que confirma que una partida se reproduce idéntica.
@@ -305,5 +306,5 @@ y al despliegue), pero eso es optimización, no un bloqueo.
 | 2026-10 | Motor movido a src/engine/ (core/physics/combat/entities/game + config); cliente en render/ui/core-input/loop | Fase 1 |
 | 2026-10 | downloadReplay/loadReplayFile movidos a ui/replayFile.ts (engine sin DOM) | Fase 1 |
 | 2026-10 | Opciones de dummy movidas a engine/game/trainingOptions.ts; engine ya no importa debug/ui/render | Fase 1 |
+| 2026-10 | ENGINE_VERSION: replays etiquetados con la versión del motor + aviso en el reproductor si no coincide (replay v6) | Fase 1 |
 | _(pendiente)_ | Capturas/GIF en README | Fase 0 |
-| _(siguiente)_ | Prueba de que el engine corre en Node puro + versionar formato de simulación | Fase 1 |

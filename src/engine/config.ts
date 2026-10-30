@@ -5,6 +5,22 @@
  */
 
 /**
+ * VERSIÓN DEL MOTOR DE SIMULACIÓN.
+ *
+ * Súbela en 1 CADA VEZ que cambies algo que afecte a cómo se simula una partida
+ * (física, combate, IA, geometría de escenarios, valores de balance de este
+ * archivo...). NO la toques por cambios puramente visuales o de UI.
+ *
+ * Para qué sirve: cada replay se graba con la versión del motor con la que se
+ * jugó. Al reproducir, si la versión del replay NO coincide con esta, el juego
+ * avisa de que es de otra versión y puede no reproducirse igual (un cambio de
+ * balance desincroniza una partida vieja). Así no fingimos que todo cuadra.
+ *
+ * Historial: v1 = primera versión etiquetada (todo lo anterior a esto).
+ */
+export const ENGINE_VERSION = 1;
+
+/**
  * Resolución interna del "lienzo lógico". El canvas real ocupa toda la ventana,
  * pero la cámara trabaja sobre estas dimensiones de referencia y escala al
  * tamaño real. Mantener esto fijo conserva un feel consistente en cualquier

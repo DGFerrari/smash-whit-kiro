@@ -1,4 +1,5 @@
 import { createInputState, type InputState } from "../core/inputState.ts";
+import { ENGINE_VERSION } from "../config.ts";
 import type { GameMode } from "./world.ts";
 import type { CharacterId } from "./characters.ts";
 import type { StageId } from "./stages.ts";
@@ -17,13 +18,15 @@ import type { StageId } from "./stages.ts";
  */
 
 /**
+ * v6 añade `engineVersion` (versión del motor de simulación con el que se
+ * grabó), para avisar si un replay es de otra versión del juego.
  * v5 cambia la dificultad de la CPU a por-slot (cpuDifficulties[]), cada CPU
  * con la suya. Los replays v4 (un único cpuDifficulty) se siguen leyendo.
  * v4 añadió los controllers (human/cpu) para reproducir partidas con CPU.
  * v3 añadió el resumen de resultado. v2 añadió personajes + escenario.
  * v1 (sin nada de eso) se sigue pudiendo cargar.
  */
-export const REPLAY_VERSION = 5;
+export const REPLAY_VERSION = 6;
 
 /**
  * Resumen de un jugador para la ficha del replay (lista + panel de detalle).
@@ -54,7 +57,14 @@ export interface ReplayResult {
 }
 
 export interface ReplayData {
+  /** Versión del FORMATO de datos del replay (qué campos trae). */
   version: number;
+  /**
+   * Versión del MOTOR de simulación con el que se grabó (v6+). Si no coincide
+   * con la actual al reproducir, la partida puede no reproducirse igual (cambió
+   * la física/balance). Opcional: los replays anteriores no la traen.
+   */
+  engineVersion?: number;
   mode: GameMode;
   seed: number;
   /** Personajes de cada jugador (v2+). Opcional por compat con v1. */
@@ -164,6 +174,7 @@ export class ReplayRecorder {
   build(result?: ReplayResult): ReplayData {
     return {
       version: REPLAY_VERSION,
+      engineVersion: ENGINE_VERSION,
       mode: this.mode,
       seed: this.seed,
       characters: this.characters,
