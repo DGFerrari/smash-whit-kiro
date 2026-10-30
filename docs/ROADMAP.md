@@ -75,10 +75,10 @@ simulación en el navegador y en un servidor Node**.
   - [ ] Verificar que ese módulo **no importa nada de `render/` ni del DOM**.
   - [ ] Que compile y corra en Node (una prueba: simular un replay por consola
         y comprobar el resultado).
-- [ ] Añadir **tests de determinismo**: dado un replay (semilla + inputs), el
-      resultado final es siempre el mismo. Esto protege de romper el
-      determinismo sin darte cuenta. (Hoy no hay framework de test; habría que
-      añadir uno estándar del ecosistema.)
+- [x] Añadir **tests de determinismo**: dado un replay (semilla + inputs), el
+      resultado final es siempre el mismo. — Hecho con **Vitest**
+      (`tests/determinism.test.ts`): reproduce `menu1/2/3.json` dos veces y
+      compara el estado final de los combatientes.
 - [ ] Versionar el **formato de simulación** (ya versionas replays): si cambias
       física/combate, una partida vieja puede no reproducirse igual. Decidir
       política: "los replays guardan la versión del motor".
@@ -89,6 +89,46 @@ prueba que confirma que una partida se reproduce idéntica.
 > Nota: si cualquier cambio futuro de balance rompe el determinismo de replays
 > antiguos, hay que subir la versión del motor y aceptar que los replays viejos
 > son "solo para ver", no para validar.
+
+### Auditoría de dependencias de navegador (hecha)
+
+Antes de mover código, se auditó qué ficheros de la zona de simulación tocan el
+navegador o azar/tiempo no determinista. **La lógica de simulación en sí está
+limpia**; el acoplamiento es por **imports a nivel de módulo**. Resumen:
+
+**Núcleo de simulación — limpio (no toca navegador, no usa azar sin semilla):**
+- `src/physics/*`, `src/combat/*`, `src/entities/player.ts`,
+  `src/game/world.ts`, `src/game/cpuBrain.ts`, `src/game/characters.ts`,
+  `src/game/stages.ts`, `config.ts`.
+- El azar va siempre por `core/rng.ts` (PRNG con semilla). `randomSeed()` usa
+  `Math.random` pero **solo al iniciar una grabación**, nunca durante la
+  simulación de un replay. ✅
+
+**Acoplamientos a aislar (import de módulo que arrastra el navegador):**
+- `core/input.ts` importa `core/bindings.ts`, y `bindings.ts` lee
+  **`localStorage`** al cargarse (`loadBindings()`). Como `world.ts`,
+  `cpuBrain.ts`, `player.ts` y `replay.ts` importan `input.ts`, **todo el motor
+  arrastra `localStorage` solo por importar tipos de input**. → Ese warning de
+  `localStorage` en los tests viene de aquí. **Plan:** separar el *tipo*
+  `InputState` + `createInputState` (puros, van al engine) de `KeyboardInput` +
+  `bindings`/`localStorage` (quedan en la capa de cliente).
+- `game/world.ts` importa `debug/debugState.ts`. Es inofensivo (solo un objeto
+  de flags; `debugState` solo importa `POV` de config), pero conceptualmente el
+  motor no debería depender del estado de depuración de la UI. **Plan:** pasar
+  lo que necesite como parámetro, o mover el flag relevante a config.
+
+**Fuera del motor (se quedan en la capa de cliente, no estorban):**
+- `game/loop.ts`: `performance.now`, `requestAnimationFrame`, `KeyboardInput`,
+  Renderer/Camera. Es el bucle del navegador, no simulación.
+- `game/replay.ts`: `ReplayRecorder`/`ReplayPlayer` + `unpack` son puros y van
+  al engine; `downloadReplay`/`loadReplayFile` usan `document`/`Blob`/`File`
+  (cliente) → separarlos en un helper de cliente.
+- `game/replayStore.ts`: `localStorage` + `Date.now`/`Math.random` para ids.
+  Es persistencia de cliente, no simulación → se queda fuera del engine.
+
+**Conclusión:** la extracción del engine es viable y de bajo riesgo. El único
+corte real a hacer antes de mover nada es **partir `core/input.ts`** (tipos
+puros vs lector de teclado) para cortar la cadena a `localStorage`.
 
 ---
 
@@ -256,4 +296,8 @@ y al despliegue), pero eso es optimización, no un bloqueo.
 | 2026-10 | README actualizado (Three.js, features), `.gitignore` de secretos | Fase 0 |
 | 2026-10 | ROADMAP.md creado + nota de trabajo visual | Fase 0 |
 | 2026-10 | Licencia MIT y workflow de GitHub Pages | Fase 0 |
-| _(pendiente)_ | Activar Pages en Settings (manual) + capturas/GIF en README | Fase 0 |
+| 2026-10 | Pages activado + despliegue en verde + enlace jugable + CI Node 22 | Fase 0 |
+| 2026-10 | Vitest + test de determinismo (menu1/2/3) | Fase 1 |
+| 2026-10 | Auditoría de dependencias de navegador del motor | Fase 1 |
+| _(pendiente)_ | Capturas/GIF en README | Fase 0 |
+| _(siguiente)_ | Partir core/input.ts (tipos puros vs KeyboardInput) | Fase 1 |
