@@ -20,6 +20,7 @@ import {
 } from "./engine/game/replay.ts";
 import { downloadReplay, loadReplayFile } from "./ui/replayFile.ts";
 import { saveReplay } from "./game/replayStore.ts";
+import { getMe, startGoogleLogin, logout } from "./net/api.ts";
 
 const canvas = document.querySelector<HTMLCanvasElement>("#game");
 if (!canvas) {
@@ -65,6 +66,8 @@ class App {
     onPlay: (mode) => this.onPlay(mode),
     onOpenReplays: () => void this.openReplayList(),
     onOpenTutorial: () => void this.openTutorial(),
+    onLogin: () => startGoogleLogin(),
+    onLogout: () => void this.onLogout(),
   });
 
   private readonly tutorialScreen = new TutorialScreen(renderer, camera, {
@@ -152,6 +155,30 @@ class App {
 
   start(): void {
     this.showMenu();
+    // Comprobamos la sesión en segundo plano: el menú se muestra ya y el widget
+    // de cuenta se rellena cuando responda el servidor (si está disponible).
+    void this.checkAuth();
+  }
+
+  /** Consulta la sesión al servidor y actualiza el widget de cuenta del menú. */
+  private async checkAuth(): Promise<void> {
+    // Si volvemos de un login, limpiamos el ?login=ok/error de la URL para que
+    // no se quede pegado (es solo una señal del redirect de OAuth).
+    const params = new URLSearchParams(window.location.search);
+    if (params.has("login")) {
+      params.delete("login");
+      const qs = params.toString();
+      const clean = window.location.pathname + (qs ? `?${qs}` : "");
+      window.history.replaceState(null, "", clean);
+    }
+    const user = await getMe();
+    this.mainMenu.setUser(user ? { name: user.name, avatarUrl: user.avatarUrl } : null);
+  }
+
+  /** Cierra sesión y refresca el widget del menú. */
+  private async onLogout(): Promise<void> {
+    await logout();
+    this.mainMenu.setUser(null);
   }
 
   /**

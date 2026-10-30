@@ -139,15 +139,26 @@ puros vs lector de teclado) para cortar la cadena a `localStorage`.
 
 Sin cuentas no hay a quién asignarle puntos ni inventario. Mantenerlo simple.
 
-- [ ] Elegir y montar un **servidor** (Node + TypeScript, para compartir el
-      motor). Empezar en local.
-- [ ] Elegir una **base de datos** (algo sencillo y con capa gratuita).
-- [ ] **Login** con un proveedor externo (p. ej. Google o Discord) para no
-      gestionar contraseñas nosotros. Para "amigos", Discord encaja muy bien.
-- [ ] Modelo de datos inicial: `usuario` (id, nombre, avatar, fecha alta).
-- [ ] Config por **variables de entorno** (`.env` local, secretos en el hosting).
-- [ ] El cliente guarda la sesión y sabe "quién soy".
-- [ ] Desplegar el backend en un hosting con capa gratuita.
+**Decisiones tomadas (2026-10):** monorepo "ligero" (server en `server/` dentro
+del repo, sin mover el cliente), base de datos **Neon** (Postgres), hosting
+**Render**, login con **Google** (OAuth), ORM **Drizzle**, framework **Hono**.
+Se trabaja en la branch `fase2-backend` y se integrará por pull request.
+
+- [x] Montar un **servidor** (Node + TypeScript con Hono). Esqueleto con
+      `/api/health` corriendo en local (`server/`).
+- [x] Conectar la **base de datos** Neon (Postgres) + migraciones (Drizzle).
+      Driver `pg` (server Node de larga duración); endpoint `/api/db-check`
+      probado (SELECT 1 ok) con dev y con build compilado.
+- [ ] **Login con Google** (OAuth) para no gestionar contraseñas.
+- [x] Modelo de datos inicial: tabla `users` (id uuid, google_id único, email,
+      name, avatar_url, created_at) — migración aplicada a Neon.
+- [x] Config por **variables de entorno** (`server/.env` local + `.env.example`;
+      secretos en el hosting).
+- [x] El cliente guarda la sesión y sabe "quién soy": módulo `src/net/api.ts`
+      (getMe/startGoogleLogin/logout con `credentials: include`), widget de
+      cuenta en el menú (botón de login / chip con avatar+nombre+logout), y
+      comprobación de sesión al arrancar. Probado login/logout/login end-to-end.
+- [ ] Desplegar el backend en **Render** (capa gratuita).
 
 **Entregable:** puedes iniciar sesión, y el juego sabe quién eres.
 

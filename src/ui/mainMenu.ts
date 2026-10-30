@@ -18,6 +18,16 @@ export interface MainMenuCallbacks {
   onOpenReplays: () => void;
   /** Abrir el tutorial. */
   onOpenTutorial: () => void;
+  /** Iniciar sesión con Google (redirección al servidor). */
+  onLogin: () => void;
+  /** Cerrar sesión. */
+  onLogout: () => void;
+}
+
+/** Datos del usuario con sesión (para el widget del menú). */
+export interface MenuUser {
+  name: string;
+  avatarUrl: string | null;
 }
 
 /** Valor de una opción del menú: modo jugable, ver replay o tutorial. */
@@ -89,6 +99,8 @@ export class MainMenu {
   private readonly playBtn: HTMLButtonElement;
   /** Logo compartido entre fases: se desliza del centro a arriba-izquierda. */
   private readonly logo: HTMLHeadingElement;
+  /** Widget de cuenta (arriba a la derecha): botón de login o chip de usuario. */
+  private readonly accountEl: HTMLDivElement;
   private selected: MenuOption | null = null;
   private phase: "title" | "select" = "title";
 
@@ -102,6 +114,14 @@ export class MainMenu {
     this.logo.className = "menu-logo";
     this.logo.textContent = "Título";
     this.root.appendChild(this.logo);
+
+    // Widget de cuenta (arriba a la derecha), visible en ambas fases. Arranca
+    // mostrando el botón de login; se rellena con setUser() tras consultar la
+    // sesión al servidor.
+    this.accountEl = document.createElement("div");
+    this.accountEl.className = "menu-account";
+    this.root.appendChild(this.accountEl);
+    this.setUser(null);
 
     // --- Fase 1: título (solo "Press start"; el logo es el compartido) ---
     this.titlePhase = document.createElement("div");
@@ -243,6 +263,57 @@ export class MainMenu {
     // La opción "dev" no es jugable: deshabilita Jugar.
     this.playBtn.disabled = !def.playable;
     this.playBtn.style.setProperty("--accent", def.accent);
+  }
+
+  /**
+   * Actualiza el widget de cuenta: si `user` es null muestra el botón de
+   * "Iniciar sesión con Google"; si hay usuario, muestra su avatar + nombre y
+   * un botón de cerrar sesión. Lo llama la app tras consultar /api/auth/me.
+   */
+  setUser(user: MenuUser | null): void {
+    this.accountEl.replaceChildren();
+
+    if (!user) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "menu-btn login-btn";
+      btn.innerHTML =
+        '<span class="login-g">G</span><span>Iniciar sesión</span>';
+      btn.addEventListener("click", () => this.cb.onLogin());
+      this.accountEl.appendChild(btn);
+      return;
+    }
+
+    const chip = document.createElement("div");
+    chip.className = "user-chip";
+
+    const avatar = document.createElement("div");
+    avatar.className = "user-avatar";
+    if (user.avatarUrl) {
+      const img = document.createElement("img");
+      img.src = user.avatarUrl;
+      img.alt = "";
+      img.referrerPolicy = "no-referrer"; // avatares de Google
+      avatar.appendChild(img);
+    } else {
+      avatar.textContent = user.name.slice(0, 1).toUpperCase();
+    }
+    chip.appendChild(avatar);
+
+    const name = document.createElement("span");
+    name.className = "user-name";
+    name.textContent = user.name;
+    chip.appendChild(name);
+
+    const out = document.createElement("button");
+    out.type = "button";
+    out.className = "user-logout";
+    out.title = "Cerrar sesión";
+    out.textContent = "⎋";
+    out.addEventListener("click", () => this.cb.onLogout());
+    chip.appendChild(out);
+
+    this.accountEl.appendChild(chip);
   }
 }
 
