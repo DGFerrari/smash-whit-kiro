@@ -299,5 +299,6 @@ y al despliegue), pero eso es optimización, no un bloqueo.
 | 2026-10 | Pages activado + despliegue en verde + enlace jugable + CI Node 22 | Fase 0 |
 | 2026-10 | Vitest + test de determinismo (menu1/2/3) | Fase 1 |
 | 2026-10 | Auditoría de dependencias de navegador del motor | Fase 1 |
+| 2026-10 | core/input.ts partido: inputState.ts (puro) vs KeyboardInput; motor sin localStorage | Fase 1 |
 | _(pendiente)_ | Capturas/GIF en README | Fase 0 |
-| _(siguiente)_ | Partir core/input.ts (tipos puros vs KeyboardInput) | Fase 1 |
+| _(siguiente)_ | Mover el motor a src/engine/ (o similar) | Fase 1 |

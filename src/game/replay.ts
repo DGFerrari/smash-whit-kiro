@@ -1,4 +1,4 @@
-import { createInputState, type InputState } from "../core/input.ts";
+import { createInputState, type InputState } from "../core/inputState.ts";
 import type { GameMode } from "./world.ts";
 import type { CharacterId } from "./characters.ts";
 import type { StageId } from "./stages.ts";

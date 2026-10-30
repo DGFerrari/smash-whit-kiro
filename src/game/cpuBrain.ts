@@ -1,5 +1,5 @@
 import { BLAST_ZONE } from "../config.ts";
-import { createInputState, type InputState } from "../core/input.ts";
+import { createInputState, type InputState } from "../core/inputState.ts";
 import type { Player } from "../entities/player.ts";
 import type { Platform } from "../physics/platform.ts";
 import type { CpuDifficulty } from "./world.ts";

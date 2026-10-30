@@ -4,7 +4,7 @@ import { CpuBrain } from "./cpuBrain.ts";
 import { Player } from "../entities/player.ts";
 import { Platform } from "../physics/platform.ts";
 import { overlaps } from "../physics/aabb.ts";
-import { createInputState, type InputState } from "../core/input.ts";
+import { createInputState, type InputState } from "../core/inputState.ts";
 import { debug } from "../debug/debugState.ts";
 import { Rng, randomSeed } from "../core/rng.ts";
 import { getCharacter, type CharacterId } from "./characters.ts";

@@ -1,6 +1,6 @@
 import { FURY, PLAYER, SHIELD } from "../config.ts";
 import type { AABB, Vec2 } from "../core/types.ts";
-import type { InputState } from "../core/input.ts";
+import type { InputState } from "../core/inputState.ts";
 import type { Platform } from "../physics/platform.ts";
 import { overlaps } from "../physics/aabb.ts";
 import { ActiveAttack } from "../combat/activeAttack.ts";
