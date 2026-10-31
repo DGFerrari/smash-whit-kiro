@@ -2602,3 +2602,260 @@ body.hide-native-cursor * {
   border-radius: 50%;
   animation: rewardSpin 0.7s linear infinite;
 }
+
+/* ===== Gacha (cofres) + mochila ===== */
+.gacha-coins {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 0 auto 6px;
+  font-size: 22px;
+  font-weight: 900;
+  color: #f0b429;
+}
+
+.gacha-coin-icon {
+  font-size: 22px;
+}
+
+/* Zona de cartas reveladas. */
+.gacha-result {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+  align-items: center;
+  min-height: 120px;
+  width: min(92vw, 720px);
+  margin: 10px auto;
+}
+
+.gacha-card {
+  width: 92px;
+  height: 116px;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 2px solid;
+  background: #10151f;
+  opacity: 0;
+  transform: scale(0.6) rotate(-6deg);
+  animation: gachaReveal 0.4s cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+}
+
+@keyframes gachaReveal {
+  to { opacity: 1; transform: scale(1) rotate(0); }
+}
+
+.gacha-card-rarity {
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #ffffff;
+}
+
+.gacha-card-amount {
+  font-size: 26px;
+  font-weight: 900;
+  color: #fff;
+}
+
+.gacha-card-token {
+  font-size: 11px;
+  color: #8b97ad;
+}
+
+/* Colores por rareza (bordes/acentos). */
+/* El COLOR de rareza va en el borde/resplandor de la carta/celda; los TEXTOS
+   (nombre de rareza) se dejan en blanco para que se lean bien. */
+.rarity-common {
+  border-color: #7e8aa3;
+  box-shadow: 0 0 14px rgba(126, 138, 163, 0.3);
+}
+
+.rarity-epic {
+  border-color: #a24dff;
+  box-shadow: 0 0 16px rgba(162, 77, 255, 0.4);
+}
+
+.rarity-legendary {
+  border-color: #ffb300;
+  box-shadow: 0 0 20px rgba(255, 179, 0, 0.5);
+}
+
+/* Botones de tirada. */
+.gacha-pulls {
+  display: flex;
+  gap: 14px;
+  justify-content: center;
+  margin: 8px auto;
+}
+
+.gacha-pull-btn {
+  flex-direction: column;
+  width: auto;
+  min-width: 150px;
+  padding: 12px 22px;
+  font-size: 17px;
+  font-weight: 800;
+  text-align: center;
+  align-items: center;
+  gap: 2px;
+}
+
+.gacha-pull-multi {
+  border-color: #ffa726;
+}
+
+.gacha-cost {
+  font-size: 13px;
+  font-weight: 700;
+  color: #f0b429;
+}
+
+.gacha-pull-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.gacha-status {
+  text-align: center;
+  color: #8b97ad;
+  font-size: 14px;
+  min-height: 18px;
+  margin: 4px 0;
+}
+
+.gacha-status.loading::after {
+  content: "";
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin-left: 8px;
+  vertical-align: middle;
+  border: 2px solid rgba(139, 151, 173, 0.3);
+  border-top-color: #ffa726;
+  border-radius: 50%;
+  animation: rewardSpin 0.7s linear infinite;
+}
+
+/* ===== Mochila (cajón inferior desplegable) ===== */
+/* El cajón vive pegado al borde inferior; se oculta bajándolo casi del todo y
+   sube al abrirse. Solo visible dentro de la pantalla de gacha (#gacha-screen). */
+.inv-drawer {
+  position: fixed;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%) translateY(calc(100% - 42px));
+  z-index: 10;
+  width: min(96vw, 620px);
+  background: #10151f;
+  border: 1px solid #2d3850;
+  border-bottom: none;
+  border-radius: 16px 16px 0 0;
+  box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.5);
+  transition: transform 0.3s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.inv-drawer.open {
+  transform: translateX(-50%) translateY(0);
+}
+
+/* Pestaña/tirador que despliega. */
+.inv-handle {
+  width: 100%;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: transparent;
+  border: none;
+  color: #cdd6e4;
+  font-size: 14px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  cursor: pointer;
+}
+
+.inv-handle-arrow {
+  transition: transform 0.3s ease;
+  display: inline-block;
+}
+
+.inv-drawer.open .inv-handle-arrow {
+  transform: rotate(180deg);
+}
+
+.inv-panel {
+  padding: 0 16px 18px;
+}
+
+/* Pestañas de categoría (arriba del inventario). */
+.inv-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.inv-tab {
+  padding: 7px 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid #2d3850;
+  border-radius: 9px;
+  color: #8b97ad;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.inv-tab.active {
+  background: rgba(255, 167, 38, 0.15);
+  border-color: #ffa726;
+  color: #ffce9b;
+}
+
+/* Cuadrícula 5x3. */
+.inv-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+}
+
+.inv-cell {
+  aspect-ratio: 1 / 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border-radius: 10px;
+  border: 1px solid #2d3850;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.inv-cell.empty {
+  background: rgba(255, 255, 255, 0.015);
+  border-style: dashed;
+  border-color: #222c40;
+}
+
+.inv-cell-label {
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  text-align: center;
+  color: #ffffff;
+}
+
+.inv-cell-value {
+  font-size: 20px;
+  font-weight: 900;
+  color: #f1f4fa;
+}

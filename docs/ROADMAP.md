@@ -209,17 +209,21 @@ Aquí entra en juego el determinismo. Empezar por lo fácil de validar.
 
 Toda la aleatoriedad y el premio ocurren en el servidor.
 
-- [ ] Definir el **catálogo** de objetos (skins, personajes, cosméticos) y sus
-      **probabilidades**, guardados en el servidor.
-- [ ] Moneda del juego (ganada jugando; **no** dinero real).
-- [ ] Endpoint de **tirada**: el servidor genera el azar, decide el premio, lo
-      añade al inventario del usuario y descuenta la moneda — todo atómico.
-- [ ] **Inventario** por usuario en la base de datos.
-- [ ] El cliente solo pide "tira" y **muestra la animación** del resultado que
-      devuelve el servidor.
-- [ ] Pantalla de gacha + inventario + equipar cosméticos.
+- [x] Catálogo y **probabilidades** en el servidor (`gacha/pulls.ts`): común
+      70% (10–50 tokens), épico 20% (5–15), legendario 10% (1–5).
+- [x] Moneda del juego (las monedas de la Fase 3; **no** dinero real).
+- [x] Endpoint de **tirada** (`POST /api/gacha/pull?count=1|10`): el servidor
+      sortea, cobra (100 / x10=900 con 10% dto.) y suma tokens — **atómico**
+      (transacción en `db/tokens.ts`).
+- [x] **Inventario** por usuario (`player_tokens`: common/epic/legendary).
+- [x] El cliente solo pide "tira" y **muestra la animación** del resultado.
+- [x] Pantalla de **Gacha** (opción del menú) + mochila en cajón desplegable
+      con pestañas de categoría y cuadrícula 5×3 (apartado "Tokens").
+- [x] Tests del sorteo (probabilidades suman 1, rangos, distribución).
 
-**Entregable:** tiradas que dan objetos reales a tu cuenta, imposibles de
+**Fase 4 COMPLETA.** Gacha con tokens, validado y cobrado en servidor.
+
+**Entregable:** tiradas que dan tokens reales a tu cuenta, imposibles de
 falsear desde el cliente.
 
 > Como no hay dinero real, **no aplican** los requisitos legales de gachas

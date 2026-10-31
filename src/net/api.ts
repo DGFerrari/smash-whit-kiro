@@ -146,6 +146,18 @@ export interface RankingData {
   rows: RankRow[];
 }
 
+/** Stats del usuario (incluye el saldo de monedas). null si no hay sesión. */
+export async function getStats(): Promise<PlayerStats | null> {
+  try {
+    const res = await fetch(`${API_BASE}/api/match/stats`, { credentials: "include" });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { stats: PlayerStats | null };
+    return data.stats;
+  } catch {
+    return null;
+  }
+}
+
 /** Pide el ranking ordenado por `sort`/`order` (la ordenación la hace el servidor). */
 export async function getRanking(sort: RankField, order: RankOrder): Promise<RankingData | null> {
   try {
@@ -156,6 +168,84 @@ export async function getRanking(sort: RankField, order: RankOrder): Promise<Ran
     return (await res.json()) as RankingData;
   } catch {
     return null;
+  }
+}
+
+/** Rareza de un token del gacha. */
+export type Rarity = "common" | "epic" | "legendary";
+
+/** Inventario de tokens del jugador. */
+export interface TokenInventory {
+  common: number;
+  epic: number;
+  legendary: number;
+}
+
+/** Info de precios del gacha. */
+export interface GachaInfo {
+  singleCost: number;
+  multiCount: number;
+  multiCost: number;
+}
+
+/** Una tirada individual del resultado. */
+export interface Pull {
+  rarity: Rarity;
+  tokens: number;
+}
+
+/** Desenlace de tirar en el gacha. */
+export type PullOutcome =
+  | { kind: "ok"; pulls: Pull[]; cost: number; coins: number; tokens: TokenInventory }
+  | { kind: "no-session" }
+  | { kind: "no-coins"; message: string }
+  | { kind: "error"; message: string };
+
+/** Precios del gacha. */
+export async function getGachaInfo(): Promise<GachaInfo | null> {
+  try {
+    const res = await fetch(`${API_BASE}/api/gacha/info`);
+    if (!res.ok) return null;
+    return (await res.json()) as GachaInfo;
+  } catch {
+    return null;
+  }
+}
+
+/** Inventario de tokens del usuario (null si no hay sesión o falla). */
+export async function getTokens(): Promise<TokenInventory | null> {
+  try {
+    const res = await fetch(`${API_BASE}/api/gacha/tokens`, { credentials: "include" });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { tokens: TokenInventory | null };
+    return data.tokens;
+  } catch {
+    return null;
+  }
+}
+
+/** Tira en el gacha (1 o 10 veces). El servidor cobra y sortea. */
+export async function pull(count: 1 | 10): Promise<PullOutcome> {
+  try {
+    const res = await fetch(`${API_BASE}/api/gacha/pull?count=${count}`, {
+      method: "POST",
+      credentials: "include",
+    });
+    if (res.status === 401) return { kind: "no-session" };
+    if (res.status === 422) {
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      return { kind: "no-coins", message: data.error ?? "No tienes monedas suficientes." };
+    }
+    if (!res.ok) return { kind: "error", message: `Error del servidor (${res.status}).` };
+    const data = (await res.json()) as {
+      pulls: Pull[];
+      cost: number;
+      coins: number;
+      tokens: TokenInventory;
+    };
+    return { kind: "ok", pulls: data.pulls, cost: data.cost, coins: data.coins, tokens: data.tokens };
+  } catch {
+    return { kind: "error", message: "No se pudo contactar con el servidor." };
   }
 }
 

@@ -30,6 +30,7 @@ import {
 } from "./net/api.ts";
 import { NicknameDialog } from "./ui/nicknameDialog.ts";
 import { RankingScreen } from "./ui/rankingScreen.ts";
+import { GachaScreen } from "./ui/gachaScreen.ts";
 
 const canvas = document.querySelector<HTMLCanvasElement>("#game");
 if (!canvas) {
@@ -76,6 +77,7 @@ class App {
     onOpenReplays: () => void this.openReplayList(),
     onOpenTutorial: () => void this.openTutorial(),
     onOpenRanking: () => void this.openRanking(),
+    onOpenGacha: () => void this.openGacha(),
     onLogin: () => startGoogleLogin(),
     onLogout: () => void this.onLogout(),
     onChangeNickname: () => this.openNicknameDialog(),
@@ -86,6 +88,16 @@ class App {
     onBack: () => {
       void this.transition(() => {
         this.rankingScreen.hide();
+        this.showMenu();
+      });
+    },
+  });
+
+  /** Pantalla de cofres (gacha) + mochila de tokens. */
+  private readonly gachaScreen = new GachaScreen({
+    onBack: () => {
+      void this.transition(() => {
+        this.gachaScreen.hide();
         this.showMenu();
       });
     },
@@ -522,6 +534,14 @@ class App {
     await this.transition(() => {
       this.hideMenu();
       this.rankingScreen.show();
+    });
+  }
+
+  /** Abre los cofres (gacha) desde el menú. */
+  private async openGacha(): Promise<void> {
+    await this.transition(() => {
+      this.hideMenu();
+      this.gachaScreen.show();
     });
   }
 
