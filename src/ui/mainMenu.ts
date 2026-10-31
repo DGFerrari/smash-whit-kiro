@@ -20,6 +20,8 @@ export interface MainMenuCallbacks {
   onOpenTutorial: () => void;
   /** Abrir la clasificación (ranking). */
   onOpenRanking: () => void;
+  /** Abrir los cofres (gacha). */
+  onOpenGacha: () => void;
   /** Iniciar sesión con Google (redirección al servidor). */
   onLogin: () => void;
   /** Cerrar sesión. */
@@ -36,7 +38,7 @@ export interface MenuUser {
 }
 
 /** Valor de una opción del menú: modo jugable, ver replay, tutorial o ranking. */
-type MenuOption = GameMode | "replay" | "tutorial" | "ranking";
+type MenuOption = GameMode | "replay" | "tutorial" | "ranking" | "gacha";
 
 /** Clave de localStorage: ¿el jugador ya ha hecho el tutorial alguna vez? */
 const TUTORIAL_DONE_KEY = "smashb.tutorialDone.v1";
@@ -99,6 +101,13 @@ const MODES: ModeDef[] = [
     hint: "Tabla de jugadores: victorias, kills, muertes y monedas. Ordena por cualquier columna y encuentra tu posición.",
     playable: true,
     accent: "#4dd0e1",
+  },
+  {
+    value: "gacha",
+    label: "Gacha",
+    hint: "Gasta tus monedas en tiradas y consigue tokens (común, épico o legendario). Tira x1 o x10 con descuento.",
+    playable: true,
+    accent: "#ffa726",
   },
 ];
 
@@ -237,6 +246,10 @@ export class MainMenu {
     }
     if (this.selected === "ranking") {
       this.cb.onOpenRanking();
+      return;
+    }
+    if (this.selected === "gacha") {
+      this.cb.onOpenGacha();
       return;
     }
     this.cb.onPlay(this.selected as GameMode);

@@ -62,3 +62,21 @@ export const playerStats = pgTable("player_stats", {
 
 export type PlayerStats = typeof playerStats.$inferSelect;
 export type NewPlayerStats = typeof playerStats.$inferInsert;
+
+/**
+ * INVENTARIO de tokens del jugador (una fila por usuario). Los tokens se ganan
+ * en el gacha según la rareza que toque. Se acumulan sin límite. Es el primer
+ * "apartado" del inventario (mochila); más adelante habrá otros (cosméticos…).
+ */
+export const playerTokens = pgTable("player_tokens", {
+  userId: uuid("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  common: integer("common").notNull().default(0),
+  epic: integer("epic").notNull().default(0),
+  legendary: integer("legendary").notNull().default(0),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type PlayerTokens = typeof playerTokens.$inferSelect;
+export type NewPlayerTokens = typeof playerTokens.$inferInsert;
