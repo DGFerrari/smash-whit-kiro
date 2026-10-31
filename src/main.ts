@@ -31,6 +31,12 @@ import {
 import { NicknameDialog } from "./ui/nicknameDialog.ts";
 import { RankingScreen } from "./ui/rankingScreen.ts";
 import { GachaScreen } from "./ui/gachaScreen.ts";
+import { OnlineScreen } from "./ui/onlineScreen.ts";
+import { OnlineLobby } from "./ui/onlineLobby.ts";
+import { OnlineLoop } from "./game/onlineLoop.ts";
+import type { PeerConnection } from "./net/peer.ts";
+import type { CharacterId } from "./engine/game/characters.ts";
+import type { StageId } from "./engine/game/stages.ts";
 
 const canvas = document.querySelector<HTMLCanvasElement>("#game");
 if (!canvas) {
@@ -78,6 +84,7 @@ class App {
     onOpenTutorial: () => void this.openTutorial(),
     onOpenRanking: () => void this.openRanking(),
     onOpenGacha: () => void this.openGacha(),
+    onOpenOnline: () => void this.openOnline(),
     onLogin: () => startGoogleLogin(),
     onLogout: () => void this.onLogout(),
     onChangeNickname: () => this.openNicknameDialog(),
@@ -102,6 +109,35 @@ class App {
       });
     },
   });
+
+  /** Pantalla de online (crear/unirse a sala P2P). */
+  private readonly onlineScreen = new OnlineScreen({
+    onBack: () => {
+      void this.transition(() => {
+        this.onlineScreen.hide();
+        this.showMenu();
+      });
+    },
+    onReady: (peer, role) => this.openOnlineLobby(peer, role),
+  });
+
+  /** Lobby online (selección de personaje/mapa sincronizada). */
+  private readonly onlineLobby = new OnlineLobby({
+    onBack: () => {
+      this.onlinePeer = null;
+      void this.transition(() => {
+        this.onlineLobby.hide();
+        this.showMenu();
+      });
+    },
+    onStart: (seed, characters, stage) => this.startOnlineMatch(seed, characters, stage),
+  });
+
+  /** Peer de la sesión online actual (compartido entre lobby y partida). */
+  private onlinePeer: PeerConnection | null = null;
+  private onlineRole: "host" | "guest" = "host";
+  /** Bucle de la partida online en curso (null si no hay). */
+  private onlineLoop: OnlineLoop | null = null;
 
   /** Usuario con sesión actual (o null). Para precargar el apodo en el diálogo. */
   private currentUser: AuthUser | null = null;
@@ -543,6 +579,78 @@ class App {
       this.hideMenu();
       this.gachaScreen.show();
     });
+  }
+
+  /** Abre el online (crear/unirse a sala P2P) desde el menú. */
+  private async openOnline(): Promise<void> {
+    await this.transition(() => {
+      this.hideMenu();
+      this.onlineScreen.show();
+    });
+  }
+
+  /** El P2P está listo: pasamos de la sala a la selección (lobby online). */
+  private openOnlineLobby(peer: PeerConnection, role: "host" | "guest"): void {
+    this.onlinePeer = peer;
+    this.onlineRole = role;
+    void this.transition(() => {
+      this.onlineScreen.hide();
+      this.onlineLobby.open(peer, role);
+    });
+  }
+
+  /**
+   * Arranca la partida ONLINE con la config acordada en el lobby. Ambos clientes
+   * construyen el MISMO mundo (misma semilla → determinista) y lanzan el bucle
+   * de lockstep. El apodo del usuario va como etiqueta de su jugador.
+   */
+  private startOnlineMatch(seed: number, characters: CharacterId[], stage: StageId): void {
+    const peer = this.onlinePeer;
+    if (!peer) return;
+    const role = this.onlineRole;
+
+    // Etiquetas: mi jugador con mi apodo (si hay sesión), el rival como "Rival".
+    const myNick = this.currentUser?.nickname ?? (role === "host" ? "P1" : "P2");
+    const labels = role === "host" ? [myNick, "Rival"] : ["Rival", myNick];
+
+    const config: MatchConfig = {
+      characters,
+      stage,
+      controllers: ["human", "human"],
+      labels,
+    };
+    const world = new World("versus", seed, config);
+
+    // Si el rival se desconecta durante la partida, cortamos y avisamos.
+    peer.setClosedHandler(() => this.onOnlinePeerLeft());
+
+    void this.transition(() => {
+      this.onlineLobby.hide();
+      this.onlineLoop = new OnlineLoop(world, renderer, camera, peer, role, {
+        onGameOver: () => this.quitOnline(),
+      });
+      camera.resize(renderer.cssWidth, renderer.cssHeight);
+      this.onlineLoop.start();
+    });
+  }
+
+  /** El rival se fue de la partida online: la cortamos y volvemos al menú. */
+  private onOnlinePeerLeft(): void {
+    this.onlineLoop?.stop();
+    this.onlineLoop = null;
+    void confirmDialog({
+      title: "Rival desconectado",
+      message: "El otro jugador ha abandonado la partida online. Volverás al menú.",
+      confirmText: "Entendido",
+      cancelText: "Volver",
+    }).then(() => void this.toMenu());
+  }
+
+  /** Termina la partida online y vuelve al menú. */
+  private quitOnline(): void {
+    this.onlineLoop?.stop();
+    this.onlineLoop = null;
+    void this.toMenu();
   }
 
   /** Vuelve del reproductor a la lista de repeticiones (con carga completa). */

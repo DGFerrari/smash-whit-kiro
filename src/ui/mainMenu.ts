@@ -22,6 +22,8 @@ export interface MainMenuCallbacks {
   onOpenRanking: () => void;
   /** Abrir los cofres (gacha). */
   onOpenGacha: () => void;
+  /** Abrir el online (crear/unirse a una sala P2P). */
+  onOpenOnline: () => void;
   /** Iniciar sesión con Google (redirección al servidor). */
   onLogin: () => void;
   /** Cerrar sesión. */
@@ -38,7 +40,7 @@ export interface MenuUser {
 }
 
 /** Valor de una opción del menú: modo jugable, ver replay, tutorial o ranking. */
-type MenuOption = GameMode | "replay" | "tutorial" | "ranking" | "gacha";
+type MenuOption = GameMode | "replay" | "tutorial" | "ranking" | "gacha" | "online";
 
 /** Clave de localStorage: ¿el jugador ya ha hecho el tutorial alguna vez? */
 const TUTORIAL_DONE_KEY = "smashb.tutorialDone.v1";
@@ -108,6 +110,13 @@ const MODES: ModeDef[] = [
     hint: "Gasta tus monedas en tiradas y consigue tokens (común, épico o legendario). Tira x1 o x10 con descuento.",
     playable: true,
     accent: "#ffa726",
+  },
+  {
+    value: "online",
+    label: "Online",
+    hint: "Juega en vivo contra un amigo por internet. Crea una sala y comparte el código, o únete con el suyo.",
+    playable: true,
+    accent: "#ff6a8b",
   },
 ];
 
@@ -250,6 +259,10 @@ export class MainMenu {
     }
     if (this.selected === "gacha") {
       this.cb.onOpenGacha();
+      return;
+    }
+    if (this.selected === "online") {
+      this.cb.onOpenOnline();
       return;
     }
     this.cb.onPlay(this.selected as GameMode);
