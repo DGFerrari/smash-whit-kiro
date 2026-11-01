@@ -22,6 +22,8 @@ export interface MainMenuCallbacks {
   onOpenRanking: () => void;
   /** Abrir los cofres (gacha). */
   onOpenGacha: () => void;
+  /** Abrir el online (crear/unirse a una sala P2P). */
+  onOpenOnline: () => void;
   /** Iniciar sesión con Google (redirección al servidor). */
   onLogin: () => void;
   /** Cerrar sesión. */
@@ -38,7 +40,7 @@ export interface MenuUser {
 }
 
 /** Valor de una opción del menú: modo jugable, ver replay, tutorial o ranking. */
-type MenuOption = GameMode | "replay" | "tutorial" | "ranking" | "gacha";
+type MenuOption = GameMode | "replay" | "tutorial" | "ranking" | "gacha" | "online";
 
 /** Clave de localStorage: ¿el jugador ya ha hecho el tutorial alguna vez? */
 const TUTORIAL_DONE_KEY = "smashb.tutorialDone.v1";
@@ -69,8 +71,15 @@ interface ModeDef {
 const MODES: ModeDef[] = [
   {
     value: "versus",
-    label: "Batalla",
-    hint: "Dos jugadores en el mismo teclado. Elige personajes y escenario; gana el último en pie.",
+    label: "Singleplayer",
+    hint: "Varios jugadores en el mismo teclado (o contra la CPU). Elige personajes y escenario; gana el último en pie.",
+    playable: true,
+    accent: "#ff6a8b",
+  },
+  {
+    value: "online",
+    label: "Multiplayer",
+    hint: "Juega en vivo contra tus amigos por internet (hasta 4). Crea una sala y comparte el código, o únete con el suyo.",
     playable: true,
     accent: "#ff6a8b",
   },
@@ -250,6 +259,10 @@ export class MainMenu {
     }
     if (this.selected === "gacha") {
       this.cb.onOpenGacha();
+      return;
+    }
+    if (this.selected === "online") {
+      this.cb.onOpenOnline();
       return;
     }
     this.cb.onPlay(this.selected as GameMode);

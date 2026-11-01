@@ -41,11 +41,15 @@ export class MatchValidationError extends Error {}
 /**
  * Re-simula el replay y calcula el resultado para el jugador que lo envió.
  *
- * Atribución: el usuario logueado controló un combatiente HUMANO. Tomamos el
- * primer fighter cuyo controller sea "human" (en versus local con 2 humanos es
- * ambiguo; de momento se atribuye al primero; se podrá refinar).
+ * Atribución:
+ *  - OFFLINE (attributedSlot indefinido): el usuario logueado controló un
+ *    combatiente HUMANO. Tomamos el primer fighter cuyo controller sea "human".
+ *  - ONLINE (attributedSlot definido): en online TODOS los fighters son
+ *    "human", así que el submit indica QUÉ slot le corresponde al usuario y
+ *    puntuamos ese combatiente. El servidor re-simula, así un perdedor no puede
+ *    falsear una victoria.
  */
-export function validateMatch(data: ReplayData): ValidatedMatch {
+export function validateMatch(data: ReplayData, attributedSlot?: number): ValidatedMatch {
   // --- Comprobaciones básicas de forma ---
   if (!data || typeof data.seed !== "number" || !Array.isArray(data.steps)) {
     throw new MatchValidationError("Replay con formato inválido.");
@@ -61,9 +65,24 @@ export function validateMatch(data: ReplayData): ValidatedMatch {
   }
 
   const controllers = data.controllers ?? [];
-  const humanIndex = controllers.findIndex((c) => c === "human");
-  if (humanIndex < 0) {
-    throw new MatchValidationError("La partida no tiene jugador humano: no puntúa.");
+  let humanIndex: number;
+  if (attributedSlot === undefined) {
+    // Offline: primer humano.
+    humanIndex = controllers.findIndex((c) => c === "human");
+    if (humanIndex < 0) {
+      throw new MatchValidationError("La partida no tiene jugador humano: no puntúa.");
+    }
+  } else {
+    // Online: el slot que indica el usuario (debe ser un combatiente válido).
+    const playerCount = data.characters?.length ?? controllers.length;
+    if (
+      !Number.isInteger(attributedSlot) ||
+      attributedSlot < 0 ||
+      attributedSlot >= playerCount
+    ) {
+      throw new MatchValidationError("Slot atribuido inválido.");
+    }
+    humanIndex = attributedSlot;
   }
 
   // --- Re-simulación determinista (sin render) ---

@@ -12,19 +12,26 @@ import { users, playerStats } from "./schema.ts";
  */
 
 /** Campos por los que se puede ordenar el ranking. */
-export type RankField = "wins" | "kills" | "deaths" | "coins";
+export type RankField = "wins" | "onlineWins" | "kills" | "deaths" | "coins";
 export type RankOrder = "asc" | "desc";
 
 /** Columnas permitidas (lista blanca) -> columna Drizzle. */
 const COLUMN = {
   wins: playerStats.wins,
+  onlineWins: playerStats.onlineWins,
   kills: playerStats.kills,
   deaths: playerStats.deaths,
   coins: playerStats.coins,
 } as const;
 
 export function isRankField(v: string): v is RankField {
-  return v === "wins" || v === "kills" || v === "deaths" || v === "coins";
+  return (
+    v === "wins" ||
+    v === "onlineWins" ||
+    v === "kills" ||
+    v === "deaths" ||
+    v === "coins"
+  );
 }
 
 /** Una fila del ranking. */
@@ -33,6 +40,7 @@ export interface RankRow {
   nickname: string;
   avatarUrl: string | null;
   wins: number;
+  onlineWins: number;
   kills: number;
   deaths: number;
   coins: number;
@@ -68,6 +76,7 @@ export async function getRanking(
       nickname: users.nickname,
       avatarUrl: users.avatarUrl,
       wins: playerStats.wins,
+      onlineWins: playerStats.onlineWins,
       kills: playerStats.kills,
       deaths: playerStats.deaths,
       coins: playerStats.coins,

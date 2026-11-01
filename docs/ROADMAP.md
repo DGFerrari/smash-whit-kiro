@@ -234,27 +234,40 @@ falsear desde el cliente.
 
 ## Fase 5 — Modo online
 
-Lo más difícil; por eso va al final. Plantearlo en dos escalones.
+Lo más difícil; por eso va al final. Se implementó **PvP en vivo** con
+**lockstep + input-delay** (el motor ya es determinista), topología **estrella
+(host-relay)** para **2–4 jugadores**, sin coste de infraestructura (WebRTC P2P
+con STUN; el servidor solo hace de signaling).
 
-### 5a — Online asíncrono (recomendado primero)
-- [ ] Retar a un amigo: se juega contra su "fantasma"/replay o contra su CPU, y
-      el servidor valida el resultado. No requiere sincronización en vivo.
-- [ ] Reutiliza casi todo de las fases 2–3.
+### Señalización y transporte
+- [x] Salas por código (servidor WebSocket con `@hono/node-ws`), hasta 4.
+- [x] WebRTC P2P: el host mantiene un canal con cada guest (STUN público, sin TURN).
+- [x] Handshake robusto: host siempre offerer (evita "glare"), ICE encolado
+      hasta tener descripción remota.
+- [x] Desconexiones deduplicadas por slot (un solo aviso, sin bugs).
 
-### 5b — PvP en tiempo real (rollback netcode)
-- [ ] Transporte de baja latencia entre clientes (WebSockets/WebRTC).
-- [ ] Implementar **rollback netcode**: intercambiar inputs, predecir, y
-      corregir re-simulando cuando llega el input real. Requiere el motor
-      determinista (ya lo tenemos) y guardar/restaurar estado del mundo.
-- [ ] Emparejamiento simple (salas por código para jugar con amigos).
-- [ ] Manejo de desconexiones y desincronizaciones.
+### Lobby y partida
+- [x] Lobby = selección con la MISMA interfaz que Batalla (fichas arrastrables),
+      estado autoritativo del host difundido a todos. Código de sala copiable.
+- [x] Lockstep N jugadores: guests mandan input al host, el host difunde el
+      frame completo; interpolación clampeada (sin "teletransportes").
+- [x] Cuenta atrás de intro y cartel "FINISH" como en offline.
+- [x] Menú de pausa online que NO congela el juego, con salida de partida.
 
-**Entregable 5a:** desafíos online asíncronos con resultado verificado.
-**Entregable 5b:** combate 1v1 en vivo entre dos máquinas.
+### Post-partida y puntuación
+- [x] Pantalla de resultados con stats de todos; cada jugador acepta (tick en su
+      tarjeta); el host decide revancha o volver al lobby.
+- [x] Puntuación validada en servidor: el host arma el replay completo, cada
+      cliente lo envía con su slot, el servidor re-simula y otorga monedas
+      (misma fórmula) + victorias ONLINE separadas (`online_wins`), ordenables
+      en el ranking.
+- [x] Replay de la partida online guardado localmente con los nombres correctos.
 
-> El rollback es un mini-proyecto en sí mismo. Para "jugar con amigos" puede ser
-> suficiente con 5a, o con un PvP más simple (input lock-step) asumiendo algo de
-> latencia. Decidir según cuánto quieras invertir.
+**Entregable 5 COMPLETO:** combate en vivo 2–4 jugadores entre máquinas, con
+lobby, post-partida y puntuación online verificada en servidor.
+
+> Posible mejora futura: rollback netcode (en vez de lockstep) para ocultar la
+> latencia por completo, y TURN para NAT estrictas.
 
 ---
 

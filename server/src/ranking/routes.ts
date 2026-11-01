@@ -45,6 +45,7 @@ rankingRoutes.get("/", async (c) => {
       nickname: r.nickname,
       avatarUrl: r.avatarUrl,
       wins: r.wins,
+      onlineWins: r.onlineWins,
       kills: r.kills,
       deaths: r.deaths,
       coins: r.coins,

@@ -1,4 +1,5 @@
 import { serve } from "@hono/node-server";
+import { createNodeWebSocket } from "@hono/node-ws";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { sql } from "drizzle-orm";
@@ -8,6 +9,7 @@ import { authRoutes } from "./auth/routes.ts";
 import { matchRoutes } from "./match/routes.ts";
 import { rankingRoutes } from "./ranking/routes.ts";
 import { gachaRoutes } from "./gacha/routes.ts";
+import { createOnlineRoutes } from "./online/routes.ts";
 
 /**
  * Backend de smash-B (Fase 2+).
@@ -20,6 +22,10 @@ import { gachaRoutes } from "./gacha/routes.ts";
  */
 
 const app = new Hono();
+
+// WebSocket para el signaling del online (P2P). createNodeWebSocket enlaza con
+// el servidor HTTP de @hono/node-server mediante injectWebSocket (más abajo).
+const { upgradeWebSocket, injectWebSocket } = createNodeWebSocket({ app });
 
 // CORS: el cliente (localhost:5173 / GitHub Pages) y el server están en
 // orígenes distintos. `credentials: true` permite que viaje la cookie de sesión.
@@ -45,6 +51,9 @@ app.route("/api/ranking", rankingRoutes);
 // Gacha (tiradas + inventario de tokens).
 app.route("/api/gacha", gachaRoutes);
 
+// Online: signaling de salas P2P por WebSocket (/api/online/ws).
+app.route("/api/online", createOnlineRoutes(upgradeWebSocket));
+
 /** Raíz informativa (no expone nada sensible). */
 app.get("/", (c) => c.text("smash-B server OK"));
 
@@ -65,6 +74,8 @@ app.get("/api/db-check", async (c) => {
   }
 });
 
-serve({ fetch: app.fetch, port: env.port }, (info) => {
+const server = serve({ fetch: app.fetch, port: env.port }, (info) => {
   console.log(`smash-B server escuchando en http://localhost:${info.port}`);
 });
+// Engancha el manejo de WebSocket (signaling del online) al servidor HTTP.
+injectWebSocket(server);

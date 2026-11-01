@@ -2859,3 +2859,356 @@ body.hide-native-cursor * {
   font-weight: 900;
   color: #f1f4fa;
 }
+
+/* ===== Pantalla de online ===== */
+.online-form {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  margin: 24px auto;
+  width: min(92vw, 420px);
+}
+
+.online-create {
+  flex-direction: row;
+  width: 100%;
+  padding: 16px;
+  font-size: 18px;
+  font-weight: 800;
+  text-align: center;
+  align-items: center;
+  justify-content: center;
+}
+
+.online-join-row {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+}
+
+.online-code-input {
+  flex: 1;
+  padding: 14px;
+  background: #060a14;
+  border: 1px solid #2d3850;
+  border-radius: 10px;
+  color: #f1f4fa;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 4px;
+  text-align: center;
+  text-transform: uppercase;
+  outline: none;
+}
+
+.online-code-input:focus {
+  border-color: #ff6a8b;
+}
+
+.online-join {
+  flex-direction: row;
+  width: auto;
+  padding: 14px 22px;
+  font-size: 16px;
+  font-weight: 800;
+  text-align: center;
+  align-items: center;
+}
+
+.online-code {
+  display: none;
+  text-align: center;
+  color: #cdd6e4;
+  font-size: 16px;
+  margin: 12px 0;
+}
+
+.online-code strong {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 10px 24px;
+  background: rgba(255, 106, 139, 0.12);
+  border: 1px solid #ff6a8b;
+  border-radius: 12px;
+  color: #ff9db3;
+  font-size: 34px;
+  font-weight: 900;
+  letter-spacing: 8px;
+}
+
+.online-status {
+  text-align: center;
+  color: #8b97ad;
+  font-size: 15px;
+  min-height: 22px;
+  margin: 10px 0;
+}
+
+/* ===== Lobby online ===== */
+.lobby-phase {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  width: min(94vw, 760px);
+  margin: 10px auto;
+}
+
+/* Tarjetas de jugador (P1..P4). */
+.lobby-cards {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.lobby-card {
+  width: 150px;
+  min-height: 96px;
+  padding: 12px;
+  background: #10151f;
+  border: 2px solid #2d3850;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.lobby-card.empty {
+  opacity: 0.4;
+  border-style: dashed;
+}
+
+.lobby-card-label {
+  font-size: 12px;
+  font-weight: 900;
+  color: #8b97ad;
+  letter-spacing: 1px;
+}
+
+.lobby-card-who {
+  font-size: 13px;
+  color: #cdd6e4;
+}
+
+.lobby-card-char {
+  font-size: 17px;
+  font-weight: 800;
+}
+
+/* Retratos para elegir personaje. */
+.lobby-portraits {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.lobby-portrait {
+  width: 96px;
+  height: 72px;
+  border-radius: 10px;
+  border: 2px solid transparent;
+  color: #fff;
+  font-weight: 800;
+  font-size: 15px;
+  cursor: pointer;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  transition: transform 0.12s ease, border-color 0.12s ease;
+}
+
+.lobby-portrait:hover {
+  transform: translateY(-2px);
+}
+
+.lobby-portrait.selected {
+  border-color: #fff;
+  box-shadow: 0 0 18px rgba(255, 255, 255, 0.4);
+}
+
+/* Miniaturas de escenario. */
+.lobby-stages {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.lobby-stage {
+  width: 160px;
+  height: 100px;
+  border-radius: 12px;
+  border: 2px solid #2d3850;
+  position: relative;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.lobby-stage:disabled {
+  cursor: default;
+}
+
+.lobby-stage.selected {
+  border-color: #ffd84d;
+  box-shadow: 0 0 20px rgba(255, 216, 77, 0.5);
+}
+
+.lobby-stage-name {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 6px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #f1f4fa;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+/* Barra con el código de sala (copiable) en el lobby online. */
+.lobby-code-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 4px auto 10px;
+  padding: 8px 16px;
+  background: #10151f;
+  border: 2px solid #2d3850;
+  border-radius: 12px;
+}
+
+.lobby-code-label {
+  font-size: 13px;
+  color: #8b97ad;
+  font-weight: 700;
+}
+
+.lobby-code-value {
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: 3px;
+  color: #ffd84d;
+  font-family: "Courier New", monospace;
+}
+
+.lobby-code-copy {
+  padding: 6px 14px;
+  background: #2f6bff;
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  font-weight: 800;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.12s ease, transform 0.1s ease;
+}
+
+.lobby-code-copy:hover {
+  background: #4a7fff;
+  transform: translateY(-1px);
+}
+
+/* Aviso de espera para los guests (lo que controla el host). */
+.lobby-wait {
+  min-height: 20px;
+  margin: 6px auto;
+  color: #9aa5be;
+  font-size: 14px;
+  text-align: center;
+  max-width: 560px;
+}
+
+/* Estado de aceptación en la pantalla de fin de partida online. */
+.online-post-status {
+  margin: 10px auto 2px;
+  text-align: center;
+  color: #cdd6e4;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+/* Acciones del host (revancha / volver al lobby) bajo el "aceptar". */
+.online-post-host {
+  margin-top: 6px;
+}
+
+/* Tick de "ha aceptado" en la tarjeta del podio (fin de partida online). */
+.podium-card {
+  position: relative;
+}
+
+.podium-accept-tick {
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: #45c88a;
+  color: #072;
+  font-size: 18px;
+  font-weight: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 14px rgba(69, 200, 138, 0.7);
+  transform: scale(0);
+  transition: transform 0.2s cubic-bezier(0.3, 1.6, 0.5, 1);
+  z-index: 2;
+}
+
+.podium-card.accepted .podium-accept-tick {
+  transform: scale(1);
+}
+
+/* ===== Menú de pausa ONLINE (no congela el juego) ===== */
+.online-pause {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+
+.online-pause.open {
+  display: flex;
+}
+
+.online-pause-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(6, 9, 16, 0.55);
+  backdrop-filter: blur(2px);
+}
+
+.online-pause-panel {
+  position: relative;
+  z-index: 1;
+  width: min(92vw, 380px);
+  padding: 24px;
+  background: #121824;
+  border: 2px solid #2d3850;
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.5);
+}
+
+.online-pause-title {
+  margin: 0;
+  text-align: center;
+  color: #f1f4fa;
+  font-size: 24px;
+}
+
+.online-pause-note {
+  margin: 0 0 6px;
+  text-align: center;
+  color: #9aa5be;
+  font-size: 13px;
+  line-height: 1.4;
+}
