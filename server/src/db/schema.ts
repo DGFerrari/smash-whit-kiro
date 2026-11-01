@@ -57,6 +57,14 @@ export const playerStats = pgTable("player_stats", {
   kills: integer("kills").notNull().default(0),
   deaths: integer("deaths").notNull().default(0),
   matchesPlayed: integer("matches_played").notNull().default(0),
+  /**
+   * Victorias en partidas ONLINE (multijugador por internet). Separadas de
+   * `wins` (que cuenta las partidas locales validadas por replay) para que la
+   * clasificación pueda ordenar por éxito online sin mezclarlo con lo local.
+   */
+  onlineWins: integer("online_wins").notNull().default(0),
+  /** Partidas online validadas (informativo / anti-abuso). */
+  onlineMatches: integer("online_matches").notNull().default(0),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

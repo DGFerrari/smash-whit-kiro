@@ -1,183 +1,284 @@
-import { SignalingClient, type SignalingHandlers } from "./signaling.ts";
+import { SignalingClient } from "./signaling.ts";
 
 /**
- * Conexión P2P por WebRTC entre dos navegadores, usando el signaling solo para
- * emparejar. Una vez abierto el DataChannel, los mensajes (inputs del juego)
- * van DIRECTOS entre los dos clientes, sin pasar por el servidor.
+ * Red del online P2P en topología ESTRELLA (hasta 4 jugadores).
  *
- * Flujo (lo orquesta esta clase):
- *  - host: crea sala -> al entrar el guest, crea el DataChannel y la oferta.
- *  - guest: se une -> recibe la oferta, responde, y recibe el canal.
- *  - ambos: intercambian candidatos ICE por el signaling según aparecen.
+ *  - El HOST (slot 0) mantiene una conexión WebRTC con CADA guest.
+ *  - Cada GUEST mantiene UNA conexión con el host.
+ *  - Para que dos guests "se hablen", el host hace de relay (a nivel de juego,
+ *    no de red): el bucle de partida reenvía inputs. Aquí solo gestionamos los
+ *    canales de datos y a quién se envía.
  *
- * Sin TURN (solo STUN público): en la mayoría de redes domésticas basta para
- * conectar P2P; en algunas NAT muy estrictas podría fallar (aceptable para
- * portafolio/amigos).
+ * Sin TURN (solo STUN público): en la mayoría de redes domésticas conecta P2P;
+ * en NAT muy estrictas podría fallar (aceptable para portafolio/amigos).
  */
 
 const RTC_CONFIG: RTCConfiguration = {
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
 };
 
-export interface PeerHandlers {
-  /** Sala creada (host): comparte este código con el amigo. */
+export interface NetworkHandlers {
+  /** Sala creada (host): comparte este código. */
   onRoomCode?: (code: string) => void;
-  /** El canal P2P está abierto y listo para enviar/recibir. */
-  onConnected?: (role: "host" | "guest") => void;
-  /** Mensaje recibido del peer por el canal de datos. */
-  onMessage?: (data: string) => void;
-  /** La conexión se cerró o el peer se fue. */
-  onClosed?: (reason: string) => void;
+  /** Tu slot asignado (0 = host, 1..3 = guest). */
+  onSlot?: (slot: number) => void;
+  /** Un canal P2P con `slot` quedó listo. */
+  onPeerConnected?: (slot: number) => void;
+  /** Mensaje recibido de `from` (slot). */
+  onMessage?: (from: number, data: string) => void;
+  /** Un miembro se fue (slot). slot 0 = host → la sala se cerró. */
+  onPeerLeft?: (slot: number) => void;
   /** Error (sala no encontrada/llena, fallo de conexión…). */
   onError?: (reason: string) => void;
 }
 
-export class PeerConnection {
-  private signaling: SignalingClient;
-  private pc: RTCPeerConnection | null = null;
-  private channel: RTCDataChannel | null = null;
-  private role: "host" | "guest" = "host";
-  private connected = false;
-  /** Manejador activo de mensajes del canal (reemplazable con setMessageHandler). */
-  private messageHandler: ((data: string) => void) | null = null;
-  /** Manejador activo de cierre (reemplazable con setClosedHandler). */
-  private closedHandler: ((reason: string) => void) | null = null;
+/** Una conexión WebRTC con un peer concreto (identificado por su slot). */
+class PeerLink {
+  readonly pc: RTCPeerConnection;
+  channel: RTCDataChannel | null = null;
+  open = false;
+  /** ¿Ya tenemos descripción remota? Hasta entonces, encolamos los ICE. */
+  remoteReady = false;
+  /** Candidatos ICE llegados antes que la descripción remota. */
+  readonly pendingIce: RTCIceCandidateInit[] = [];
+  /** ¿Ya avisamos del cierre de este link? (evita avisos duplicados). */
+  closedNotified = false;
 
-  constructor(private readonly handlers: PeerHandlers) {
-    const sig: SignalingHandlers = {
-      onCreated: (code) => this.handlers.onRoomCode?.(code),
-      onJoined: () => {
-        /* el guest ya está listo; espera la oferta del host */
-      },
-      onPeerJoined: () => {
-        // El guest entró en la sala del host: el host inicia la negociación.
-        void this.startAsHost();
-      },
-      onPeerLeft: () => this.emitClosed("peer-left"),
-      onSignal: (data) => void this.onSignal(data as SignalMessage),
-      onError: (reason) => this.handlers.onError?.(reason),
-    };
-    this.signaling = new SignalingClient(sig);
+  constructor(
+    readonly slot: number,
+    private readonly signaling: SignalingClient,
+    private readonly net: OnlineNetwork,
+  ) {
+    this.pc = new RTCPeerConnection(RTC_CONFIG);
+    this.pc.addEventListener("icecandidate", (e) => {
+      if (e.candidate) {
+        this.signaling.sendSignal(this.slot, { kind: "ice", candidate: e.candidate.toJSON() });
+      }
+    });
+    this.pc.addEventListener("connectionstatechange", () => {
+      const st = this.pc.connectionState;
+      if (st === "failed" || st === "disconnected" || st === "closed") {
+        this.net.handleLinkClosed(this.slot);
+      }
+    });
   }
 
-  /** Crea una sala y espera a que se una el amigo (serás host). */
-  host(): void {
-    this.role = "host";
-    this.signaling.createRoom();
+  attachChannel(channel: RTCDataChannel): void {
+    this.channel = channel;
+    channel.addEventListener("open", () => {
+      this.open = true;
+      this.net.handleLinkOpen(this.slot);
+    });
+    channel.addEventListener("message", (e) => this.net.handleMessage(this.slot, String(e.data)));
+    channel.addEventListener("close", () => {
+      this.net.handleLinkClosed(this.slot);
+    });
   }
 
-  /** Se une a una sala por código (serás guest). */
-  join(code: string): void {
-    this.role = "guest";
-    this.signaling.joinRoom(code);
-  }
-
-  /** Envía un mensaje al peer por el canal P2P (si está abierto). */
   send(data: string): void {
     if (this.channel?.readyState === "open") this.channel.send(data);
   }
 
-  /**
-   * Reemplaza el manejador de mensajes del canal (lo usa el bucle online para
-   * recibir los inputs una vez establecida la conexión, en vez del onMessage
-   * genérico que se pasó al construir).
-   */
-  setMessageHandler(handler: (data: string) => void): void {
+  close(): void {
+    this.channel?.close();
+    this.pc.close();
+  }
+}
+
+export class OnlineNetwork {
+  private signaling: SignalingClient;
+  mySlot = 0;
+  /** Conexiones por slot del peer. */
+  private links = new Map<number, PeerLink>();
+  /** Handlers activos reemplazables (los usa el bucle de partida). */
+  private messageHandler: ((from: number, data: string) => void) | null = null;
+  private peerLeftHandler: ((slot: number) => void) | null = null;
+  private peerConnectedHandler: ((slot: number) => void) | null = null;
+
+  constructor(private readonly handlers: NetworkHandlers) {
+    this.signaling = new SignalingClient({
+      onCreated: (code, slot) => {
+        this.mySlot = slot;
+        this.handlers.onRoomCode?.(code);
+        this.handlers.onSlot?.(slot);
+      },
+      onJoined: (_code, slot) => {
+        this.mySlot = slot;
+        this.handlers.onSlot?.(slot);
+        // El guest NO ofrece: espera la oferta del host (slot 0) y responde.
+        // (El host es SIEMPRE el offerer para evitar "glare" de doble oferta.)
+      },
+      onPeerJoined: (slot) => {
+        // Host: entró un guest → el host es offerer hacia ese guest.
+        void this.startOffer(slot);
+      },
+      onPeerLeft: (slot) => {
+        // El servidor avisa de que un miembro se fue. Pasa por el MISMO camino
+        // deduplicado que los eventos de WebRTC (si el link no existe, p.ej. un
+        // guest se fue antes de conectar su canal, avisamos igual una vez).
+        this.dispatchPeerLeft(slot);
+      },
+      onSignal: (from, data) => void this.onSignal(from, data as SignalMessage),
+      onError: (reason) => this.handlers.onError?.(reason),
+    });
+  }
+
+  host(): void {
+    this.signaling.createRoom();
+  }
+
+  join(code: string): void {
+    this.signaling.joinRoom(code);
+  }
+
+  /** Reemplaza el handler de mensajes (lo usa el bucle de partida). */
+  setMessageHandler(handler: (from: number, data: string) => void): void {
     this.messageHandler = handler;
   }
 
-  /** Reemplaza el manejador de cierre/desconexión (lo usa el bucle online). */
-  setClosedHandler(handler: (reason: string) => void): void {
-    this.closedHandler = handler;
+  /** Reemplaza el handler de "peer se fue" (lo usa el bucle de partida). */
+  setPeerLeftHandler(handler: (slot: number) => void): void {
+    this.peerLeftHandler = handler;
   }
 
-  /** Cierra todo (canal, conexión, signaling). */
+  /** Reemplaza el handler de "canal P2P con slot listo". */
+  setPeerConnectedHandler(handler: (slot: number) => void): void {
+    this.peerConnectedHandler = handler;
+    // Reavisa de los que ya estaban conectados (por si se registra tarde).
+    for (const slot of this.connectedSlots()) handler(slot);
+  }
+
+  /** Envía a TODOS los peers conectados. */
+  broadcast(data: string): void {
+    for (const link of this.links.values()) link.send(data);
+  }
+
+  /** Envía a un slot concreto. */
+  sendTo(slot: number, data: string): void {
+    this.links.get(slot)?.send(data);
+  }
+
+  /** Slots de los peers con canal abierto (no incluye el mío). */
+  connectedSlots(): number[] {
+    return [...this.links.values()].filter((l) => l.open).map((l) => l.slot);
+  }
+
+  private closed = false;
+
   close(): void {
-    this.channel?.close();
-    this.pc?.close();
+    if (this.closed) return;
+    this.closed = true;
+    // Soltamos los handlers del juego para que nada siga reaccionando tras cerrar.
+    this.messageHandler = null;
+    this.peerLeftHandler = null;
+    this.peerConnectedHandler = null;
+    for (const link of this.links.values()) link.close();
+    this.links.clear();
     this.signaling.close();
-    this.channel = null;
-    this.pc = null;
   }
 
-  // --- Negociación WebRTC ---------------------------------------------------
+  // --- WebRTC ---------------------------------------------------------------
 
-  private createPc(): RTCPeerConnection {
-    const pc = new RTCPeerConnection(RTC_CONFIG);
-    this.pc = pc;
-    // Enviamos cada candidato ICE al peer según los descubre el navegador.
-    pc.addEventListener("icecandidate", (e) => {
-      if (e.candidate) {
-        this.signaling.sendSignal({ kind: "ice", candidate: e.candidate.toJSON() });
-      }
-    });
-    pc.addEventListener("connectionstatechange", () => {
-      const st = pc.connectionState;
-      if (st === "failed" || st === "disconnected" || st === "closed") {
-        if (this.connected) this.emitClosed(st);
-        else this.handlers.onError?.("connection-" + st);
-      }
-    });
-    return pc;
+  /** Inicia una conexión como OFFERER hacia `slot` (crea el DataChannel). */
+  private async startOffer(slot: number): Promise<void> {
+    const link = new PeerLink(slot, this.signaling, this);
+    this.links.set(slot, link);
+    const channel = link.pc.createDataChannel("game", { ordered: true });
+    link.attachChannel(channel);
+    const offer = await link.pc.createOffer();
+    await link.pc.setLocalDescription(offer);
+    this.signaling.sendSignal(slot, { kind: "offer", sdp: offer });
   }
 
-  /** Host: crea el DataChannel y la oferta. */
-  private async startAsHost(): Promise<void> {
-    const pc = this.createPc();
-    const channel = pc.createDataChannel("game", { ordered: true });
-    this.setupChannel(channel);
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    this.signaling.sendSignal({ kind: "offer", sdp: offer });
-  }
-
-  /** Procesa un mensaje de signaling (oferta/respuesta/ICE del peer). */
-  private async onSignal(msg: SignalMessage): Promise<void> {
+  /** Procesa un mensaje WebRTC del slot `from`. */
+  private async onSignal(from: number, msg: SignalMessage): Promise<void> {
+    let link = this.links.get(from);
     if (msg.kind === "offer") {
-      // Guest: recibe la oferta, prepara la conexión y responde.
-      const pc = this.createPc();
-      pc.addEventListener("datachannel", (e) => this.setupChannel(e.channel));
-      await pc.setRemoteDescription(msg.sdp);
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-      this.signaling.sendSignal({ kind: "answer", sdp: answer });
+      // Somos el ANSWERER para este peer: creamos el link y respondemos.
+      if (!link) {
+        link = new PeerLink(from, this.signaling, this);
+        this.links.set(from, link);
+        link.pc.addEventListener("datachannel", (e) => link!.attachChannel(e.channel));
+      }
+      await link.pc.setRemoteDescription(msg.sdp);
+      await this.flushIce(link);
+      const answer = await link.pc.createAnswer();
+      await link.pc.setLocalDescription(answer);
+      this.signaling.sendSignal(from, { kind: "answer", sdp: answer });
     } else if (msg.kind === "answer") {
-      // Host: recibe la respuesta del guest.
-      await this.pc?.setRemoteDescription(msg.sdp);
+      if (!link) return;
+      await link.pc.setRemoteDescription(msg.sdp);
+      await this.flushIce(link);
     } else if (msg.kind === "ice") {
+      // Si aún no hay descripción remota, encolamos el candidato.
+      if (!link || !link.remoteReady) {
+        link?.pendingIce.push(msg.candidate);
+        return;
+      }
       try {
-        await this.pc?.addIceCandidate(msg.candidate);
+        await link.pc.addIceCandidate(msg.candidate);
       } catch {
-        /* candidato tardío o inválido: ignorar */
+        /* candidato tardío: ignorar */
       }
     }
   }
 
-  private setupChannel(channel: RTCDataChannel): void {
-    this.channel = channel;
-    channel.addEventListener("open", () => {
-      this.connected = true;
-      this.handlers.onConnected?.(this.role);
-    });
-    channel.addEventListener("message", (e) => {
-      const data = String(e.data);
-      // Prioridad al handler activo (el bucle online); si no, el genérico.
-      if (this.messageHandler) this.messageHandler(data);
-      else this.handlers.onMessage?.(data);
-    });
-    channel.addEventListener("close", () => {
-      if (this.connected) this.emitClosed("channel-closed");
-    });
+  /** Marca la descripción remota como lista y vacía los ICE encolados. */
+  private async flushIce(link: PeerLink): Promise<void> {
+    link.remoteReady = true;
+    const pending = link.pendingIce.splice(0);
+    for (const cand of pending) {
+      try {
+        await link.pc.addIceCandidate(cand);
+      } catch {
+        /* candidato tardío: ignorar */
+      }
+    }
   }
 
-  /** Avisa de un cierre al handler activo (loop online) o al genérico. */
-  private emitClosed(reason: string): void {
-    if (this.closedHandler) this.closedHandler(reason);
-    else this.handlers.onClosed?.(reason);
+  // Llamados por PeerLink.
+  handleLinkOpen(slot: number): void {
+    if (this.closed) return;
+    this.handlers.onPeerConnected?.(slot);
+    this.peerConnectedHandler?.(slot);
   }
+  handleMessage(from: number, data: string): void {
+    if (this.closed) return;
+    if (this.messageHandler) this.messageHandler(from, data);
+    else this.handlers.onMessage?.(from, data);
+  }
+  handleLinkClosed(slot: number): void {
+    this.dispatchPeerLeft(slot);
+  }
+
+  /**
+   * Punto ÚNICO de aviso de "peer se fue", DEDUPLICADO por slot. Un mismo cierre
+   * llega por varias vías (señalización del servidor, `close` del datachannel y
+   * `connectionstatechange` a failed/disconnected/closed); sin deduplicar, el
+   * handler del juego recibía el aviso 2-3 veces y se bugueaba. Aquí marcamos el
+   * link como notificado y solo avisamos la PRIMERA vez.
+   */
+  private dispatchPeerLeft(slot: number): void {
+    if (this.closed) return;
+    const link = this.links.get(slot);
+    if (link) {
+      if (link.closedNotified) return; // ya avisado: ignorar duplicados
+      link.closedNotified = true;
+      link.close();
+      this.links.delete(slot);
+    } else {
+      // Sin link (p.ej. guest que se fue antes de conectar): dedup por un set.
+      if (this.leftSlots.has(slot)) return;
+      this.leftSlots.add(slot);
+    }
+    if (this.peerLeftHandler) this.peerLeftHandler(slot);
+    else this.handlers.onPeerLeft?.(slot);
+  }
+
+  /** Slots ya avisados como "se fueron" que no tenían link (dedup auxiliar). */
+  private readonly leftSlots = new Set<number>();
 }
 
-/** Mensajes de WebRTC que viajan por el signaling. */
 type SignalMessage =
   | { kind: "offer"; sdp: RTCSessionDescriptionInit }
   | { kind: "answer"; sdp: RTCSessionDescriptionInit }

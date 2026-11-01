@@ -3066,3 +3066,149 @@ body.hide-native-cursor * {
   font-size: 13px;
   font-weight: 700;
 }
+
+/* Barra con el código de sala (copiable) en el lobby online. */
+.lobby-code-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 4px auto 10px;
+  padding: 8px 16px;
+  background: #10151f;
+  border: 2px solid #2d3850;
+  border-radius: 12px;
+}
+
+.lobby-code-label {
+  font-size: 13px;
+  color: #8b97ad;
+  font-weight: 700;
+}
+
+.lobby-code-value {
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: 3px;
+  color: #ffd84d;
+  font-family: "Courier New", monospace;
+}
+
+.lobby-code-copy {
+  padding: 6px 14px;
+  background: #2f6bff;
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  font-weight: 800;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.12s ease, transform 0.1s ease;
+}
+
+.lobby-code-copy:hover {
+  background: #4a7fff;
+  transform: translateY(-1px);
+}
+
+/* Aviso de espera para los guests (lo que controla el host). */
+.lobby-wait {
+  min-height: 20px;
+  margin: 6px auto;
+  color: #9aa5be;
+  font-size: 14px;
+  text-align: center;
+  max-width: 560px;
+}
+
+/* Estado de aceptación en la pantalla de fin de partida online. */
+.online-post-status {
+  margin: 10px auto 2px;
+  text-align: center;
+  color: #cdd6e4;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+/* Acciones del host (revancha / volver al lobby) bajo el "aceptar". */
+.online-post-host {
+  margin-top: 6px;
+}
+
+/* Tick de "ha aceptado" en la tarjeta del podio (fin de partida online). */
+.podium-card {
+  position: relative;
+}
+
+.podium-accept-tick {
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: #45c88a;
+  color: #072;
+  font-size: 18px;
+  font-weight: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 14px rgba(69, 200, 138, 0.7);
+  transform: scale(0);
+  transition: transform 0.2s cubic-bezier(0.3, 1.6, 0.5, 1);
+  z-index: 2;
+}
+
+.podium-card.accepted .podium-accept-tick {
+  transform: scale(1);
+}
+
+/* ===== Menú de pausa ONLINE (no congela el juego) ===== */
+.online-pause {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+
+.online-pause.open {
+  display: flex;
+}
+
+.online-pause-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(6, 9, 16, 0.55);
+  backdrop-filter: blur(2px);
+}
+
+.online-pause-panel {
+  position: relative;
+  z-index: 1;
+  width: min(92vw, 380px);
+  padding: 24px;
+  background: #121824;
+  border: 2px solid #2d3850;
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.5);
+}
+
+.online-pause-title {
+  margin: 0;
+  text-align: center;
+  color: #f1f4fa;
+  font-size: 24px;
+}
+
+.online-pause-note {
+  margin: 0 0 6px;
+  text-align: center;
+  color: #9aa5be;
+  font-size: 13px;
+  line-height: 1.4;
+}

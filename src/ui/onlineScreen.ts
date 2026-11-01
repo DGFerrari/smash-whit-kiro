@@ -1,24 +1,27 @@
-import { PeerConnection } from "../net/peer.ts";
+import { OnlineNetwork } from "../net/peer.ts";
 
 /**
- * Pantalla de ONLINE (crear/unirse a una sala y establecer el P2P). De momento
- * valida la conexión P2P: cuando el canal está abierto, muestra "conectado" y
- * hace un intercambio de prueba. La partida en lockstep se engancha en el
- * siguiente paso (de ahí el callback onReady con el PeerConnection y el rol).
+ * Pantalla de entrada al ONLINE: crear una sala (serás anfitrión) o unirse con
+ * un código. Al establecer la conexión, entrega la red al lobby.
+ *
+ *  - HOST: entra al lobby en cuanto crea la sala (ya puede esperar a otros ahí).
+ *  - GUEST: entra al lobby cuando su canal P2P con el host queda abierto.
  */
 export interface OnlineScreenCallbacks {
   onBack: () => void;
-  /** El P2P está listo: entrega el peer y el rol para arrancar la partida. */
-  onReady?: (peer: PeerConnection, role: "host" | "guest") => void;
+  /** La red está lista: entrega el OnlineNetwork y el código de sala. */
+  onReady: (net: OnlineNetwork, roomCode: string) => void;
 }
 
 export class OnlineScreen {
   private readonly root: HTMLDivElement;
   private readonly statusEl: HTMLDivElement;
-  private readonly codeEl: HTMLDivElement;
   private readonly formEl: HTMLDivElement;
   private readonly input: HTMLInputElement;
-  private peer: PeerConnection | null = null;
+  private net: OnlineNetwork | null = null;
+  private entered = false;
+  /** Código de la sala (lo da el host al crear; el guest lo escribe). */
+  private roomCode = "";
 
   constructor(private readonly cb: OnlineScreenCallbacks) {
     this.root = document.createElement("div");
@@ -33,10 +36,9 @@ export class OnlineScreen {
     const hint = document.createElement("p");
     hint.className = "select-hint";
     hint.textContent =
-      "Crea una sala y pásale el código a un amigo, o únete con el código que te den.";
+      "Crea una sala y pásale el código a tus amigos (hasta 4), o únete con el código que te den.";
     this.root.appendChild(hint);
 
-    // Formulario: crear sala / unirse por código.
     this.formEl = document.createElement("div");
     this.formEl.className = "online-form";
 
@@ -68,12 +70,6 @@ export class OnlineScreen {
 
     this.root.appendChild(this.formEl);
 
-    // Código de la sala creada (para compartir).
-    this.codeEl = document.createElement("div");
-    this.codeEl.className = "online-code";
-    this.root.appendChild(this.codeEl);
-
-    // Estado de la conexión.
     this.statusEl = document.createElement("div");
     this.statusEl.className = "online-status";
     this.root.appendChild(this.statusEl);
@@ -104,23 +100,25 @@ export class OnlineScreen {
 
   private reset(): void {
     this.teardown();
+    this.entered = false;
+    this.roomCode = "";
     this.formEl.style.display = "";
-    this.codeEl.textContent = "";
-    this.codeEl.style.display = "none";
     this.setStatus("");
     this.input.value = "";
   }
 
   private teardown(): void {
-    this.peer?.close();
-    this.peer = null;
+    // Solo cerramos la red si NO hemos entrado al lobby (si entramos, el lobby
+    // se hace cargo de ella).
+    if (!this.entered) this.net?.close();
+    this.net = null;
   }
 
   private host(): void {
-    this.startPeer();
+    this.startNet();
     this.formEl.style.display = "none";
     this.setStatus("Creando sala…");
-    this.peer!.host();
+    this.net!.host();
   }
 
   private join(): void {
@@ -129,25 +127,31 @@ export class OnlineScreen {
       this.setStatus("Introduce un código válido.");
       return;
     }
-    this.startPeer();
+    this.roomCode = code;
+    this.startNet();
     this.formEl.style.display = "none";
     this.setStatus("Uniéndote a la sala…");
-    this.peer!.join(code);
+    this.net!.join(code);
   }
 
-  private startPeer(): void {
-    this.peer = new PeerConnection({
+  private startNet(): void {
+    this.net = new OnlineNetwork({
       onRoomCode: (code) => {
-        this.codeEl.style.display = "block";
-        this.codeEl.innerHTML = `Código de la sala:<br><strong>${code}</strong>`;
-        this.setStatus("Esperando a que se una tu amigo…");
+        // Host: ya puede entrar al lobby (esperará a otros allí).
+        this.roomCode = code;
+        this.setStatus(`Sala creada: ${code}`);
+        this.enterLobby();
       },
-      onConnected: (role) => {
-        this.setStatus("¡Conectado! P2P establecido ✓");
-        // En el siguiente paso aquí se lanzará la partida en lockstep.
-        this.cb.onReady?.(this.peer!, role);
+      onPeerConnected: () => {
+        // Guest: su canal con el host está listo → al lobby.
+        if (this.net && this.net.mySlot !== 0) this.enterLobby();
       },
-      onClosed: (reason) => this.setStatus(`Conexión cerrada (${reason}).`),
+      onPeerLeft: (slot) => {
+        if (slot === 0 && !this.entered) {
+          this.setStatus("El anfitrión cerró la sala.");
+          this.formEl.style.display = "";
+        }
+      },
       onError: (reason) => {
         const msg =
           reason === "not-found"
@@ -157,9 +161,14 @@ export class OnlineScreen {
               : `No se pudo conectar (${reason}).`;
         this.setStatus(msg);
         this.formEl.style.display = "";
-        this.codeEl.style.display = "none";
       },
     });
+  }
+
+  private enterLobby(): void {
+    if (this.entered || !this.net) return;
+    this.entered = true;
+    this.cb.onReady(this.net, this.roomCode);
   }
 
   private setStatus(text: string): void {

@@ -64,3 +64,28 @@ export async function applyMatchRewards(
     .returning();
   return updated;
 }
+
+/**
+ * Aplica las recompensas de una partida ONLINE. Suma monedas (misma fórmula que
+ * offline) y kills/deaths al total de ranking, pero la victoria cuenta en
+ * `onlineWins` (separada de `wins`), y usa el contador `onlineMatches`. Atómico.
+ */
+export async function applyOnlineMatchRewards(
+  userId: string,
+  rewards: MatchRewards,
+): Promise<PlayerStats> {
+  await getOrCreateStats(userId);
+  const [updated] = await db
+    .update(playerStats)
+    .set({
+      coins: sql`${playerStats.coins} + ${rewards.coins}`,
+      onlineWins: sql`${playerStats.onlineWins} + ${rewards.won ? 1 : 0}`,
+      kills: sql`${playerStats.kills} + ${rewards.kills}`,
+      deaths: sql`${playerStats.deaths} + ${rewards.deaths}`,
+      onlineMatches: sql`${playerStats.onlineMatches} + 1`,
+      updatedAt: new Date(),
+    })
+    .where(eq(playerStats.userId, userId))
+    .returning();
+  return updated;
+}

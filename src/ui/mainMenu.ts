@@ -71,8 +71,15 @@ interface ModeDef {
 const MODES: ModeDef[] = [
   {
     value: "versus",
-    label: "Batalla",
-    hint: "Dos jugadores en el mismo teclado. Elige personajes y escenario; gana el último en pie.",
+    label: "Singleplayer",
+    hint: "Varios jugadores en el mismo teclado (o contra la CPU). Elige personajes y escenario; gana el último en pie.",
+    playable: true,
+    accent: "#ff6a8b",
+  },
+  {
+    value: "online",
+    label: "Multiplayer",
+    hint: "Juega en vivo contra tus amigos por internet (hasta 4). Crea una sala y comparte el código, o únete con el suyo.",
     playable: true,
     accent: "#ff6a8b",
   },
@@ -110,13 +117,6 @@ const MODES: ModeDef[] = [
     hint: "Gasta tus monedas en tiradas y consigue tokens (común, épico o legendario). Tira x1 o x10 con descuento.",
     playable: true,
     accent: "#ffa726",
-  },
-  {
-    value: "online",
-    label: "Online",
-    hint: "Juega en vivo contra un amigo por internet. Crea una sala y comparte el código, o únete con el suyo.",
-    playable: true,
-    accent: "#ff6a8b",
   },
 ];
 

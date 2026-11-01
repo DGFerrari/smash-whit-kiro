@@ -95,6 +95,35 @@ export async function submitMatch(replay: unknown): Promise<SubmitOutcome> {
   }
 }
 
+/**
+ * Envía una partida ONLINE terminada al servidor para puntuar. `slot` es el
+ * combatiente del usuario que envía; el servidor re-simula y puntúa ese slot
+ * (la victoria cuenta en el marcador online). El replay COMPLETO lo arma el
+ * host y lo reparte a todos.
+ */
+export async function submitOnlineMatch(replay: unknown, slot: number): Promise<SubmitOutcome> {
+  try {
+    const res = await fetch(`${API_BASE}/api/match/submit-online`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ replay, slot }),
+    });
+    if (res.status === 401) return { kind: "no-session" };
+    if (res.status === 422) {
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      return { kind: "not-ranked", message: data.error ?? "La partida no puntúa." };
+    }
+    if (!res.ok) {
+      return { kind: "error", message: `Error del servidor (${res.status}).` };
+    }
+    const data = (await res.json()) as { result: MatchReward; stats: PlayerStats };
+    return { kind: "ok", reward: data.result, stats: data.stats };
+  } catch {
+    return { kind: "error", message: "No se pudo contactar con el servidor." };
+  }
+}
+
 /** Resultado de intentar cambiar el apodo. */
 export type NicknameResult =
   | { kind: "ok"; nickname: string }

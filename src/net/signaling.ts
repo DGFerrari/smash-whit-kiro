@@ -1,35 +1,28 @@
 /**
- * Cliente de SIGNALING para el online P2P. Habla por WebSocket con el servidor
- * (/api/online/ws) solo para EMPAREJAR a dos jugadores e intercambiar los
- * mensajes de presentación de WebRTC. Una vez conectados P2P, la partida va
- * directa entre navegadores y esto deja de usarse (salvo para detectar cierres).
- *
- * Mensajes del servidor: created/joined/peer-joined/peer-left/signal/error
- * (ver server/src/online/routes.ts).
+ * Cliente de SIGNALING para el online P2P (topología estrella). Habla por
+ * WebSocket con el servidor solo para emparejar e intercambiar los mensajes de
+ * WebRTC entre el host (slot 0) y cada guest (slots 1..3).
  */
 
 const API_BASE: string =
   (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:8787";
 
-/** URL del WebSocket a partir de la base HTTP (http->ws, https->wss). */
 function wsUrl(): string {
   const base = API_BASE.replace(/^http/, "ws");
   return `${base}/api/online/ws`;
 }
 
-export type Role = "host" | "guest";
-
 export interface SignalingHandlers {
-  /** Sala creada (eres host): te da el código para compartir. */
-  onCreated?: (code: string) => void;
-  /** Te uniste a una sala (eres guest). */
-  onJoined?: (code: string) => void;
-  /** El otro jugador entró en tu sala (lo recibe el host). */
-  onPeerJoined?: () => void;
-  /** El otro jugador se fue / se desconectó. */
-  onPeerLeft?: () => void;
-  /** Mensaje de WebRTC reenviado por el peer (oferta/respuesta/ICE). */
-  onSignal?: (data: unknown) => void;
+  /** Sala creada (eres host, slot 0). */
+  onCreated?: (code: string, slot: number) => void;
+  /** Te uniste (eres guest), con tu slot asignado. */
+  onJoined?: (code: string, slot: number) => void;
+  /** Entró un guest en tu sala (lo recibe el host), con su slot. */
+  onPeerJoined?: (slot: number) => void;
+  /** Un miembro se fue (su slot). Si slot 0 = el host: la sala se cerró. */
+  onPeerLeft?: (slot: number) => void;
+  /** Mensaje WebRTC reenviado por otro miembro (con su slot de origen). */
+  onSignal?: (from: number, data: unknown) => void;
   /** Error del signaling (sala no encontrada / llena / conexión caída). */
   onError?: (reason: string) => void;
 }
@@ -39,13 +32,19 @@ export class SignalingClient {
 
   constructor(private readonly handlers: SignalingHandlers) {}
 
-  /** Abre el WebSocket y ejecuta `onOpen` cuando esté listo. */
   private connect(onOpen: () => void): void {
     const ws = new WebSocket(wsUrl());
     this.ws = ws;
     ws.addEventListener("open", onOpen);
     ws.addEventListener("message", (e) => {
-      let msg: { type?: string; code?: string; data?: unknown; reason?: string };
+      let msg: {
+        type?: string;
+        code?: string;
+        slot?: number;
+        from?: number;
+        data?: unknown;
+        reason?: string;
+      };
       try {
         msg = JSON.parse(e.data as string) as typeof msg;
       } catch {
@@ -53,19 +52,19 @@ export class SignalingClient {
       }
       switch (msg.type) {
         case "created":
-          this.handlers.onCreated?.(msg.code ?? "");
+          this.handlers.onCreated?.(msg.code ?? "", msg.slot ?? 0);
           break;
         case "joined":
-          this.handlers.onJoined?.(msg.code ?? "");
+          this.handlers.onJoined?.(msg.code ?? "", msg.slot ?? 1);
           break;
         case "peer-joined":
-          this.handlers.onPeerJoined?.();
+          this.handlers.onPeerJoined?.(msg.slot ?? -1);
           break;
         case "peer-left":
-          this.handlers.onPeerLeft?.();
+          this.handlers.onPeerLeft?.(msg.slot ?? -1);
           break;
         case "signal":
-          this.handlers.onSignal?.(msg.data);
+          this.handlers.onSignal?.(msg.from ?? -1, msg.data);
           break;
         case "error":
           this.handlers.onError?.(msg.reason ?? "unknown");
@@ -78,29 +77,23 @@ export class SignalingClient {
     ws.addEventListener("error", () => this.handlers.onError?.("ws-error"));
   }
 
-  /** Crea una sala nueva (serás host). */
   createRoom(): void {
     this.connect(() => this.send({ type: "create" }));
   }
 
-  /** Se une a una sala existente por código (serás guest). */
   joinRoom(code: string): void {
     this.connect(() => this.send({ type: "join", code: code.trim().toUpperCase() }));
   }
 
-  /** Envía un mensaje de WebRTC al peer (a través del servidor). */
-  sendSignal(data: unknown): void {
-    this.send({ type: "signal", data });
+  /** Envía un mensaje WebRTC dirigido a un slot concreto. */
+  sendSignal(to: number, data: unknown): void {
+    this.send({ type: "signal", to, data });
   }
 
   private send(msg: unknown): void {
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(msg));
-    }
+    if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(msg));
   }
 
-  /** Cierra el signaling (tras establecer el P2P ya no hace falta, pero lo
-   *  mantenemos abierto para enterarnos si el peer se va). */
   close(): void {
     this.ws?.close();
     this.ws = null;

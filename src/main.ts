@@ -25,6 +25,7 @@ import {
   startGoogleLogin,
   logout,
   submitMatch,
+  submitOnlineMatch,
   updateNickname,
   type AuthUser,
 } from "./net/api.ts";
@@ -34,7 +35,14 @@ import { GachaScreen } from "./ui/gachaScreen.ts";
 import { OnlineScreen } from "./ui/onlineScreen.ts";
 import { OnlineLobby } from "./ui/onlineLobby.ts";
 import { OnlineLoop } from "./game/onlineLoop.ts";
-import type { PeerConnection } from "./net/peer.ts";
+import { OnlinePostMatch } from "./ui/onlinePostMatch.ts";
+import { OnlinePauseMenu } from "./ui/onlinePauseMenu.ts";
+import {
+  decodeLobby,
+  encodeLobby,
+  type OnlineFighterResult,
+} from "./net/onlineProtocol.ts";
+import type { OnlineNetwork } from "./net/peer.ts";
 import type { CharacterId } from "./engine/game/characters.ts";
 import type { StageId } from "./engine/game/stages.ts";
 
@@ -118,26 +126,56 @@ class App {
         this.showMenu();
       });
     },
-    onReady: (peer, role) => this.openOnlineLobby(peer, role),
+    onReady: (net, code) => this.openOnlineLobby(net, code),
   });
 
-  /** Lobby online (selección de personaje/mapa sincronizada). */
-  private readonly onlineLobby = new OnlineLobby({
-    onBack: () => {
-      this.onlinePeer = null;
-      void this.transition(() => {
-        this.onlineLobby.hide();
-        this.showMenu();
-      });
+  /** Lobby online (selección de personaje/mapa sincronizada, hasta 4). */
+  private readonly onlineLobby = new OnlineLobby(
+    {
+      onBack: () => {
+        this.onlineNet = null;
+        void this.transition(() => {
+          this.onlineLobby.hide();
+          this.showMenu();
+        });
+      },
+      onStart: (seed, characters, stage, names) =>
+        this.startOnlineMatch(seed, characters, stage, names),
     },
-    onStart: (seed, characters, stage) => this.startOnlineMatch(seed, characters, stage),
+    this.hand,
+  );
+
+  /** Menú de pausa online (no congela el juego; botón para salir). */
+  private readonly onlinePause = new OnlinePauseMenu({
+    onQuit: () => this.quitOnline(),
+    // No abrir durante la cuenta atrás (mientras aún no hay partida jugándose).
+    canOpen: () => this.onlineLoop !== null,
   });
 
-  /** Peer de la sesión online actual (compartido entre lobby y partida). */
-  private onlinePeer: PeerConnection | null = null;
-  private onlineRole: "host" | "guest" = "host";
+  /** Pantalla de fin de partida online (stats + aceptar + decisión del host). */
+  private readonly onlinePost = new OnlinePostMatch({
+    onAccept: () => this.onlineAccept(),
+    onRematch: () => this.onlineHostDecide("rematch"),
+    onLobby: () => this.onlineHostDecide("lobby"),
+  });
+
+  /** Red de la sesión online actual (compartida entre lobby y partida). */
+  private onlineNet: OnlineNetwork | null = null;
   /** Bucle de la partida online en curso (null si no hay). */
   private onlineLoop: OnlineLoop | null = null;
+  /** Config de la última partida online (para revancha con misma gente). */
+  private onlineInfo: {
+    characters: CharacterId[];
+    stage: StageId;
+    names: string[];
+    slots: number[];
+  } | null = null;
+  /** HOST: slots que han aceptado el resultado post-partida. */
+  private onlineConfirmed = new Set<number>();
+  /** Código de la sala online actual (para re-mostrarlo al volver al lobby). */
+  private onlineRoomCode = "";
+  /** ¿Estamos ya en la pantalla post-partida? (evita entrar dos veces). */
+  private inOnlinePost = false;
 
   /** Usuario con sesión actual (o null). Para precargar el apodo en el diálogo. */
   private currentUser: AuthUser | null = null;
@@ -589,67 +627,319 @@ class App {
     });
   }
 
-  /** El P2P está listo: pasamos de la sala a la selección (lobby online). */
-  private openOnlineLobby(peer: PeerConnection, role: "host" | "guest"): void {
-    this.onlinePeer = peer;
-    this.onlineRole = role;
+  /** La red está lista: pasamos de la sala al lobby de selección. */
+  private openOnlineLobby(net: OnlineNetwork, roomCode: string): void {
+    this.onlineNet = net;
+    this.onlineRoomCode = roomCode;
+    const myName = this.currentUser?.nickname ?? `Jugador ${net.mySlot + 1}`;
     void this.transition(() => {
       this.onlineScreen.hide();
-      this.onlineLobby.open(peer, role);
+      this.onlineLobby.open(net, myName, roomCode);
     });
   }
 
   /**
-   * Arranca la partida ONLINE con la config acordada en el lobby. Ambos clientes
-   * construyen el MISMO mundo (misma semilla → determinista) y lanzan el bucle
-   * de lockstep. El apodo del usuario va como etiqueta de su jugador.
+   * Arranca la partida ONLINE con la config acordada en el lobby. Todos los
+   * clientes construyen el MISMO mundo (misma semilla → determinista) y lanzan
+   * el bucle de lockstep (host-relay). Los apodos vienen como etiquetas.
    */
-  private startOnlineMatch(seed: number, characters: CharacterId[], stage: StageId): void {
-    const peer = this.onlinePeer;
-    if (!peer) return;
-    const role = this.onlineRole;
+  private startOnlineMatch(
+    seed: number,
+    characters: CharacterId[],
+    stage: StageId,
+    names: string[],
+  ): void {
+    const net = this.onlineNet;
+    if (!net) return;
 
-    // Etiquetas: mi jugador con mi apodo (si hay sesión), el rival como "Rival".
-    const myNick = this.currentUser?.nickname ?? (role === "host" ? "P1" : "P2");
-    const labels = role === "host" ? [myNick, "Rival"] : ["Rival", myNick];
+    // Slots ocupados (= índices de jugador en orden). En online siempre 0..n-1.
+    const slots = characters.map((_, i) => i);
+    this.onlineInfo = { characters, stage, names, slots };
+    this.onlineConfirmed = new Set();
+    this.inOnlinePost = false;
 
     const config: MatchConfig = {
       characters,
       stage,
-      controllers: ["human", "human"],
-      labels,
+      controllers: characters.map(() => "human" as const),
+      labels: names,
     };
     const world = new World("versus", seed, config);
-
-    // Si el rival se desconecta durante la partida, cortamos y avisamos.
-    peer.setClosedHandler(() => this.onOnlinePeerLeft());
+    this.world = world;
 
     void this.transition(() => {
       this.onlineLobby.hide();
-      this.onlineLoop = new OnlineLoop(world, renderer, camera, peer, role, {
-        onGameOver: () => this.quitOnline(),
-      });
+      this.onlinePost.hide();
+      this.onlineLoop = new OnlineLoop(
+        world,
+        renderer,
+        camera,
+        net,
+        { seed, characters, stage, labels: names },
+        {
+          onGameOver: (winnerIndex) => this.onOnlineGameOver(winnerIndex),
+          onCountdown: (text) => this.countdown.set(text),
+          // Al terminar: cartel "FINISH" dramático (como en offline) antes de
+          // la pantalla de resultados.
+          onFinish: () => this.matchOver.showFinish(),
+          // Mensajes post-partida que llegan mientras el loop sigue vivo
+          // (p.ej. el "result" del host): los procesa el flujo post-partida.
+          onPostMessage: (from, data) => this.onOnlineMessage(from, data),
+        },
+      );
+      // Si algún jugador se desconecta durante la partida, cortamos y avisamos.
+      net.setPeerLeftHandler((slot) => this.onOnlinePeerLeft(slot));
       camera.resize(renderer.cssWidth, renderer.cssHeight);
       this.onlineLoop.start();
+      // Activa el menú de pausa online (Escape lo abre; no congela el juego).
+      this.onlinePause.setActive(true);
     });
   }
 
-  /** El rival se fue de la partida online: la cortamos y volvemos al menú. */
-  private onOnlinePeerLeft(): void {
-    this.onlineLoop?.stop();
-    this.onlineLoop = null;
-    void confirmDialog({
-      title: "Rival desconectado",
-      message: "El otro jugador ha abandonado la partida online. Volverás al menú.",
-      confirmText: "Entendido",
-      cancelText: "Volver",
-    }).then(() => void this.toMenu());
+  /**
+   * Fin de partida online. El HOST arma el resultado y el replay completo y los
+   * difunde; todos (host incluido) muestran la pantalla post-partida y envían el
+   * replay al servidor con SU slot para puntuar. El resto del flujo (aceptar,
+   * decisión del host) va por `onOnlineMessage`.
+   */
+  private onOnlineGameOver(winnerIndex: number): void {
+    const net = this.onlineNet;
+    const loop = this.onlineLoop;
+    const world = this.world;
+    if (!net || !loop) return;
+
+    // A partir de aquí la red la gestiona el flujo post-partida.
+    net.setMessageHandler((from, data) => this.onOnlineMessage(from, data));
+
+    if (net.mySlot === 0) {
+      // HOST: arma el resultado + replay y lo difunde; luego muestra su pantalla.
+      const results = this.collectOnlineResults(winnerIndex);
+      const draw = (world?.draw ?? winnerIndex < 0) || winnerIndex < 0;
+      const replay = loop.buildReplay();
+      if (replay) {
+        net.broadcast(
+          encodeLobby({ t: "result", winnerSlot: winnerIndex, draw, results, replay }),
+        );
+      }
+      this.enterOnlinePost(results, winnerIndex, draw, replay);
+    } else {
+      // GUEST: para el loop y ESPERA el "result" del host (lleva el replay).
+      this.onlineLoop?.stop();
+      this.onlineLoop = null;
+    }
   }
 
-  /** Termina la partida online y vuelve al menú. */
+  /** Recoge las stats de todos los combatientes del mundo (en orden de slot). */
+  private collectOnlineResults(winnerIndex: number): OnlineFighterResult[] {
+    const world = this.world;
+    if (!world) return [];
+    return world.fighters.map((f) => ({
+      slot: f.index,
+      label: f.label,
+      color: f.color,
+      character: f.characterId,
+      dealt: f.player.stats.dealt,
+      taken: f.player.stats.taken,
+      blocked: f.player.stats.blocked,
+      kos: f.player.stats.kos,
+      deaths: f.player.stats.deaths,
+      isWinner: f.index === winnerIndex,
+    }));
+  }
+
+  /** Muestra la pantalla post-partida y envía el replay al servidor a puntuar. */
+  private enterOnlinePost(
+    results: OnlineFighterResult[],
+    winnerSlot: number,
+    draw: boolean,
+    replay: ReplayData | null,
+  ): void {
+    const net = this.onlineNet;
+    if (!net) return;
+    if (this.inOnlinePost) return; // ya mostrada (evita entrar dos veces)
+    this.inOnlinePost = true;
+    this.onlineLoop?.stop();
+    this.onlineLoop = null;
+    this.onlinePause.setActive(false); // la partida terminó: cierra la pausa
+    this.countdown.set(null);
+    this.koFlash.set(0);
+    this.matchOver.hide(); // quita el cartel "FINISH" antes del panel online
+
+    const slots = this.onlineInfo?.slots ?? results.map((r) => r.slot);
+    this.onlinePost.show(results, winnerSlot, draw, net.mySlot, net.mySlot === 0, slots);
+
+    if (replay) {
+      // Guardamos el replay localmente con los NOMBRES correctos de los
+      // jugadores (vienen en `labels`) y el resumen de resultado, igual que
+      // offline. Lo hace cada cliente con el replay completo (host o guest).
+      this.saveOnlineReplay(replay, results, winnerSlot, draw);
+      // Enviar al servidor para puntuar (si tengo sesión).
+      void this.submitOnlineForRewards(replay, net.mySlot);
+    }
+  }
+
+  /** Completa el replay online con su resumen de resultado y lo guarda. */
+  private saveOnlineReplay(
+    replay: ReplayData,
+    results: OnlineFighterResult[],
+    winnerSlot: number,
+    draw: boolean,
+  ): void {
+    const winner = results.find((r) => r.slot === winnerSlot);
+    const result: ReplayResult = {
+      winnerLabel: draw ? "Empate" : winner?.label ?? "nadie",
+      winnerColor: draw ? "#f1f4fa" : winner?.color ?? "#f1f4fa",
+      draw,
+      durationSec: replay.steps.length / 60,
+      fighters: results
+        .slice()
+        .sort((a, b) => a.slot - b.slot)
+        .map((r) => ({
+          label: r.label,
+          color: r.color,
+          character: r.character,
+          dealt: r.dealt,
+          taken: r.taken,
+          blocked: r.blocked,
+          kos: r.kos,
+          deaths: r.deaths,
+          isWinner: r.slot === winnerSlot,
+        })),
+    };
+    // El replay ya trae `labels` con los nombres del lobby. Adjuntamos el
+    // resumen y lo guardamos en el navegador (aparece en la lista de replays).
+    saveReplay({ ...replay, result });
+  }
+
+  private async submitOnlineForRewards(replay: ReplayData, slot: number): Promise<void> {
+    const outcome = await submitOnlineMatch(replay, slot);
+    switch (outcome.kind) {
+      case "ok":
+        this.onlinePost.setReward(`monedas · ${outcome.reward.grade}`, outcome.reward.coinsEarned);
+        void this.checkAuth();
+        break;
+      case "no-session":
+        this.onlinePost.setReward("Inicia sesión para ganar monedas", null);
+        break;
+      case "not-ranked":
+      case "error":
+        this.onlinePost.setReward(outcome.message, null);
+        break;
+    }
+  }
+
+  /** Mensajes de red durante el POST-partida (resultado / aceptaciones / decisión). */
+  private onOnlineMessage(_from: number, data: string): void {
+    const msg = decodeLobby(data);
+    if (!msg) return;
+    const net = this.onlineNet;
+    if (!net) return;
+
+    if (net.mySlot === 0) {
+      // HOST
+      if (msg.t === "confirm") {
+        this.onlineConfirmed.add(msg.slot);
+        const slots = [...this.onlineConfirmed];
+        net.broadcast(encodeLobby({ t: "confirmed", slots }));
+        this.onlinePost.setConfirmed(slots);
+      }
+    } else {
+      // GUEST
+      if (msg.t === "result") {
+        // Recibo el resultado y el replay del host: muestro la pantalla.
+        this.enterOnlinePost(msg.results, msg.winnerSlot, msg.draw, msg.replay);
+      } else if (msg.t === "confirmed") {
+        this.onlinePost.setConfirmed(msg.slots);
+      } else if (msg.t === "post") {
+        this.applyOnlinePost(msg.action);
+      }
+    }
+  }
+
+  /** El jugador local pulsa "Aceptar". */
+  private onlineAccept(): void {
+    const net = this.onlineNet;
+    if (!net) return;
+    if (net.mySlot === 0) {
+      // El host se auto-confirma y redifunde.
+      this.onlineConfirmed.add(0);
+      const slots = [...this.onlineConfirmed];
+      net.broadcast(encodeLobby({ t: "confirmed", slots }));
+      this.onlinePost.setConfirmed(slots);
+    } else {
+      net.sendTo(0, encodeLobby({ t: "confirm", slot: net.mySlot }));
+    }
+  }
+
+  /** Solo HOST: decide qué hacer tras aceptar todos. */
+  private onlineHostDecide(action: "rematch" | "lobby"): void {
+    const net = this.onlineNet;
+    if (!net || net.mySlot !== 0) return;
+    net.broadcast(encodeLobby({ t: "post", action }));
+    this.applyOnlinePost(action);
+  }
+
+  /** Aplica la decisión del host: revancha (misma gente) o volver al lobby. */
+  private applyOnlinePost(action: "rematch" | "lobby"): void {
+    const net = this.onlineNet;
+    const info = this.onlineInfo;
+    this.onlinePost.hide();
+    this.inOnlinePost = false;
+    if (action === "rematch" && net && info) {
+      // Nueva semilla; el host la decide y la difunde al arrancar.
+      if (net.mySlot === 0) {
+        const seed = (Math.random() * 0xffffffff) >>> 0;
+        net.broadcast(
+          encodeLobby({
+            t: "start",
+            seed,
+            characters: info.characters,
+            stage: info.stage,
+            names: info.names,
+          }),
+        );
+        this.startOnlineMatch(seed, info.characters, info.stage, info.names);
+      } else {
+        // El guest espera el "start" del host (lo escucha abajo).
+        net.setMessageHandler((_from, data) => {
+          const m = decodeLobby(data);
+          if (m && m.t === "start") {
+            this.startOnlineMatch(m.seed, m.characters, m.stage, m.names);
+          }
+        });
+      }
+    } else {
+      // Volver al lobby de selección con la misma red.
+      const myName = this.currentUser?.nickname ?? `Jugador ${(net?.mySlot ?? 0) + 1}`;
+      if (net) this.onlineLobby.open(net, myName, this.onlineRoomCode);
+    }
+  }
+
+  /** Un jugador se fue de la partida/sala online: cortamos y volvemos al menú. */
+  private onOnlinePeerLeft(slot: number): void {
+    this.onlineLoop?.stop();
+    this.onlineLoop = null;
+    this.onlinePause.setActive(false);
+    this.onlinePost.hide();
+    const who = slot === 0 ? "El anfitrión" : "Un jugador";
+    void confirmDialog({
+      title: "Jugador desconectado",
+      message: `${who} ha abandonado la partida online. Volverás al menú.`,
+      confirmText: "Entendido",
+      cancelText: "Volver",
+    }).then(() => void this.quitOnline());
+  }
+
+  /** Termina la partida online, cierra la red y vuelve al menú. */
   private quitOnline(): void {
     this.onlineLoop?.stop();
     this.onlineLoop = null;
+    this.onlinePause.setActive(false);
+    this.onlinePost.hide();
+    this.inOnlinePost = false;
+    this.onlineNet?.close();
+    this.onlineNet = null;
+    this.onlineInfo = null;
     void this.toMenu();
   }
 
