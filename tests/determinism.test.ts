@@ -48,6 +48,7 @@ function simulate(data: ReplayData): FighterSnapshot[] {
     controllers: data.controllers,
     cpuDifficulty: data.cpuDifficulties ?? data.cpuDifficulty,
     stage: data.stage,
+    engineVersion: data.engineVersion ?? 1,
   });
   const player = new ReplayPlayer(data);
 

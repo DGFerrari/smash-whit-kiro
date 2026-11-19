@@ -8,19 +8,22 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "test": "vitest run",
+    "test": "vitest --run",
     "test:watch": "vitest"
   },
   "devDependencies": {
     "@types/three": "^0.186.0",
+    "fast-check": "3.23.2",
+    "jsdom": "25.0.1",
     "typescript": "^5.5.4",
     "vite": "^5.4.2",
-    "vitest": "^2.1.9"
+    "vitest": "2.1.9"
   },
   "allowScripts": {
     "esbuild@0.21.5": true
   },
   "dependencies": {
+    "@pixiv/three-vrm": "3.5.5",
     "three": "^0.186.1"
   }
 }

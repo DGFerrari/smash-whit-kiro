@@ -1,0 +1,990 @@
+/*
+ * Selección de personaje y de escenario de KiroBrawl (R1.7, R3.1–R3.3, R3.5–R3.8).
+ * Solo consume tokens de tokens.css. Todas las reglas van acotadas a
+ * #char-select / #stage-select para no afectar a otras pantallas que reutilizan
+ * clases antiguas (.portrait-grid, .stage-cell, .select-actions…) y para
+ * imponerse a las reglas heredadas de style.css.
+ */
+
+/* ── Contenedor común ─────────────────────────────────────────────────────── */
+#char-select.select-screen,
+#stage-select.select-screen {
+  justify-content: flex-start;
+  align-items: stretch;
+  gap: var(--space-4);
+  box-sizing: border-box;
+  padding: var(--space-6) var(--space-12);
+  overflow-x: hidden;
+  overflow-y: auto;
+  color: var(--color-text);
+  font-family: var(--font-text);
+  background:
+    repeating-linear-gradient(
+      -62deg,
+      transparent 0 var(--space-12),
+      color-mix(in oklab, var(--color-text) 5%, transparent) var(--space-12) calc(var(--space-12) + var(--space-1) / 2),
+      transparent calc(var(--space-12) + var(--space-1) / 2) calc(var(--space-12) * 2.5)
+    ),
+    radial-gradient(
+      ellipse 70% 70% at 78% 40%,
+      color-mix(in oklab, var(--color-secondary) 24%, transparent),
+      transparent 70%
+    ),
+    linear-gradient(
+      118deg,
+      color-mix(in oklab, var(--color-primary) 32%, var(--color-bg)) 0%,
+      var(--color-bg) 55%
+    );
+}
+
+#char-select .kb-select__header,
+#stage-select .kb-select__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2) var(--space-6);
+  min-width: 0;
+}
+
+#char-select .select-title,
+#stage-select .select-title {
+  margin: 0;
+  color: var(--color-text);
+  font-family: var(--font-display);
+  font-size: var(--fs-h1);
+  font-weight: var(--fw-h1);
+  font-style: italic;
+  letter-spacing: 0.04em;
+  line-height: 1.1;
+  text-transform: uppercase;
+  text-shadow: var(--glow-primary);
+  transform: skewX(-10deg);
+}
+
+#char-select .select-hint,
+#stage-select .select-hint {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-body);
+}
+
+/* ── Acciones (Atrás / continuar) ─────────────────────────────────────────── */
+#char-select .select-actions,
+#stage-select .select-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+#char-select .select-actions .kb-btn,
+#stage-select .select-actions .kb-btn {
+  min-width: calc(var(--space-12) * 4);
+  padding: var(--space-3) var(--space-8);
+  font-family: var(--font-display);
+  font-size: var(--fs-body-lg);
+  font-weight: var(--fw-display);
+  font-style: italic;
+  transform: skewX(-10deg);
+}
+
+#char-select .select-actions .kb-btn__label,
+#stage-select .select-actions .kb-btn__label {
+  display: inline-block;
+  transform: skewX(10deg);
+}
+
+#char-select .kb-select__go:not([aria-disabled="true"]),
+#stage-select .kb-select__go:not([aria-disabled="true"]) {
+  background-color: color-mix(in oklab, var(--color-primary) 35%, var(--color-surface));
+  box-shadow: var(--glow-primary), var(--shadow-1);
+}
+
+/* ── Fichas ───────────────────────────────────────────────────────────────── */
+#char-select .token-chip,
+#stage-select .token-chip {
+  font-family: var(--font-display);
+  border-color: var(--color-text);
+  box-shadow:
+    0 0 var(--space-4) color-mix(in oklab, var(--tc) 70%, transparent),
+    var(--shadow-1);
+  transition:
+    left var(--dur-fast) var(--ease-out),
+    top var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+
+#char-select .token-chip {
+  width: var(--space-12);
+  height: var(--space-12);
+  color: var(--color-on-primary);
+  font-size: var(--fs-body);
+  text-shadow: 0 1px 0 var(--color-bg), 0 0 var(--space-1) var(--color-bg);
+}
+
+#stage-select .token-chip {
+  --tc: var(--color-focus);
+}
+
+/* Mientras está en la mano no hay transición de posición (sigue al cursor). */
+#char-select .token-chip.dragging,
+#stage-select .token-chip.dragging {
+  transition: transform var(--dur-fast) var(--ease-out);
+  box-shadow:
+    0 0 var(--space-6) color-mix(in oklab, var(--tc) 80%, transparent),
+    var(--shadow-2);
+}
+
+/* ══ Selección de personaje ═════════════════════════════════════════════════ */
+#char-select .kb-cs-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: var(--space-8);
+}
+
+#char-select .css-stage.char-stage {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: var(--space-6);
+}
+
+/* Tarjetas de personaje: retrato inclinado con luz de contorno en su color. */
+#char-select .portrait-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-4);
+  padding: var(--space-2) var(--space-4) 0;
+}
+
+#char-select .portrait {
+  --c: var(--color-primary);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 3px solid color-mix(in oklab, var(--c) 45%, var(--color-border));
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  box-shadow: var(--shadow-1);
+  transform: skewX(-8deg);
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+
+#char-select .portrait-face {
+  height: auto;
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
+  background: var(--color-bg);
+}
+
+#char-select .portrait-face .kb-portrait {
+  display: block;
+  width: 124%;
+  height: 100%;
+  margin-left: -12%;
+  transform: skewX(8deg);
+  transition: scale var(--dur-base) var(--ease-out);
+}
+
+#char-select .portrait-name {
+  padding: var(--space-1) var(--space-3);
+  border-top: 3px solid var(--c);
+  background: color-mix(in oklab, var(--c) 22%, var(--color-bg));
+  color: var(--color-text);
+  font-family: var(--font-display);
+  font-size: var(--fs-body-lg);
+  font-weight: var(--fw-display);
+  letter-spacing: 0.04em;
+  text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+
+#char-select .portrait-name > span {
+  display: inline-block;
+  transform: skewX(8deg);
+}
+
+/* Foco (ratón, teclado o ficha encima): se eleva con brillo de su color. */
+#char-select .portrait.is-focused,
+#char-select .portrait:focus-visible {
+  border-color: var(--c);
+  box-shadow:
+    0 0 0 2px var(--c),
+    0 0 var(--space-6) color-mix(in oklab, var(--c) 70%, transparent),
+    var(--shadow-2);
+  transform: skewX(-8deg) translateY(calc(-1 * var(--space-2)));
+}
+
+#char-select .portrait.is-focused .kb-portrait {
+  scale: 1.06;
+}
+
+#char-select .portrait:focus-visible {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+#char-select .portrait.hover-drop {
+  border-color: var(--color-focus);
+  box-shadow: var(--glow-focus), var(--shadow-2);
+  transform: skewX(-8deg) translateY(calc(-1 * var(--space-2))) scale(var(--scale-focus));
+}
+
+#char-select .portrait.selected .portrait-name {
+  background: color-mix(in oklab, var(--c) 50%, var(--color-bg));
+}
+
+html[data-reduced-motion] #char-select .portrait.is-focused .kb-portrait {
+  scale: none;
+}
+
+/* Placas de jugador (P1–P4): "casa" de cada ficha. */
+#char-select .player-cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-4);
+  padding: 0 var(--space-4);
+}
+
+#char-select .player-card {
+  --pc: var(--color-primary);
+  position: relative;
+  width: auto;
+  min-width: 0;
+  padding: var(--space-2) var(--space-3) var(--space-3);
+  border: 2px solid var(--pc);
+  border-radius: var(--radius-sm);
+  background: linear-gradient(
+    135deg,
+    color-mix(in oklab, var(--pc) 38%, var(--color-surface)) 0%,
+    var(--color-surface) 62%
+  );
+  text-align: left;
+  box-shadow:
+    0 0 var(--space-4) color-mix(in oklab, var(--pc) 35%, transparent),
+    var(--shadow-1);
+  transform: skewX(-8deg);
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    filter var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out);
+}
+
+#char-select .player-card > * {
+  transform: skewX(8deg);
+}
+
+#char-select .player-card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+#char-select .player-card-tag {
+  flex: 0 0 auto;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--pc);
+  color: var(--color-on-accent);
+  font-family: var(--font-display);
+  font-size: var(--fs-h2);
+  font-weight: var(--fw-display);
+  font-style: italic;
+  line-height: 1.1;
+  transform: skewX(-8deg);
+}
+
+#char-select .player-card-label {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--color-text);
+  font-family: var(--font-display);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-display);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+#char-select .player-card-pick {
+  margin-top: var(--space-1);
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-caption);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+#char-select .player-card.ready .player-card-pick {
+  color: var(--color-text);
+}
+
+#char-select .player-card-slot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: calc(var(--space-12) + var(--space-3));
+  margin-top: var(--space-2);
+  border: 2px dashed color-mix(in oklab, var(--pc) 60%, var(--color-border));
+  border-radius: var(--radius-pill);
+  color: var(--color-text-muted);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-caption);
+}
+
+#char-select .player-card-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+}
+
+#char-select .player-card-difficulty {
+  flex-direction: row;
+  gap: var(--space-1);
+  margin-top: var(--space-1);
+}
+
+#char-select .player-card-tab,
+#char-select .player-card-diff {
+  flex: 1 1 0;
+  min-width: 0;
+  width: 100%;
+  padding: var(--space-1) var(--space-2);
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklab, var(--color-bg) 70%, transparent);
+  color: var(--color-text-muted);
+  font-family: var(--font-text);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-caption);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+#char-select .player-card-tab:hover,
+#char-select .player-card-diff:hover {
+  border-color: color-mix(in oklab, var(--pc) 70%, var(--color-border));
+  color: var(--color-text);
+}
+
+#char-select .player-card-tab:focus-visible,
+#char-select .player-card-diff:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 1px;
+}
+
+#char-select .player-card-tab:active,
+#char-select .player-card-diff:active {
+  background: var(--color-surface-raised);
+}
+
+#char-select .player-card-tab.active {
+  border-color: var(--pc);
+  background: color-mix(in oklab, var(--pc) 35%, var(--color-bg));
+  color: var(--color-text);
+}
+
+#char-select .player-card-diff.active {
+  border-color: var(--color-text-muted);
+  background: var(--color-text-muted);
+  color: var(--color-bg);
+}
+
+#char-select .player-card.ready {
+  box-shadow:
+    0 0 var(--space-6) color-mix(in oklab, var(--pc) 65%, transparent),
+    var(--shadow-2);
+}
+
+#char-select .player-card.cpu {
+  border-color: var(--color-text-muted);
+  box-shadow:
+    0 0 var(--space-4) color-mix(in oklab, var(--color-text-muted) 35%, transparent),
+    var(--shadow-1);
+}
+
+#char-select .player-card.cpu .player-card-tag::after {
+  content: " CPU";
+  font-size: var(--fs-caption);
+}
+
+#char-select .player-card.off {
+  opacity: 0.45;
+  filter: grayscale(0.8);
+}
+
+/* Panel lateral del personaje enfocado (splash). */
+#char-select .kb-cs-panel {
+  --c: var(--color-primary);
+  position: relative;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 2px solid color-mix(in oklab, var(--c) 60%, var(--color-border));
+  border-radius: var(--radius-lg);
+  background: linear-gradient(
+    160deg,
+    color-mix(in oklab, var(--c) 38%, var(--color-surface)) 0%,
+    var(--color-bg) 72%
+  );
+  box-shadow:
+    0 0 var(--space-8) color-mix(in oklab, var(--c) 40%, transparent),
+    var(--shadow-2);
+  transition:
+    border-color var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out);
+}
+
+/* Hueco de la vista previa 3D (fase 4). De momento: retrato grande (Modelo_Respaldo provisional). */
+#char-select .kb-preview3d {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+#char-select .kb-preview3d .kb-portrait {
+  display: block;
+  width: 100%;
+  height: 100%;
+  animation: kbPreviewIdle 3.2s ease-in-out infinite;
+  transform-origin: 50% 100%;
+}
+
+@keyframes kbPreviewIdle {
+  0%,
+  100% {
+    translate: 0 0;
+    scale: 1;
+  }
+  50% {
+    translate: 0 calc(-1 * var(--space-1));
+    scale: 1.015;
+  }
+}
+
+/* Modelo 3D en rotación sobre el retrato (que queda como fondo/respaldo). */
+#char-select .kb-preview3d__canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+#char-select .kb-preview3d[data-preview="3d"] .kb-portrait {
+  opacity: 0.35;
+  filter: saturate(1.3) blur(1px);
+}
+
+html[data-reduced-motion] #char-select .kb-preview3d .kb-portrait {
+  animation: none;
+}
+
+#char-select .kb-cs-info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-4) var(--space-6) var(--space-6);
+  background: linear-gradient(transparent, var(--color-bg) 35%);
+}
+
+#char-select .kb-cs-name {
+  margin: 0;
+  color: var(--color-text);
+  font-family: var(--font-display);
+  font-size: var(--fs-h1);
+  font-weight: var(--fw-h1);
+  font-style: italic;
+  letter-spacing: 0.04em;
+  line-height: 1.05;
+  text-transform: uppercase;
+  text-shadow:
+    0 0 var(--space-4) color-mix(in oklab, var(--c) 85%, transparent),
+    0 2px 0 var(--color-bg);
+  overflow-wrap: anywhere;
+}
+
+#char-select .kb-cs-title {
+  color: color-mix(in oklab, var(--c) 45%, var(--color-text));
+  font-family: var(--font-text);
+  font-size: var(--fs-body-lg);
+  font-weight: var(--fw-body-lg);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+#char-select .kb-cs-lore {
+  margin: var(--space-2) 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-body);
+  line-height: 1.4;
+}
+
+/* ══ Selección de escenario ═════════════════════════════════════════════════ */
+#stage-select .stage-layout {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  align-items: center;
+  gap: var(--space-8);
+}
+
+#stage-select .stage-preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+#stage-select .stage-preview-thumb {
+  width: min(100%, calc(52vh * 16 / 9));
+  height: auto;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border: 3px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow:
+    0 0 var(--space-8) color-mix(in oklab, var(--color-secondary) 30%, transparent),
+    var(--shadow-2);
+}
+
+#stage-select .stage-preview-thumb .kb-stage-preview,
+#stage-select .stage-preview-thumb .kb-stage-preview > * {
+  width: 100%;
+  height: 100%;
+}
+
+#stage-select .stage-preview-name {
+  margin: var(--space-2) 0 0;
+  color: var(--color-text);
+  font-family: var(--font-display);
+  font-size: var(--fs-h1);
+  font-weight: var(--fw-h1);
+  font-style: italic;
+  letter-spacing: 0.04em;
+  line-height: 1.1;
+  text-align: left;
+  text-transform: uppercase;
+  text-shadow: var(--glow-primary);
+}
+
+#stage-select .stage-preview-desc {
+  margin: 0;
+  max-width: calc(var(--space-12) * 14);
+  color: var(--color-text-muted);
+  font-size: var(--fs-body-lg);
+  font-weight: var(--fw-body-lg);
+  line-height: 1.4;
+}
+
+#stage-select .css-stage {
+  min-width: 0;
+}
+
+#stage-select .stage-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+#stage-select .stage-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 3px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-family: var(--font-text);
+  box-shadow: var(--shadow-1);
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+
+#stage-select .stage-cell__preview {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+}
+
+#stage-select .stage-cell__preview > * {
+  width: 100%;
+  height: 100%;
+}
+
+#stage-select .stage-name {
+  padding: var(--space-2) var(--space-3);
+  border-top: 2px solid var(--color-border);
+  font-family: var(--font-display);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-display);
+  letter-spacing: 0.04em;
+  text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Estado de foco del Sistema_Diseño (R3.3). */
+#stage-select .stage-cell.is-focused,
+#stage-select .stage-cell:focus-visible {
+  border-color: var(--color-focus);
+  box-shadow: var(--glow-focus), var(--shadow-2);
+  scale: var(--scale-focus);
+}
+
+#stage-select .stage-cell:focus-visible {
+  outline: none;
+}
+
+#stage-select .stage-cell.hover-drop {
+  border-color: var(--color-focus);
+  box-shadow: var(--glow-focus), var(--shadow-2);
+  transform: translateY(calc(-1 * var(--space-1)));
+}
+
+#stage-select .stage-cell.selected .stage-name {
+  border-top-color: var(--color-secondary);
+  background: color-mix(in oklab, var(--color-secondary) 30%, var(--color-surface));
+}
+
+/* Hueco libre de la rejilla 2×2: casa de la ficha. */
+#stage-select .stage-chip-dock {
+  min-height: calc(var(--space-12) * 2);
+  border: 2px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  background: color-mix(in oklab, var(--color-bg) 50%, transparent);
+}
+
+/* ── Ventanas pequeñas (< 1280×720): desplazamiento vertical (R3.8) ── */
+@media (max-width: 1279px), (max-height: 719px) {
+  #char-select.select-screen,
+  #stage-select.select-screen {
+    padding: var(--space-4) var(--space-6);
+  }
+
+  #char-select .kb-cs-body,
+  #stage-select .stage-layout {
+    flex: 0 0 auto;
+  }
+
+  #char-select .kb-preview3d {
+    min-height: calc(var(--space-12) * 6);
+  }
+}
+
+/* ── Parrilla de 12: originales (2 filas) + invitados crossover (1 fila) ── */
+#char-select .portrait-grid {
+  gap: var(--space-3) var(--space-4);
+  align-content: start;
+  overflow-y: auto;
+}
+
+#char-select .portrait-face {
+  aspect-ratio: 16 / 11;
+}
+
+#char-select .portrait-name {
+  font-size: var(--fs-body);
+}
+
+/* Separador "Invitados · Crossover" que ocupa toda la fila. */
+#char-select .kb-cs-guests {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-1);
+  color: var(--color-focus);
+  font-family: var(--font-display);
+  font-size: var(--fs-body);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+#char-select .kb-cs-guests::before,
+#char-select .kb-cs-guests::after {
+  content: "";
+  flex: 1;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, var(--color-focus), var(--color-secondary), transparent);
+}
+
+/* Tarjeta de invitado: borde holográfico animado y fondo con brillo. */
+#char-select .portrait.is-crossover {
+  border-color: transparent;
+  background:
+    linear-gradient(var(--color-surface), var(--color-surface)) padding-box,
+    linear-gradient(120deg, var(--color-focus), var(--color-secondary), var(--color-primary), var(--color-focus)) border-box;
+  background-size: 100% 100%, 300% 300%;
+  animation: kbCrossoverShine 4s linear infinite;
+}
+
+#char-select .portrait.is-crossover .portrait-name {
+  border-top-color: var(--color-focus);
+  background: linear-gradient(90deg, color-mix(in oklab, var(--c) 30%, var(--color-bg)), color-mix(in oklab, var(--color-focus) 30%, var(--color-bg)));
+}
+
+/* Distintivo "CROSSOVER" en la esquina. */
+#char-select .kb-crossover-badge,
+#online-lobby .kb-crossover-badge {
+  position: absolute;
+  top: var(--space-1);
+  right: var(--space-1);
+  z-index: 2;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-sm);
+  background: linear-gradient(90deg, var(--color-focus), var(--color-secondary));
+  color: var(--color-bg);
+  font-family: var(--font-display);
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  box-shadow: var(--glow-focus);
+  pointer-events: none;
+}
+
+/* Etiqueta en el panel lateral. */
+#char-select .kb-cs-guest-tag {
+  align-self: flex-start;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: linear-gradient(90deg, var(--color-focus), var(--color-secondary));
+  color: var(--color-bg);
+  font-family: var(--font-display);
+  font-size: var(--fs-small, 0.85rem);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  transform: skewX(-10deg);
+  box-shadow: var(--glow-focus);
+}
+
+#char-select .kb-cs-guest-tag[hidden] {
+  display: none;
+}
+
+#char-select .kb-cs-panel.is-crossover {
+  box-shadow: 0 0 0 2px var(--color-focus), var(--glow-focus), var(--shadow-2);
+}
+
+@keyframes kbCrossoverShine {
+  to {
+    background-position: 0 0, 300% 0;
+  }
+}
+
+html[data-reduced-motion] #char-select .portrait.is-crossover {
+  animation: none;
+}
+
+/* ══ Ajuste de 13 tarjetas (12 + Aleatorio) para que todo quepa en pantalla ══ */
+#char-select.select-screen {
+  height: 100vh;
+  padding-top: var(--space-4);
+  padding-bottom: var(--space-4);
+  gap: var(--space-3);
+}
+
+#char-select .kb-cs-body {
+  gap: var(--space-6);
+}
+
+#char-select .css-stage.char-stage {
+  min-height: 0;
+  justify-content: flex-start;
+  gap: var(--space-3);
+}
+
+/* Parrilla: 6 columnas, ocupa el espacio libre y hace scroll si no cabe. */
+#char-select .portrait-grid {
+  flex: 1 1 auto;
+  min-height: 0;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-1) var(--space-3) var(--space-1);
+}
+
+#char-select .portrait-face {
+  aspect-ratio: 5 / 4;
+}
+
+#char-select .portrait {
+  border-width: 2px;
+}
+
+#char-select .portrait-name {
+  padding: 2px var(--space-2);
+  border-top-width: 2px;
+  font-size: var(--fs-caption);
+}
+
+#char-select .kb-crossover-badge {
+  top: 2px;
+  right: 2px;
+  padding: 1px var(--space-1);
+  font-size: 0.55rem;
+}
+
+#char-select .kb-cs-guests {
+  margin-top: 0;
+  font-size: var(--fs-caption);
+}
+
+/* Tarjeta "Aleatorio". */
+#char-select .portrait.is-random {
+  border-color: var(--color-focus);
+  border-style: dashed;
+}
+
+#char-select .portrait.is-random .portrait-name {
+  border-top-color: var(--color-focus);
+  background: color-mix(in oklab, var(--color-focus) 28%, var(--color-bg));
+}
+
+#char-select .portrait.is-random.is-focused .kb-portrait--random text {
+  animation: kbRandomWobble 0.6s ease-in-out infinite alternate;
+  transform-origin: 100px 120px;
+}
+
+@keyframes kbRandomWobble {
+  from { transform: rotate(-8deg) scale(1); }
+  to { transform: rotate(8deg) scale(1.08); }
+}
+
+html[data-reduced-motion] #char-select .portrait.is-random.is-focused .kb-portrait--random text {
+  animation: none;
+}
+
+/* Placas de jugador compactas: los botones Jugador / CPU / Off siempre a la vista. */
+#char-select .player-cards {
+  flex: 0 0 auto;
+  gap: var(--space-3);
+  padding: 0 var(--space-3);
+}
+
+#char-select .player-card {
+  padding: var(--space-1) var(--space-2) var(--space-2);
+}
+
+#char-select .player-card-tag {
+  font-size: var(--fs-body-lg);
+}
+
+#char-select .player-card-label {
+  font-size: var(--fs-caption);
+}
+
+#char-select .player-card-pick {
+  margin-top: 0;
+  font-size: 0.68rem;
+}
+
+#char-select .player-card-slot {
+  height: calc(var(--space-12) + var(--space-1));
+  margin-top: var(--space-1);
+  font-size: 0.68rem;
+}
+
+#char-select .player-card-tabs {
+  flex-direction: row;
+  gap: 3px;
+  margin-top: var(--space-1);
+}
+
+#char-select .player-card-tab,
+#char-select .player-card-diff {
+  padding: 2px var(--space-1);
+  border-width: 1px;
+  font-size: 0.7rem;
+  text-align: center;
+}
+
+#char-select .player-card-difficulty.show {
+  display: flex;
+}
+
+/* Botones Atrás / continuar más bajos. */
+#char-select .select-actions .kb-btn {
+  padding: var(--space-2) var(--space-6);
+}
+
+/* Pantallas bajas: se permite scroll vertical en vez de recortar. */
+@media (max-height: 640px) {
+  #char-select.select-screen {
+    height: auto;
+    min-height: 100vh;
+  }
+}
+
+/* ── Teclado / mando ──────────────────────────────────────────────────────
+   El slot que recibe la elección (Enter / A) se marca en su placa y el foco de
+   la rejilla toma su color, para saber siempre "por quién" se está eligiendo. */
+#char-select .player-card.kb-assigning::before {
+  content: "◆";
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  color: var(--pc);
+  font-size: 14px;
+  line-height: 1;
+  text-shadow: 0 0 8px var(--pc);
+  animation: kb-assign-bob 0.9s var(--ease-out) infinite alternate;
+  pointer-events: none;
+}
+#char-select .player-card.kb-assigning {
+  outline: 2px solid var(--pc);
+  outline-offset: 2px;
+}
+#char-select .portrait:focus-visible,
+#char-select .portrait[data-focused] {
+  outline: 3px solid var(--kb-slot-color, var(--color-focus));
+  outline-offset: 2px;
+}
+@keyframes kb-assign-bob {
+  to {
+    opacity: 0.35;
+  }
+}
+html[data-reduced-motion] #char-select .player-card.kb-assigning::before {
+  animation: none;
+}

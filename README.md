@@ -1,4 +1,4 @@
-# smash-B
+# KiroBrawl
 
 Juego de peleas de plataformas **2D** para navegador (estilo Smash Bros /
 Brawlhalla): se **simula en 2D** de forma determinista, pero se **renderiza en

@@ -42,7 +42,70 @@ export interface AttackDef {
   /** Componente vertical del knockback (0..1 del total hacia arriba). */
   knockbackUp: number;
   hitbox: HitboxShape;
+  /** Nombre del movimiento (solo presentación). */
+  name?: string;
+  /** Parte del cuerpo con la que golpea (solo presentación: animación). */
+  limb?: AttackLimb;
+  /**
+   * Impulso propio del atacante al lanzar el fuerte (px/s). `x` va hacia donde
+   * mira, `y` negativo = hacia arriba. Si falta, se usa HEAVY_LUNGE.
+   */
+  lunge?: { x: number; y: number };
+  /** Lanza un proyectil al empezar la fase activa. */
+  projectile?: ProjectileDef;
+  /**
+   * Golpe múltiple: la hitbox golpea `hits` veces, una cada `interval` pasos
+   * (la fase activa debe durar al menos hits × interval). Los golpes previos
+   * al último apenas empujan, para que el rival se quede encadenado.
+   */
+  multiHit?: { hits: number; interval: number };
+  /** Súper armadura: durante anticipación y fase activa no te interrumpen ni te lanzan. */
+  armor?: boolean;
+  /** Intangible durante anticipación y fase activa (los golpes atraviesan). */
+  intangible?: boolean;
+  /** La hitbox devuelve los proyectiles enemigos que toca. */
+  reflect?: boolean;
 }
+
+/** Apariencia de un proyectil (solo presentación). */
+export type ProjectileKind =
+  | "spear"
+  | "fireball"
+  | "bolt"
+  | "arrow"
+  | "note"
+  | "kunai"
+  | "tomato"
+  | "tire"
+  | "laser"
+  | "plasma";
+
+/** Proyectil que lanza un ataque. Velocidades en px/s; vida en pasos. */
+export interface ProjectileDef {
+  kind: ProjectileKind;
+  w: number;
+  h: number;
+  /** Velocidad horizontal hacia donde mira el atacante. */
+  speed: number;
+  /** Velocidad vertical inicial (negativa = hacia arriba). */
+  vy?: number;
+  /** Gravedad propia (px/s²); 0 = vuela recto. */
+  gravity?: number;
+  /** Pasos de vida antes de desaparecer. */
+  life: number;
+  damage: number;
+  knockback: number;
+  knockbackUp: number;
+  /** Atraviesa a los rivales (golpea a cada uno una vez) en lugar de romperse. */
+  pierce?: boolean;
+  /** Rebota en el suelo en lugar de romperse. */
+  bounce?: boolean;
+  /** El ataque no tiene golpe cuerpo a cuerpo: solo el proyectil. */
+  noMelee?: boolean;
+}
+
+/** Parte del cuerpo que golpea (para la animación exagerada del render). */
+export type AttackLimb = "fist" | "kick" | "weapon" | "head" | "body" | "magic";
 
 /**
  * Ataques LIGEROS: rápidos, poco daño/knockback, sin carga.

@@ -9,8 +9,17 @@
  * La URL base se toma de `VITE_API_URL` (definida en `.env`/`.env.production`);
  * si no está, se asume el servidor local de desarrollo.
  */
+import * as dev from "./devAccount.ts";
+
 const API_BASE: string =
   (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:8787";
+
+/**
+ * ¿Atiende la cuenta de prueba local en lugar del servidor? Solo en
+ * desarrollo (`import.meta.env.DEV`); en producción es siempre `false` y el
+ * bundle elimina estas ramas.
+ */
+const useDev = (): boolean => import.meta.env.DEV && dev.isDevAccountActive();
 
 /** Datos públicos del usuario con sesión iniciada. */
 export interface AuthUser {
@@ -26,6 +35,7 @@ export interface AuthUser {
 
 /** Devuelve el usuario actual (o null si no hay sesión). Nunca lanza. */
 export async function getMe(): Promise<AuthUser | null> {
+  if (useDev()) return dev.devMe();
   try {
     const res = await fetch(`${API_BASE}/api/auth/me`, { credentials: "include" });
     if (!res.ok) return null;
@@ -73,6 +83,7 @@ export type SubmitOutcome =
  * re-simulándola y otorgue monedas. El cliente no decide el resultado.
  */
 export async function submitMatch(replay: unknown): Promise<SubmitOutcome> {
+  if (useDev()) return dev.devSubmitMatch(replay);
   try {
     const res = await fetch(`${API_BASE}/api/match/submit`, {
       method: "POST",
@@ -102,6 +113,7 @@ export async function submitMatch(replay: unknown): Promise<SubmitOutcome> {
  * host y lo reparte a todos.
  */
 export async function submitOnlineMatch(replay: unknown, slot: number): Promise<SubmitOutcome> {
+  if (useDev()) return dev.devSubmitMatch(replay, slot);
   try {
     const res = await fetch(`${API_BASE}/api/match/submit-online`, {
       method: "POST",
@@ -131,6 +143,7 @@ export type NicknameResult =
 
 /** Cambia el apodo del usuario en el servidor (requiere sesión). */
 export async function updateNickname(nickname: string): Promise<NicknameResult> {
+  if (useDev()) return dev.devUpdateNickname(nickname);
   try {
     const res = await fetch(`${API_BASE}/api/auth/nickname`, {
       method: "PATCH",
@@ -177,6 +190,7 @@ export interface RankingData {
 
 /** Stats del usuario (incluye el saldo de monedas). null si no hay sesión. */
 export async function getStats(): Promise<PlayerStats | null> {
+  if (useDev()) return dev.devStats();
   try {
     const res = await fetch(`${API_BASE}/api/match/stats`, { credentials: "include" });
     if (!res.ok) return null;
@@ -189,6 +203,7 @@ export async function getStats(): Promise<PlayerStats | null> {
 
 /** Pide el ranking ordenado por `sort`/`order` (la ordenación la hace el servidor). */
 export async function getRanking(sort: RankField, order: RankOrder): Promise<RankingData | null> {
+  if (useDev()) return dev.devRanking(sort, order);
   try {
     const res = await fetch(`${API_BASE}/api/ranking?sort=${sort}&order=${order}`, {
       credentials: "include",
@@ -232,6 +247,7 @@ export type PullOutcome =
 
 /** Precios del gacha. */
 export async function getGachaInfo(): Promise<GachaInfo | null> {
+  if (useDev()) return dev.devGachaInfo();
   try {
     const res = await fetch(`${API_BASE}/api/gacha/info`);
     if (!res.ok) return null;
@@ -243,6 +259,7 @@ export async function getGachaInfo(): Promise<GachaInfo | null> {
 
 /** Inventario de tokens del usuario (null si no hay sesión o falla). */
 export async function getTokens(): Promise<TokenInventory | null> {
+  if (useDev()) return dev.devTokens();
   try {
     const res = await fetch(`${API_BASE}/api/gacha/tokens`, { credentials: "include" });
     if (!res.ok) return null;
@@ -255,6 +272,7 @@ export async function getTokens(): Promise<TokenInventory | null> {
 
 /** Tira en el gacha (1 o 10 veces). El servidor cobra y sortea. */
 export async function pull(count: 1 | 10): Promise<PullOutcome> {
+  if (useDev()) return dev.devPull(count);
   try {
     const res = await fetch(`${API_BASE}/api/gacha/pull?count=${count}`, {
       method: "POST",
@@ -280,6 +298,10 @@ export async function pull(count: 1 | 10): Promise<PullOutcome> {
 
 /** Cierra la sesión en el servidor. Nunca lanza. */
 export async function logout(): Promise<void> {
+  if (useDev()) {
+    dev.disableDevAccount();
+    return;
+  }
   try {
     await fetch(`${API_BASE}/api/auth/logout`, {
       method: "POST",

@@ -1,0 +1,20 @@
+/* Diálogos genéricos (confirmación) sobre `dialog()` del Sistema_Diseño.
+   Solo tokens de tokens.css. */
+
+.kb-confirm .kb-dialog {
+  width: min(440px, 92vw);
+}
+
+.kb-confirm__message {
+  margin: 0;
+  font-family: var(--font-text);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-body);
+  line-height: 1.5;
+  color: var(--color-text-muted);
+}
+
+.kb-confirm .kb-dialog__actions {
+  justify-content: flex-end;
+  gap: var(--space-3);
+}

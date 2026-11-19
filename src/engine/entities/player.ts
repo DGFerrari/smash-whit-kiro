@@ -11,6 +11,7 @@ import {
   LIGHT_ATTACKS,
   type AttackDir,
 } from "../combat/attacks.ts";
+import type { Moveset } from "../combat/movesets.ts";
 
 /** Resultado de un golpe recibido, que el World usa para stats y efectos. */
 export interface HitResult {
@@ -174,6 +175,9 @@ export class Player {
   /** Posición del paso anterior, para interpolar al renderizar. */
   readonly prevPos: Vec2;
 
+  /** Set de movimientos del personaje (lo asigna el World al crearlo). */
+  moveset: Moveset = { light: LIGHT_ATTACKS, heavy: HEAVY_ATTACKS };
+
   constructor(x: number, y: number) {
     this.pos = { x, y };
     this.prevPos = { x, y };
@@ -263,6 +267,18 @@ export class Player {
     // Una esquiva aérea activa da invulnerabilidad: el golpe no hace nada.
     if (this.dodging) {
       return { connected: false, effectiveDamage: 0, blocked: 0, knockbackSpeed: 0 };
+    }
+    // Movimientos especiales: intangible (atraviesa) o súper armadura.
+    const own = this.attack;
+    if (own && own.isCommitted && own.def.intangible) {
+      return { connected: false, effectiveDamage: 0, blocked: 0, knockbackSpeed: 0 };
+    }
+    if (own && own.isCommitted && own.def.armor) {
+      // Recibe el daño, pero ni se interrumpe ni sale despedido.
+      this.damage += damage;
+      this.stats.taken += damage;
+      this.hitFlash = 8;
+      return { connected: true, effectiveDamage: damage, blocked: 0, knockbackSpeed: 0 };
     }
 
     // Si está escudando, el escudo absorbe daño y knockback según su salud,
@@ -585,7 +601,7 @@ export class Player {
     dir: AttackDir,
     charge01: number,
   ): void {
-    const def = kind === "light" ? LIGHT_ATTACKS[dir] : HEAVY_ATTACKS[dir];
+    const def = kind === "light" ? this.moveset.light[dir] : this.moveset.heavy[dir];
     // Iniciar un ataque cancela el recovery del anterior (encadenado).
     this.attack = new ActiveAttack(def, this.facing, charge01);
   }
@@ -613,6 +629,14 @@ export class Player {
    * recuperación: te lanza hacia donde atacas. Gasta un uso aéreo.
    */
   private applyHeavyLunge(dir: AttackDir): void {
+    const custom = this.attack?.def.lunge;
+    if (custom) {
+      // Impulso propio del movimiento (set de movimientos del personaje).
+      this.vel.x = this.facing * custom.x;
+      this.vel.y = custom.y !== 0 ? custom.y : Math.min(this.vel.y, -120);
+      if (!this.onGround) this.heavyAirUses = Math.max(0, this.heavyAirUses - 1);
+      return;
+    }
     switch (dir) {
       case "up":
         this.vel.x = 0;

@@ -5,6 +5,9 @@ import type { Camera } from "../render/camera.ts";
 import { ReplayPlayer, type ReplayData } from "../engine/game/replay.ts";
 import { PauseMenu } from "./pauseMenu.ts";
 import { Countdown } from "./overlays.ts";
+import { characterNames, replayStageId } from "./replayListScreen.ts";
+import { stageLore } from "../content/lore.ts";
+import "./replays.css";
 
 /**
  * Reproductor de replays con controles tipo vídeo.
@@ -37,6 +40,8 @@ export class ReplayScreen {
   private readonly playPauseBtn: HTMLButtonElement;
   private readonly speedBtn: HTMLButtonElement;
   private readonly freeCamBtn: HTMLButtonElement;
+  /** Personajes vs. y escenario del replay, con nombres visibles. */
+  private readonly infoEl: HTMLDivElement;
   /** Botón flotante para volver a mostrar la barra cuando está oculta. */
   private readonly showBarBtn: HTMLButtonElement;
   /** Aviso cuando el replay es de otra versión del motor. */
@@ -77,48 +82,45 @@ export class ReplayScreen {
   ) {
     this.root = document.createElement("div");
     this.root.id = "replay-bar";
+    this.root.classList.add("kb-replay-bar");
+    this.root.setAttribute("role", "toolbar");
+    this.root.setAttribute("aria-label", "Controles de la repetición");
+
+    // Cabecera: personajes y escenario con sus nombres visibles (R1.6).
+    this.infoEl = document.createElement("div");
+    this.infoEl.className = "kb-replay-bar__info";
+    this.root.appendChild(this.infoEl);
 
     // Ocultar la barra (ver gameplay limpio). Reaparece con el botón flotante.
-    const hide = document.createElement("button");
-    hide.className = "replay-btn";
-    hide.textContent = "⤫ Ocultar";
-    hide.title = "Ocultar controles";
+    const hide = controlButton("⤫ Ocultar", "Ocultar controles");
     hide.addEventListener("click", () => this.setBarHidden(true));
     this.root.appendChild(hide);
 
     // Retroceder un paso.
-    const back = document.createElement("button");
-    back.className = "replay-btn";
-    back.textContent = "⏮";
-    back.title = "Atrás";
+    const back = controlButton("⏮", "Atrás");
     back.addEventListener("click", () => this.stepBy(-6));
     this.root.appendChild(back);
 
     // Play/Pausa.
-    this.playPauseBtn = document.createElement("button");
-    this.playPauseBtn.className = "replay-btn replay-btn-main";
-    this.playPauseBtn.textContent = "▶";
+    this.playPauseBtn = controlButton("▶", "Reproducir / pausar");
+    this.playPauseBtn.classList.add("replay-btn-main");
     this.playPauseBtn.addEventListener("click", () => this.togglePlay());
     this.root.appendChild(this.playPauseBtn);
 
     // Avanzar un paso.
-    const fwd = document.createElement("button");
-    fwd.className = "replay-btn";
-    fwd.textContent = "⏭";
-    fwd.title = "Adelante";
+    const fwd = controlButton("⏭", "Adelante");
     fwd.addEventListener("click", () => this.stepBy(6));
     this.root.appendChild(fwd);
 
     // Velocidad.
-    this.speedBtn = document.createElement("button");
-    this.speedBtn.className = "replay-btn";
-    this.speedBtn.textContent = "1x";
+    this.speedBtn = controlButton("1x", "Velocidad de reproducción");
     this.speedBtn.addEventListener("click", () => this.cycleSpeed());
     this.root.appendChild(this.speedBtn);
 
     // Barra de búsqueda.
     this.seek = document.createElement("input");
     this.seek.type = "range";
+    this.seek.setAttribute("aria-label", "Posición de la repetición");
     this.seek.className = "replay-seek";
     this.seek.min = "0";
     this.seek.value = "0";
@@ -134,9 +136,7 @@ export class ReplayScreen {
     this.root.appendChild(this.timeLabel);
 
     // Cámara libre.
-    this.freeCamBtn = document.createElement("button");
-    this.freeCamBtn.className = "replay-btn";
-    this.freeCamBtn.textContent = "📷 Cámara libre";
+    this.freeCamBtn = controlButton("📷 Cámara libre", "Cámara libre");
     this.freeCamBtn.addEventListener("click", () => this.toggleFreeCam());
     this.root.appendChild(this.freeCamBtn);
 
@@ -144,7 +144,9 @@ export class ReplayScreen {
 
     // Botón flotante (esquina) para volver a mostrar la barra oculta.
     this.showBarBtn = document.createElement("button");
+    this.showBarBtn.type = "button";
     this.showBarBtn.id = "replay-show-bar";
+    this.showBarBtn.setAttribute("aria-label", "Mostrar controles");
     this.showBarBtn.textContent = "⚙";
     this.showBarBtn.title = "Mostrar controles";
     this.showBarBtn.addEventListener("click", () => this.setBarHidden(false));
@@ -168,11 +170,11 @@ export class ReplayScreen {
    * replays del menú se ejecutan sin ningún aviso.
    */
   private updateVersionWarning(data: ReplayData): void {
-    const v = data.engineVersion;
+    // v1 y sin etiquetar se reproducen con el set de movimientos común
+    // (compatibles); solo avisamos de versiones intermedias o más nuevas.
+    const v = data.engineVersion ?? 1;
     let msg = "";
-    if (v === undefined) {
-      msg = `⚠ Replay de una versión antigua (sin etiquetar). Motor actual: v${ENGINE_VERSION}. Puede no reproducirse igual.`;
-    } else if (v < ENGINE_VERSION) {
+    if (v > 1 && v < ENGINE_VERSION) {
       msg = `⚠ Replay de una versión anterior del juego (motor v${v}; actual v${ENGINE_VERSION}). Puede no reproducirse igual.`;
     } else if (v > ENGINE_VERSION) {
       msg = `⚠ Replay de una versión MÁS NUEVA del juego (motor v${v}; actual v${ENGINE_VERSION}). Puede no reproducirse igual.`;
@@ -191,6 +193,7 @@ export class ReplayScreen {
   start(data: ReplayData): void {
     this.player = new ReplayPlayer(data);
     this.updateVersionWarning(data);
+    this.infoEl.textContent = `${characterNames(data).join(" vs ")} · ${stageLore(replayStageId(data)).name}`;
     this.rebuildWorld();
     this.currentStep = 0;
     this.seek.max = String(Math.max(0, this.player.totalSteps - 1));
@@ -256,6 +259,7 @@ export class ReplayScreen {
       cpuDifficulty: this.player.data.cpuDifficulties ?? this.player.data.cpuDifficulty,
       labels: this.player.data.labels,
       stage: this.player.data.stage,
+      engineVersion: this.player.data.engineVersion ?? 1,
     });
     this.camera.clearCinematic();
     this.camera.resize(this.renderer.cssWidth, this.renderer.cssHeight);
@@ -478,6 +482,17 @@ export class ReplayScreen {
     const factor = e.deltaY < 0 ? 1.1 : 0.9;
     this.camZoom = Math.max(0.3, Math.min(2.5, this.camZoom * factor));
   };
+}
+
+/** Botón de control del reproductor (estilo sesgado en replays.css). */
+function controlButton(text: string, label: string): HTMLButtonElement {
+  const el = document.createElement("button");
+  el.type = "button";
+  el.className = "replay-btn kb-replay-bar__btn";
+  el.textContent = text;
+  el.title = label;
+  el.setAttribute("aria-label", label);
+  return el;
 }
 
 function fmt(seconds: number): string {

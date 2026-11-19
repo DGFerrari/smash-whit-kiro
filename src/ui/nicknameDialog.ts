@@ -12,6 +12,8 @@ export interface NicknameDialogCallbacks {
   onSave: (nickname: string) => Promise<{ ok: true; nickname: string } | { ok: false; message: string }>;
 }
 
+import "./online.css";
+
 /** Longitud por puntos de código (un emoji cuenta como 1). */
 function glyphLength(s: string): number {
   return Array.from(s).length;
@@ -32,12 +34,16 @@ export class NicknameDialog {
   constructor(private readonly cb: NicknameDialogCallbacks) {
     this.root = document.createElement("div");
     this.root.id = "nickname-dialog";
+    this.root.setAttribute("role", "dialog");
+    this.root.setAttribute("aria-modal", "true");
 
     const panel = document.createElement("div");
     panel.className = "nickname-panel menu-panel";
 
     this.titleEl = document.createElement("h2");
     this.titleEl.className = "nickname-title";
+    this.titleEl.id = "nickname-dialog-title";
+    this.root.setAttribute("aria-labelledby", this.titleEl.id);
     panel.appendChild(this.titleEl);
 
     this.hintEl = document.createElement("p");
@@ -47,6 +53,7 @@ export class NicknameDialog {
     this.input = document.createElement("input");
     this.input.type = "text";
     this.input.className = "nickname-input";
+    this.input.setAttribute("aria-label", "Apodo");
     this.input.maxLength = 64; // tope duro de bytes; la regla real va por glifos
     this.input.addEventListener("input", () => this.validate());
     this.input.addEventListener("keydown", (e) => {
@@ -57,6 +64,7 @@ export class NicknameDialog {
 
     this.error = document.createElement("div");
     this.error.className = "nickname-error";
+    this.error.setAttribute("role", "alert");
     panel.appendChild(this.error);
 
     const actions = document.createElement("div");

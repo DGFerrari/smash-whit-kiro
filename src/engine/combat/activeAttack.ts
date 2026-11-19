@@ -67,7 +67,13 @@ export class ActiveAttack {
       this.hitbox = null;
       if (this.timer >= this.def.startup) this.enter("active");
     } else if (this.phase === "active") {
-      this.hitbox = this.computeHitbox(playerBox);
+      this.hitbox = this.def.projectile?.noMelee ? null : this.computeHitbox(playerBox);
+      // Golpe múltiple: cada `interval` pasos la hitbox puede volver a golpear.
+      const mh = this.def.multiHit;
+      if (mh && this.timer > 0 && this.timer % mh.interval === 0 && this.hitIndex < mh.hits - 1) {
+        this.hitIndex++;
+        this.hitTargets.clear();
+      }
       if (this.timer >= this.def.active) this.enter("recovery");
     } else if (this.phase === "recovery") {
       this.hitbox = null;
@@ -75,6 +81,35 @@ export class ActiveAttack {
     }
 
     return this.phase !== "done";
+  }
+
+  /** Índice del golpe actual en un golpe múltiple (0 = primero). */
+  hitIndex = 0;
+  private spawned = false;
+
+  /** ¿Es el último golpe (o el único)? Los previos apenas empujan. */
+  get isFinalHit(): boolean {
+    const mh = this.def.multiHit;
+    return !mh || this.hitIndex >= mh.hits - 1;
+  }
+
+  /** ¿Toca lanzar el proyectil? (fase activa y aún no lanzado). */
+  get wantsProjectile(): boolean {
+    return this.phase === "active" && !this.spawned && this.def.projectile !== undefined;
+  }
+
+  markProjectileSpawned(): void {
+    this.spawned = true;
+  }
+
+  /** ¿Está en anticipación o activa? (armadura/intangibilidad). */
+  get isCommitted(): boolean {
+    return this.phase === "startup" || this.phase === "active";
+  }
+
+  /** Pasos transcurridos en la fase actual (solo lectura, para el render). */
+  get phaseStep(): number {
+    return this.timer;
   }
 
   /** ¿El jugador puede volver a actuar? (fin de recovery) */

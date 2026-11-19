@@ -17,8 +17,16 @@
  * balance desincroniza una partida vieja). Así no fingimos que todo cuadra.
  *
  * Historial: v1 = primera versión etiquetada (todo lo anterior a esto).
+ *            v2 = sets de movimientos propios por personaje (movesets.ts).
+ *                 Los replays v1 (o sin versión) se re-simulan con el set
+ *                 común antiguo, así siguen reproduciéndose igual.
+ *            v3 = habilidades especiales: proyectiles, golpes múltiples,
+ *                 súper armadura, intangibilidad y reflejo.
  */
-export const ENGINE_VERSION = 1;
+export const ENGINE_VERSION = 3;
+
+/** Primera versión del motor con sets de movimientos por personaje. */
+export const MOVESETS_ENGINE_VERSION = 2;
 
 /**
  * Resolución interna del "lienzo lógico". El canvas real ocupa toda la ventana,

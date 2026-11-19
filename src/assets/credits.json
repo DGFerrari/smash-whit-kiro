@@ -1,0 +1,42 @@
+[
+  {
+    "asset": "Russo One (fuente)",
+    "author": "Jovanny Lemonad",
+    "sourceUrl": "https://github.com/google/fonts/tree/main/ofl/russoone",
+    "license": "OFL-1.1",
+    "licenseUrl": "https://openfontlicense.org",
+    "files": [
+      "public/fonts/russo-one-latin-400-normal.woff2",
+      "public/fonts/russo-one-latin-ext-400-normal.woff2"
+    ],
+    "attribution": "Copyright (c) 2011-2012, Jovanny Lemonad (jovanny.ru), with Reserved Font Name \"Russo\". SIL Open Font License 1.1.",
+    "modified": false
+  },
+  {
+    "asset": "Rajdhani (fuente)",
+    "author": "Indian Type Foundry",
+    "sourceUrl": "https://github.com/google/fonts/tree/main/ofl/rajdhani",
+    "license": "OFL-1.1",
+    "licenseUrl": "https://openfontlicense.org",
+    "files": [
+      "public/fonts/rajdhani-latin-500-normal.woff2",
+      "public/fonts/rajdhani-latin-600-normal.woff2",
+      "public/fonts/rajdhani-latin-700-normal.woff2",
+      "public/fonts/rajdhani-latin-ext-500-normal.woff2",
+      "public/fonts/rajdhani-latin-ext-600-normal.woff2",
+      "public/fonts/rajdhani-latin-ext-700-normal.woff2"
+    ],
+    "attribution": "Copyright (c) 2014, Indian Type Foundry (info@indiantypefoundry.com). SIL Open Font License 1.1.",
+    "modified": false
+  },
+  {
+    "asset": "El Primo (personaje, nombre y render de la skin por defecto)",
+    "author": "Supercell Oy (Brawl Stars)",
+    "sourceUrl": "https://brawlstars.fandom.com/wiki/File:El_Primo_Skin-Default.png",
+    "license": "Supercell-FCP",
+    "licenseUrl": "https://supercell.com/en/fan-content-policy/",
+    "files": ["public/portraits/el-primo.webp"],
+    "attribution": "El Primo y Brawl Stars © Supercell Oy. Material no oficial, no respaldado por Supercell. El modelo 3D del juego es una recreación hecha por código inspirada en el personaje.",
+    "modified": false
+  }
+]

@@ -10,18 +10,39 @@ import {
 import { debug, type DebugState } from "../debug/debugState.ts";
 import { trainingOptions, type DummyBehavior } from "../engine/game/trainingOptions.ts";
 import type { GameMode } from "../engine/game/world.ts";
+import { CHARACTERS, SELECTABLE_CHARACTERS, type CharacterId } from "../engine/game/characters.ts";
+import { getMoveset } from "../engine/combat/movesets.ts";
+import type { AttackDir } from "../engine/combat/attacks.ts";
+import { characterLore } from "../content/lore.ts";
+import { getQualityManager } from "../render/quality/qualityManager.ts";
+import {
+  LEVEL_CONTROL_KEYS,
+  PRESET_IDS,
+  RENDER_SCALES,
+  type ControlKey,
+  type PresetId,
+  type RenderScale,
+} from "../render/quality/visualPrefs.ts";
+import { button, dialog, levelSelect, slider, tabs, toggle } from "./design/components.ts";
+import { getMenuNavigator } from "./nav/menuNavigator.ts";
+import { keyHint } from "./nav/keyHints.ts";
+import { setLegend } from "./nav/legend.ts";
+import "./pauseMenu.css";
 
 /**
- * Menú de pausa con navegación tipo "stack" horizontal.
+ * Menú de pausa de partida local (R3.1, R3.4, R6.3–R6.7, R6.12, R9.1, R9.5).
  *
- * Hay una página raíz ("Pausa") y subpáginas (Opciones, Dev tools, Dummy,
- * Controles). Al entrar en una subpágina, esta ENTRA desde la derecha y empuja
- * a la página anterior hacia la izquierda; al volver, ocurre al revés. Cada
- * subpágina muestra arriba una flecha "‹" para volver y su propio título (no
- * una ruta de migas de pan).
+ * Es un diálogo obligatorio: no se cierra con clic fuera; Escape (o B en el
+ * gamepad, que el Navegador_Menús traduce a Escape) equivale a "Continuar" en
+ * la raíz y a "Volver" en las subpáginas.
  *
- * El menú solo se abre/cierra con Escape (no al hacer clic fuera). Avisa por
- * callbacks (onOpen / onClose) para pausar el juego y el reencuadre de cámara.
+ * Páginas: raíz (Continuar · Opciones · Dummy · Salir), Opciones con pestañas
+ * (Gráficos, Accesibilidad, Controles, Audio, Depuración), reasignación de
+ * teclas por jugador, Dummy (solo entrenamiento) y confirmación de salida.
+ *
+ * Gráficos y Accesibilidad leen y escriben en el Gestor_Calidad compartido
+ * (`getQualityManager()`); cada cambio se aplica al instante y se guarda con
+ * *debounce*. Las teclas se siguen guardando con `rebind`/`resetBindings`.
  */
 
 interface ToggleDef {
@@ -69,6 +90,26 @@ const DEBUG_INFO_TOGGLES: ToggleDef[] = [
   { key: "showFps", label: "FPS" },
 ];
 
+/** Etiquetas visibles de cada Control_Gráfico. */
+export const CONTROL_LABELS: Record<ControlKey, string> = {
+  particles: "Partículas",
+  flashes: "Destellos de impacto",
+  lensFlares: "Destellos de lente",
+  bloom: "Bloom",
+  dof: "Profundidad de campo",
+  shadows: "Sombras",
+  cameraShake: "Vibración de cámara",
+  speedLines: "Líneas de velocidad",
+  bgAnimations: "Animaciones de fondo",
+  renderScale: "Escala de resolución",
+};
+
+const PRESET_NAMES: Record<PresetId, string> = {
+  bajo: "Bajo",
+  medio: "Medio",
+  alto: "Alto",
+};
+
 export interface PauseMenuCallbacks {
   onOpen: () => void;
   onClose: () => void;
@@ -81,67 +122,98 @@ export interface PauseMenuCallbacks {
    * de intro). Si devuelve false, Escape no abre el menú. Por defecto sí.
    */
   canOpen?: () => boolean;
+  /** Entrenamiento: personaje actual del jugador. */
+  currentCharacter?: CharacterId;
+  /** Entrenamiento: cambiar de personaje (reinicia el entrenamiento con él). */
+  onChangeCharacter?: (id: CharacterId) => void;
 }
 
-type PageId =
-  | "root"
-  | "options"
-  | "keys"
-  | "keysP1"
-  | "keysP2"
-  | "dummy"
-  | "controls"
-  | "quit";
+type PageId = "root" | "options" | "keys" | "keysP1" | "keysP2" | "dummy" | "character" | "quit";
 
 const PAGE_TITLE: Record<PageId, string> = {
   root: "Pausa",
-  options: "Ajustes",
-  keys: "Controles (teclas)",
-  keysP1: "Teclas · P1",
-  keysP2: "Teclas · P2",
+  options: "Opciones",
+  keys: "Reasignar teclas",
+  keysP1: "Teclas · Jugador 1",
+  keysP2: "Teclas · Jugador 2",
   dummy: "Dummy",
-  controls: "Controles",
+  character: "Cambiar personaje",
   quit: "Salir de la partida",
 };
 
+export type OptionsTab = "graphics" | "accessibility" | "controls" | "audio" | "debug";
+
+const OPTION_TABS: { id: OptionsTab; label: string }[] = [
+  { id: "graphics", label: "Gráficos" },
+  { id: "accessibility", label: "Accesibilidad" },
+  { id: "controls", label: "Controles" },
+  { id: "audio", label: "Audio" },
+  { id: "debug", label: "Depuración" },
+];
+
+/** Atributo para recuperar el foco tras volver a dibujar una página. */
+const KEY_ATTR = "data-pause-key";
+
 export class PauseMenu {
   private readonly root: HTMLDivElement;
-  private readonly viewport: HTMLDivElement;
+  private readonly box: HTMLDivElement;
+  private readonly titleEl: HTMLHeadingElement;
+  private readonly backBtn: HTMLButtonElement;
+  private readonly body: HTMLDivElement;
   private open = false;
 
   /** Pila de navegación. Siempre empieza en "root". */
   private nav: PageId[] = ["root"];
-  /** ¿Hay una animación de transición en curso? */
-  private animating = false;
+  /** Pestaña activa de Opciones (se conserva al volver a la página). */
+  private optionsTab: OptionsTab = "graphics";
   /** Mientras capturamos una tecla para reasignar, Esc no navega. */
   private capturing = false;
+  private unmountNav: (() => void) | null = null;
 
   constructor(private readonly cb: PauseMenuCallbacks) {
     this.root = document.createElement("div");
     this.root.id = "pause-menu";
+    this.root.className = "kb-pause";
 
-    const panel = document.createElement("div");
-    panel.className = "pause-panel";
-
-    // Viewport recorta; dentro deslizan las páginas horizontalmente.
-    this.viewport = document.createElement("div");
-    this.viewport.className = "pause-viewport";
-    panel.appendChild(this.viewport);
-
-    // Nota: ya NO hay scrim que cierre al hacer clic. El menú solo se controla
-    // con Escape. Mantenemos un velo visual, pero sin capturar clics de cierre.
+    // Velo visual: no cierra al hacer clic (diálogo obligatorio).
     const scrim = document.createElement("div");
-    scrim.className = "pause-scrim";
-
+    scrim.className = "kb-pause__scrim";
     this.root.appendChild(scrim);
-    const wrap = document.createElement("div");
-    wrap.className = "pause-wrap";
-    wrap.appendChild(panel);
-    this.root.appendChild(wrap);
 
+    this.box = document.createElement("div");
+    this.box.className = "kb-pause__dialog";
+    this.box.setAttribute("role", "alertdialog");
+    this.box.setAttribute("aria-modal", "true");
+    this.box.dataset.mandatory = "";
+
+    const header = document.createElement("div");
+    header.className = "kb-pause__header";
+    this.backBtn = button({
+      label: "‹",
+      variant: "ghost",
+      onActivate: () => this.back(),
+    });
+    this.backBtn.classList.add("kb-pause__back");
+    this.backBtn.setAttribute("aria-label", "Volver");
+    this.titleEl = document.createElement("h2");
+    this.titleEl.className = "kb-pause__title";
+    this.titleEl.id = "kb-pause-title";
+    this.box.setAttribute("aria-labelledby", this.titleEl.id);
+    header.append(this.backBtn, this.titleEl);
+
+    this.body = document.createElement("div");
+    this.body.className = "kb-pause__body";
+
+    this.box.append(header, this.body);
+    this.root.appendChild(this.box);
+    // Leyenda: Escape/B retrocede un nivel o, en la raíz, continúa la partida.
+    keyHint(this.backBtn, "escape", { hotkey: false });
+    setLegend(this.box, {
+      items: () => [{ key: "escape", pad: "b", label: this.nav.length > 1 ? "Volver" : "Continuar" }],
+    });
     document.body.appendChild(this.root);
     window.addEventListener("keydown", this.onKey);
-    this.renderInitial();
+    this.render();
   }
 
   get isOpen(): boolean {
@@ -151,27 +223,33 @@ export class PauseMenu {
   /** Elimina el menú del DOM y desengancha sus listeners (al salir de partida). */
   destroy(): void {
     window.removeEventListener("keydown", this.onKey);
+    this.unmountNav?.();
+    this.unmountNav = null;
     this.root.remove();
   }
 
   private onKey = (e: KeyboardEvent): void => {
     if (e.key !== "Escape") return;
-    // Si estamos capturando una tecla para reasignar, Esc cancela la captura
-    // (lo gestiona el propio capturador), no navega el menú.
+    // La captura de tecla gestiona su propio Escape (cancelar).
     if (this.capturing) return;
-    e.preventDefault();
-    if (this.animating) return;
-    // Esc retrocede un nivel; en la raíz, cierra el menú.
-    if (this.open && this.nav.length > 1) {
-      this.back();
-    } else if (this.open) {
-      this.setOpen(false);
-    } else {
-      // Abrir: solo si está permitido (p. ej. no durante la cuenta atrás).
-      if (this.cb.canOpen && !this.cb.canOpen()) return;
-      this.setOpen(true);
+    if (this.open) {
+      // Con el menú abierto, el Navegador_Menús ya gestiona Escape/B (onCancel).
+      if (e.defaultPrevented) return;
+      e.preventDefault();
+      this.handleEscape();
+      return;
     }
+    if (this.cb.canOpen && !this.cb.canOpen()) return;
+    e.preventDefault();
+    this.setOpen(true);
   };
+
+  /** Escape/B: retrocede un nivel; en la raíz equivale a "Continuar". */
+  private handleEscape(): void {
+    if (this.capturing) return;
+    if (this.nav.length > 1) this.back();
+    else this.setOpen(false);
+  }
 
   private setOpen(value: boolean): void {
     if (value === this.open) return;
@@ -179,205 +257,244 @@ export class PauseMenu {
     this.root.classList.toggle("open", this.open);
     if (this.open) {
       this.nav = ["root"];
-      this.renderInitial();
+      this.render();
+      this.unmountNav = getMenuNavigator().mount(this.box, {
+        dialog: true,
+        onCancel: () => this.handleEscape(),
+      });
       this.cb.onOpen();
     } else {
+      this.unmountNav?.();
+      this.unmountNav = null;
       this.cb.onClose();
     }
   }
 
-  /**
-   * Re-dibuja la pila de tarjetas. Cada página de `nav` es una TARJETA. La de
-   * arriba (actual) está centrada y activa; las anteriores quedan a la
-   * izquierda, desplazadas, escaladas y oscurecidas, pero SIGUEN VISIBLES. Al
-   * navegar, la nueva tarjeta entra desde la derecha empujando el resto.
-   */
-  private renderStack(): void {
-    // Reconstruimos (sin animación) las tarjetas de la pila actual.
-    const cards: HTMLElement[] = this.nav.map((page) => {
-      const card = this.buildPage(page);
-      card.classList.add("pause-card");
-      return card;
-    });
-
-    this.viewport.replaceChildren(...cards);
-    const top = cards.length - 1;
-    cards.forEach((card, i) => {
-      this.placeCard(card, top - i);
-    });
+  private get page(): PageId {
+    return this.nav[this.nav.length - 1];
   }
 
-  /** Coloca una tarjeta según su profundidad en la pila. */
-  private placeCard(card: HTMLElement, depth: number): void {
-    // Cada nivel se desplaza a la izquierda y se encoge/oscurece un poco.
-    const shiftX = -depth * 54;
-    const scale = 1 - depth * 0.06;
-    card.style.transform = `translateX(${shiftX}px) scale(${scale})`;
-    card.style.opacity = depth === 0 ? "1" : "1";
-    card.style.zIndex = String(100 - depth);
-    card.classList.toggle("behind", depth > 0);
-    // Oscurecemos progresivamente las de atrás con una capa interna.
-    card.style.setProperty("--dim", String(Math.min(0.62, depth * 0.3)));
-    // Las de atrás no reciben clics.
-    card.style.pointerEvents = depth === 0 ? "auto" : "none";
-  }
-
-  /** Muestra la página actual sin animación (al abrir o resetear). */
-  private renderInitial(): void {
-    this.renderStack();
-  }
-
-  /**
-   * Entra a una subpágina: la nueva tarjeta llega desde la derecha y empuja las
-   * existentes una posición hacia atrás (se deslizan a la izquierda). Reutiliza
-   * las tarjetas ya presentes para que la transición de empuje sea visible.
-   */
   private goTo(page: PageId): void {
-    if (this.animating) return;
-    this.animating = true;
     this.nav.push(page);
+    this.render("forward");
+  }
 
-    const existing = Array.from(this.viewport.children) as HTMLElement[];
-
-    // Empuja las existentes una posición más atrás (profundidad +1).
-    const newTopDepth = existing.length; // tras añadir la nueva
-    existing.forEach((card, i) => {
-      const depth = newTopDepth - i; // la antigua top pasa a depth 1, etc.
-      this.placeCard(card, depth);
-    });
-
-    // Crea la nueva tarjeta fuera (a la derecha) y la trae a su sitio (depth 0).
-    const card = this.buildPage(page);
-    card.classList.add("pause-card");
-    card.style.transition = "none";
-    card.style.transform = "translateX(120%)";
-    card.style.opacity = "0";
-    this.viewport.appendChild(card);
-    void card.offsetWidth; // reflow para que arranque desde fuera
-    card.style.transition = "";
-    requestAnimationFrame(() => this.placeCard(card, 0));
-
-    window.setTimeout(() => {
-      this.animating = false;
-    }, 300);
+  private back(): void {
+    if (this.nav.length <= 1) return;
+    const from = this.nav.pop()!;
+    this.render("back", `goto-${from}`);
   }
 
   /**
-   * Vuelve una página: la tarjeta superior sale por la derecha y, A LA VEZ, las
-   * tarjetas de debajo se deslizan hacia adelante (de profundidad d a d-1), que
-   * es lo que daba la sensación de "sin animación" al volver. Reutilizamos los
-   * elementos existentes para que transicionen en lugar de reconstruirlos.
+   * Dibuja la página superior. `focusKey` intenta devolver el foco al control
+   * con ese `data-pause-key`; si no existe, va al primero.
    */
-  private back(): void {
-    if (this.animating || this.nav.length <= 1) return;
-    this.animating = true;
+  private render(dir?: "forward" | "back", focusKey?: string): void {
+    const page = this.page;
+    this.titleEl.textContent = PAGE_TITLE[page];
+    this.backBtn.hidden = page === "root";
+    this.box.dataset.page = page;
 
-    const cards = Array.from(this.viewport.children) as HTMLElement[];
-    const topCard = cards[cards.length - 1];
-    const survivors = cards.slice(0, -1);
-
-    // La tarjeta superior sale hacia la derecha.
-    topCard.style.pointerEvents = "none";
-    topCard.style.transform = "translateX(120%)";
-    topCard.style.opacity = "0";
-
-    // Las de debajo avanzan una posición (se recolocan con su transición).
-    const newTop = survivors.length - 1;
-    survivors.forEach((card, i) => {
-      this.placeCard(card, newTop - i);
-    });
-
-    this.nav.pop();
-
-    window.setTimeout(() => {
-      // Quitamos del DOM solo la tarjeta que salió; las demás ya están puestas.
-      if (topCard.parentElement === this.viewport) {
-        this.viewport.removeChild(topCard);
-      }
-      this.animating = false;
-    }, 300);
-  }
-
-  private buildPage(page: PageId): HTMLElement {
-    const el = document.createElement("div");
-    el.className = "pause-page";
-
-    // Cabecera: título, con flecha de volver salvo en la raíz.
-    const header = document.createElement("div");
-    header.className = "pause-header";
-    if (page !== "root") {
-      const backBtn = document.createElement("button");
-      backBtn.type = "button";
-      backBtn.className = "pause-back";
-      backBtn.setAttribute("aria-label", "Volver");
-      backBtn.textContent = "‹";
-      backBtn.addEventListener("click", () => this.back());
-      header.appendChild(backBtn);
-    }
-    const title = document.createElement("h2");
-    title.className = "pause-title";
-    title.textContent = PAGE_TITLE[page];
-    header.appendChild(title);
-    el.appendChild(header);
-
-    const body = document.createElement("div");
-    body.className = "pause-body";
-    el.appendChild(body);
+    const content = document.createElement("div");
+    content.className = "kb-pause__page";
+    if (dir) content.dataset.enter = dir;
 
     switch (page) {
       case "options":
-        this.fillOptions(body);
+        this.fillOptions(content);
         break;
       case "keys":
-        this.fillKeys(body);
+        this.fillKeys(content);
         break;
       case "keysP1":
-        this.fillKeyBindings(body, "p1");
+        this.fillKeyBindings(content, "p1");
         break;
       case "keysP2":
-        this.fillKeyBindings(body, "p2");
+        this.fillKeyBindings(content, "p2");
         break;
       case "dummy":
-        this.fillDummy(body);
+        this.fillDummy(content);
         break;
-      case "controls":
-        this.fillControls(body);
+      case "character":
+        this.fillCharacter(content);
         break;
       case "quit":
-        this.fillQuit(body);
+        this.fillQuit(content);
         break;
       case "root":
       default:
-        this.fillRoot(body);
+        this.fillRoot(content);
         break;
     }
-    return el;
+    this.body.replaceChildren(content);
+    if (this.open) this.restoreFocus(focusKey);
   }
+
+  /** Vuelve a dibujar la página actual conservando el foco en `focusKey`. */
+  private rerender(focusKey?: string): void {
+    this.render(undefined, focusKey);
+  }
+
+  private restoreFocus(focusKey?: string): void {
+    const byKey = focusKey
+      ? this.box.querySelector<HTMLElement>(`[${KEY_ATTR}="${focusKey}"]`)
+      : null;
+    const target =
+      byKey ??
+      this.body.querySelector<HTMLElement>(
+        'button:not([disabled]):not([hidden]), input:not([disabled]), [data-kb-focusable]',
+      );
+    target?.focus();
+  }
+
+  // ── Páginas ────────────────────────────────────────────────────────────────
 
   private fillRoot(el: HTMLElement): void {
-    el.appendChild(this.menuButton("Reanudar", () => this.setOpen(false)));
-    el.appendChild(this.menuButton("Ajustes", () => this.goTo("options")));
+    const list = document.createElement("div");
+    list.className = "kb-pause__list";
+    list.appendChild(
+      keyHint(this.menuButton("Continuar", () => this.setOpen(false), "primary", "continue"), "escape", {
+        hotkey: false,
+      }),
+    );
+    list.appendChild(this.menuButton("Opciones", () => this.goTo("options"), "secondary", "goto-options"));
     // El Dummy solo tiene sentido en entrenamiento.
     if (this.cb.mode === "training") {
-      el.appendChild(this.menuButton("Dummy", () => this.goTo("dummy")));
+      if (this.cb.onChangeCharacter) {
+        list.appendChild(
+          this.menuButton("Cambiar personaje", () => this.goTo("character"), "secondary", "goto-character"),
+        );
+      }
+      list.appendChild(this.menuButton("Dummy", () => this.goTo("dummy"), "secondary", "goto-dummy"));
     }
-    el.appendChild(this.menuButton("Controles", () => this.goTo("controls")));
-    el.appendChild(
-      this.menuButton("Menú principal", () => this.goTo("quit")),
-    );
+    list.appendChild(this.menuButton("Salir al menú", () => this.goTo("quit"), "danger", "goto-quit"));
+    el.appendChild(list);
   }
 
-  /**
-   * Ajustes, organizados por categorías. Incluye lo que antes estaba separado
-   * en "Dev tools": aquí todo convive por secciones.
-   */
   private fillOptions(el: HTMLElement): void {
-    // --- Vista ---
+    const panel = document.createElement("div");
+    panel.className = "kb-pause__tabpanel";
+    panel.setAttribute("role", "tabpanel");
+
+    const bar = tabs({
+      tabs: OPTION_TABS,
+      selected: this.optionsTab,
+      onChange: (id) => {
+        this.optionsTab = id as OptionsTab;
+        this.fillTab(panel);
+      },
+    });
+    bar.classList.add("kb-pause__tabs");
+    bar.setAttribute("aria-label", "Categorías de opciones");
+    el.append(bar, panel);
+    this.fillTab(panel);
+  }
+
+  private fillTab(panel: HTMLElement): void {
+    panel.replaceChildren();
+    panel.dataset.tab = this.optionsTab;
+    switch (this.optionsTab) {
+      case "graphics":
+        this.fillGraphics(panel);
+        break;
+      case "accessibility":
+        this.fillAccessibility(panel);
+        break;
+      case "controls":
+        this.fillControls(panel);
+        break;
+      case "audio":
+        this.fillAudio(panel);
+        break;
+      case "debug":
+        this.fillDebug(panel);
+        break;
+    }
+  }
+
+  /** Gráficos: preset, un selector por Control_Gráfico y escala de resolución. */
+  private fillGraphics(el: HTMLElement): void {
+    const qm = getQualityManager();
+    const prefs = qm.getPreferences();
+
+    el.appendChild(this.category("Preset de calidad"));
+    const presetRow = document.createElement("div");
+    presetRow.className = "kb-pause__presets";
+    presetRow.setAttribute("role", "radiogroup");
+    presetRow.setAttribute("aria-label", "Preset de calidad");
+
+    const presetBtns = new Map<PresetId, HTMLButtonElement>();
+    for (const id of PRESET_IDS) {
+      const b = button({
+        label: PRESET_NAMES[id],
+        variant: "secondary",
+        onActivate: () => {
+          qm.selectPreset(id);
+          // Los selectores cambian todos: se redibuja la pestaña.
+          const panel = el;
+          this.fillTab(panel);
+          panel.querySelector<HTMLElement>(`[${KEY_ATTR}="preset-${id}"]`)?.focus();
+        },
+      });
+      b.setAttribute("role", "radio");
+      b.setAttribute(KEY_ATTR, `preset-${id}`);
+      presetBtns.set(id, b);
+      presetRow.appendChild(b);
+    }
+
+    // "Personalizado": etiqueta no seleccionable (R6.5).
+    const custom = document.createElement("span");
+    custom.className = "kb-pause__custom";
+    custom.setAttribute("aria-live", "polite");
+    custom.textContent = "Personalizado";
+    presetRow.appendChild(custom);
+    el.appendChild(presetRow);
+
+    const syncPreset = (): void => {
+      const label = qm.getPreferences().preset;
+      for (const [id, b] of presetBtns) {
+        const sel = label === id;
+        b.setAttribute("aria-checked", sel ? "true" : "false");
+        b.classList.toggle("kb-btn--primary", sel);
+        b.classList.toggle("kb-btn--secondary", !sel);
+      }
+      custom.hidden = label !== "personalizado";
+    };
+    syncPreset();
+
+    el.appendChild(this.category("Efectos"));
+    for (const k of LEVEL_CONTROL_KEYS) {
+      const ctl = levelSelect({
+        label: CONTROL_LABELS[k],
+        value: prefs.controls[k],
+        onChange: (v) => {
+          qm.setControl(k, v);
+          syncPreset();
+        },
+      });
+      ctl.classList.add("kb-pause__level");
+      ctl.dataset.control = k;
+      el.appendChild(ctl);
+    }
+
+    const scale = slider({
+      label: CONTROL_LABELS.renderScale,
+      min: RENDER_SCALES[0],
+      max: RENDER_SCALES[RENDER_SCALES.length - 1],
+      step: 5,
+      value: prefs.controls.renderScale,
+      format: (v) => `${v}%`,
+      onChange: (v) => {
+        qm.setControl("renderScale", v as RenderScale);
+        syncPreset();
+      },
+    });
+    scale.dataset.control = "renderScale";
+    el.appendChild(scale);
+
+    // --- Vista e interfaz (antes en "Ajustes") ---
     el.appendChild(this.category("Vista"));
     el.appendChild(this.buildPovSlider());
-
-    // --- Interfaz ---
-    el.appendChild(this.category("Interfaz"));
     el.appendChild(
       this.buildToggle({
         key: "showGameUi",
@@ -385,173 +502,270 @@ export class PauseMenu {
         hint: "Oculta el HUD de porcentajes, vidas y cronómetro para ver el gameplay limpio.",
       }),
     );
-
-    // --- Depuración (lo que antes era Dev tools) ---
-    el.appendChild(this.category("Depuración · Visuales"));
-    this.fillToggles(el, DEBUG_VISUAL_TOGGLES);
-
-    el.appendChild(this.category("Depuración · Información"));
-    this.fillToggles(el, DEBUG_INFO_TOGGLES);
   }
 
-  /** Cabecera de categoría dentro de una página. */
-  private category(title: string): HTMLElement {
-    const h = document.createElement("div");
-    h.className = "pause-subtitle";
-    h.textContent = title;
-    return h;
+  /** Accesibilidad: Movimiento_Reducido (R9.1, R9.5). */
+  private fillAccessibility(el: HTMLElement): void {
+    const qm = getQualityManager();
+    const field = document.createElement("div");
+    field.className = "kb-pause__field";
+    field.appendChild(
+      toggle({
+        label: "Movimiento reducido",
+        checked: qm.getPreferences().reducedMotion,
+        onChange: (v) => qm.setReducedMotion(v),
+      }),
+    );
+    field.appendChild(
+      this.hint(
+        "Desactiva la vibración de cámara, las líneas de velocidad y los destellos de lente de impacto, limita los destellos a pantalla completa y sustituye las animaciones de menú por fundidos.",
+      ),
+    );
+    el.appendChild(field);
+  }
+
+  /** Controles: resumen de P1 en vivo + acceso a la reasignación. */
+  private fillControls(el: HTMLElement): void {
+    const list = document.createElement("dl");
+    list.className = "kb-pause__controls";
+    const rows: Array<[string, string]> = ACTION_LABELS.map(({ action, label }) => [
+      label,
+      bindings.p1[action].map(keyLabel).join(" / "),
+    ]);
+    rows.push(["Pausa", "Esc"]);
+    for (const [action, keys] of rows) {
+      const dt = document.createElement("dt");
+      dt.textContent = action;
+      const dd = document.createElement("dd");
+      dd.textContent = keys;
+      list.append(dt, dd);
+    }
+    el.appendChild(list);
+    el.appendChild(this.menuButton("Cambiar teclas", () => this.goTo("keys"), "secondary", "goto-keys"));
+  }
+
+  /** Audio: el juego aún no tiene controles de audio que migrar. */
+  private fillAudio(el: HTMLElement): void {
+    el.appendChild(this.hint("No hay ajustes de audio disponibles por ahora."));
+  }
+
+  private fillDebug(el: HTMLElement): void {
+    el.appendChild(this.category("Depuración · Visuales"));
+    for (const def of DEBUG_VISUAL_TOGGLES) el.appendChild(this.buildToggle(def));
+    el.appendChild(this.category("Depuración · Información"));
+    for (const def of DEBUG_INFO_TOGGLES) el.appendChild(this.buildToggle(def));
   }
 
   /** Elección de qué jugador remapear. */
   private fillKeys(el: HTMLElement): void {
-    el.appendChild(this.menuButton("Jugador 1", () => this.goTo("keysP1")));
-    el.appendChild(this.menuButton("Jugador 2", () => this.goTo("keysP2")));
+    const list = document.createElement("div");
+    list.className = "kb-pause__list";
+    list.appendChild(this.menuButton("Jugador 1", () => this.goTo("keysP1"), "secondary", "goto-keysP1"));
+    list.appendChild(this.menuButton("Jugador 2", () => this.goTo("keysP2"), "secondary", "goto-keysP2"));
+    el.appendChild(list);
   }
 
-  /** Lista de acciones con su tecla; pulsar una captura la nueva tecla. */
+  /** Lista de acciones con su tecla; activar una abre "Pulsa una tecla". */
   private fillKeyBindings(el: HTMLElement, slot: PlayerSlot): void {
     for (const { action, label } of ACTION_LABELS) {
       const row = document.createElement("div");
-      row.className = "pause-keyrow";
+      row.className = "kb-pause__keyrow";
 
       const name = document.createElement("span");
-      name.className = "pause-label";
+      name.className = "kb-pause__label";
       name.textContent = label;
       row.appendChild(name);
 
-      const keyBtn = document.createElement("button");
-      keyBtn.type = "button";
-      keyBtn.className = "pause-key";
-      keyBtn.textContent = keyLabel(bindings[slot][action][0] ?? "—");
-      keyBtn.addEventListener("click", () => {
-        this.captureKey(slot, action, keyBtn);
+      const keyBtn = button({
+        label: keyLabel(bindings[slot][action][0] ?? "—"),
+        variant: "secondary",
+        onActivate: () => this.captureKey(slot, action, label, keyBtn),
       });
+      keyBtn.classList.add("kb-pause__key");
+      keyBtn.setAttribute(KEY_ATTR, `key-${slot}-${action}`);
+      keyBtn.setAttribute("aria-label", `${label}: ${keyBtn.textContent ?? ""}`);
       row.appendChild(keyBtn);
-
       el.appendChild(row);
     }
 
-    const reset = this.menuButton("Restaurar por defecto", () => {
-      resetBindings(slot);
-      // Re-dibuja la pila para reflejar los valores por defecto.
-      this.renderStack();
-    });
-    reset.classList.add("pause-btn-danger");
+    const reset = this.menuButton(
+      "Restaurar por defecto",
+      () => {
+        resetBindings(slot);
+        this.rerender(`reset-${slot}`);
+      },
+      "danger",
+      `reset-${slot}`,
+    );
+    reset.classList.add("kb-pause__spaced");
     el.appendChild(reset);
   }
 
   /**
-   * Captura la próxima tecla pulsada y la asigna a la acción. Escape cancela.
+   * Diálogo obligatorio "Pulsa una tecla": la próxima tecla se asigna a la
+   * acción (misma persistencia que antes, vía `rebind`). Escape cancela.
    */
   private captureKey(
     slot: PlayerSlot,
     action: (typeof ACTION_LABELS)[number]["action"],
+    label: string,
     btn: HTMLButtonElement,
   ): void {
     if (this.capturing) return;
     this.capturing = true;
-    btn.classList.add("capturing");
-    btn.textContent = "Pulsa una tecla…";
 
+    const text = document.createElement("p");
+    text.className = "kb-pause__capture-text";
+    text.textContent = `Pulsa la nueva tecla para «${label}». Escape cancela.`;
+
+    let unmount: (() => void) | null = null;
     const finish = (): void => {
       window.removeEventListener("keydown", onDown, true);
       this.capturing = false;
-      btn.classList.remove("capturing");
+      unmount?.();
+      unmount = null;
+      d.close();
+      const keyText = keyLabel(bindings[slot][action][0] ?? "—");
+      const lbl = btn.querySelector(".kb-btn__label");
+      if (lbl) lbl.textContent = keyText;
+      btn.setAttribute("aria-label", `${label}: ${keyText}`);
+      if (btn.isConnected) btn.focus();
     };
+
+    const cancel = button({ label: "Cancelar", variant: "ghost", onActivate: () => finish() });
+    const d = dialog({ title: "Pulsa una tecla", body: [text], actions: [cancel], mandatory: true });
+    d.el.classList.add("kb-pause__capture");
 
     const onDown = (e: KeyboardEvent): void => {
       e.preventDefault();
       e.stopPropagation();
       const key = e.key.toLowerCase();
-      if (key !== "escape") {
-        rebind(slot, action, key);
-      }
-      btn.textContent = keyLabel(bindings[slot][action][0] ?? "—");
+      if (key !== "escape") rebind(slot, action, key);
       finish();
     };
 
-    // Captura en fase de captura para adelantarnos al onKey del menú.
+    d.open();
+    unmount = getMenuNavigator().mount(d.el, { dialog: true, mandatory: true, returnFocus: btn });
+    // Fase de captura: nos adelantamos al Navegador_Menús y al onKey del menú.
     window.addEventListener("keydown", onDown, true);
   }
 
   /** Confirmación para abandonar la partida y volver al menú principal. */
   private fillQuit(el: HTMLElement): void {
     const warn = document.createElement("p");
-    warn.className = "pause-warn";
-    warn.textContent =
-      "Si sales ahora perderás el progreso de esta partida. ¿Seguro?";
+    warn.className = "kb-pause__warn";
+    warn.textContent = "Si sales ahora perderás el progreso de esta partida. ¿Seguro?";
     el.appendChild(warn);
 
-    const confirm = this.menuButton("Sí, salir al menú", () => {
-      this.setOpen(false);
-      this.cb.onQuitToMenu();
-    });
-    confirm.classList.add("pause-btn-danger");
-    el.appendChild(confirm);
-
-    el.appendChild(this.menuButton("Cancelar", () => this.back()));
+    const list = document.createElement("div");
+    list.className = "kb-pause__list";
+    list.appendChild(this.menuButton("Cancelar", () => this.back(), "secondary", "quit-cancel"));
+    list.appendChild(
+      this.menuButton(
+        "Sí, salir al menú",
+        () => {
+          this.setOpen(false);
+          this.cb.onQuitToMenu();
+        },
+        "danger",
+        "quit-confirm",
+      ),
+    );
+    el.appendChild(list);
   }
 
-  private buildPovSlider(): HTMLElement {
-    const wrap = document.createElement("div");
-    wrap.className = "pause-field";
+  /**
+   * Página de personaje (entrenamiento): parrilla de los 12 y la lista de
+   * movimientos del personaje actual. Elegir uno reinicia el entrenamiento.
+   */
+  private fillCharacter(el: HTMLElement): void {
+    const current = this.cb.currentCharacter;
+    el.appendChild(this.category("Personaje"));
+    const grid = document.createElement("div");
+    grid.className = "kb-pause__chars";
+    for (const id of SELECTABLE_CHARACTERS) {
+      const lore = characterLore(id);
+      const sel = id === current;
+      const b = button({
+        label: lore.crossover ? `${lore.name} ★` : lore.name,
+        variant: sel ? "primary" : "secondary",
+        onActivate: () => {
+          if (sel) return;
+          this.setOpen(false);
+          this.cb.onChangeCharacter?.(id);
+        },
+      });
+      b.style.setProperty("--c", CHARACTERS[id].color);
+      b.classList.add("kb-pause__char");
+      b.setAttribute(KEY_ATTR, `char-${id}`);
+      b.setAttribute("aria-pressed", sel ? "true" : "false");
+      if (lore.crossover) b.title = `Invitado de ${lore.crossover}`;
+      grid.appendChild(b);
+    }
+    el.appendChild(grid);
+    el.appendChild(this.hint("★ = personaje invitado (crossover). Al elegir otro se reinicia el entrenamiento."));
 
+    if (!current) return;
+    const moves = getMoveset(current);
+    el.appendChild(this.category(`Movimientos de ${characterLore(current).name}`));
+    const table = document.createElement("div");
+    table.className = "kb-pause__moves";
+    const dirs: Array<{ dir: AttackDir; label: string }> = [
+      { dir: "neutral", label: "Neutral" },
+      { dir: "side", label: "Lateral" },
+      { dir: "up", label: "Arriba" },
+      { dir: "down", label: "Abajo" },
+    ];
     const head = document.createElement("div");
-    head.className = "pause-field-head";
-
-    const label = document.createElement("span");
-    label.className = "pause-label";
-    label.textContent = "POV (zoom de la partida)";
-    head.appendChild(label);
-
-    const value = document.createElement("span");
-    value.className = "pause-field-value";
-    const fmt = (v: number): string => `${Math.round(v * 100)}%`;
-    value.textContent = fmt(debug.povZoom);
-    head.appendChild(value);
-
-    wrap.appendChild(head);
-
-    const slider = document.createElement("input");
-    slider.type = "range";
-    slider.className = "pause-slider";
-    slider.min = String(POV.min);
-    slider.max = String(POV.max);
-    slider.step = String(POV.step);
-    slider.value = String(debug.povZoom);
-    slider.addEventListener("input", () => {
-      const v = Number(slider.value);
-      debug.povZoom = v;
-      value.textContent = fmt(v);
-    });
-    wrap.appendChild(slider);
-
-    const hint = document.createElement("span");
-    hint.className = "pause-hint";
-    hint.textContent =
-      "Menos % aleja la cámara (ves más campo); más % acerca. No afecta al juego, solo a tu vista.";
-    wrap.appendChild(hint);
-
-    return wrap;
+    head.className = "kb-pause__moves-row kb-pause__moves-head";
+    for (const t of ["", "Ligero", "Fuerte"]) {
+      const c = document.createElement("span");
+      c.textContent = t;
+      head.appendChild(c);
+    }
+    table.appendChild(head);
+    for (const d of dirs) {
+      const row = document.createElement("div");
+      row.className = "kb-pause__moves-row";
+      const label = document.createElement("span");
+      label.textContent = d.label;
+      row.appendChild(label);
+      for (const def of [moves.light[d.dir], moves.heavy[d.dir]]) {
+        const c = document.createElement("span");
+        // Daño mostrado: el del proyectil si dispara; total si es multigolpe.
+        const hits = def.multiHit?.hits ?? 1;
+        const dmg = def.projectile ? def.projectile.damage : def.damage * hits;
+        const tags: string[] = [];
+        if (def.projectile) tags.push("🎯");
+        if (hits > 1) tags.push(`×${hits}`);
+        if (def.armor) tags.push("🛡");
+        if (def.intangible) tags.push("👻");
+        if (def.reflect) tags.push("↩");
+        const tagText = tags.length ? ` ${tags.join(" ")}` : "";
+        c.textContent = `${def.name ?? "—"} · ${Math.round(dmg)}%${tagText}`;
+        if (tags.length) {
+          c.title = [
+            def.projectile && "Proyectil",
+            hits > 1 && `${hits} golpes`,
+            def.armor && "Armadura (no te interrumpen)",
+            def.intangible && "Intangible",
+            def.reflect && "Refleja proyectiles",
+          ]
+            .filter(Boolean)
+            .join(" · ");
+        }
+        row.appendChild(c);
+      }
+      table.appendChild(row);
+    }
+    el.appendChild(table);
   }
 
-  private fillToggles(el: HTMLElement, defs: ToggleDef[]): void {
-    for (const def of defs) el.appendChild(this.buildToggle(def));
-  }
-
-  /** Página del dummy: comportamiento + botones para ejecutar ataques. */
+  /** Página del dummy: comportamiento + ataques en bucle. */
   private fillDummy(el: HTMLElement): void {
-    // --- Comportamiento (radios) ---
-    const behTitle = document.createElement("div");
-    behTitle.className = "pause-subtitle";
-    behTitle.textContent = "Comportamiento";
-    el.appendChild(behTitle);
+    el.appendChild(this.category("Comportamiento"));
 
-    const behaviors: Array<{
-      value: DummyBehavior;
-      label: string;
-      hint: string;
-    }> = [
+    const behaviors: Array<{ value: DummyBehavior; label: string; hint: string }> = [
       { value: "free", label: "Libre", hint: "Física normal, recibe golpes y knockback." },
       {
         value: "freeze",
@@ -564,178 +778,164 @@ export class PauseMenu {
         hint: "Recibe golpes; si queda quieto unos segundos vuelve al centro.",
       },
     ];
+    const group = document.createElement("div");
+    group.className = "kb-pause__radios";
+    group.setAttribute("role", "radiogroup");
+    group.setAttribute("aria-label", "Comportamiento del dummy");
     for (const b of behaviors) {
-      el.appendChild(this.buildDummyRadio(b.value, b.label, b.hint));
+      const sel = trainingOptions.dummyBehavior === b.value;
+      const field = document.createElement("div");
+      field.className = "kb-pause__field";
+      const btn = button({
+        label: b.label,
+        variant: sel ? "primary" : "secondary",
+        onActivate: () => {
+          trainingOptions.dummyBehavior = b.value;
+          this.rerender(`dummy-${b.value}`);
+        },
+      });
+      btn.setAttribute("role", "radio");
+      btn.setAttribute("aria-checked", sel ? "true" : "false");
+      btn.setAttribute(KEY_ATTR, `dummy-${b.value}`);
+      field.append(btn, this.hint(b.hint));
+      group.appendChild(field);
     }
+    el.appendChild(group);
 
-    // --- Ataque repetido ---
-    const atkTitle = document.createElement("div");
-    atkTitle.className = "pause-subtitle";
-    atkTitle.textContent = "Hacer que el dummy ataque";
-    el.appendChild(atkTitle);
-
-    const note = document.createElement("span");
-    note.className = "pause-hint";
-    note.textContent =
-      "Elige un ataque y el dummy lo repetirá en bucle. El ligero deja una pausa entre golpes; el fuerte sale siempre a carga completa.";
-    el.appendChild(note);
-
+    el.appendChild(this.category("Hacer que el dummy ataque"));
+    el.appendChild(
+      this.hint(
+        "Elige un ataque y el dummy lo repetirá en bucle. El ligero deja una pausa entre golpes; el fuerte sale siempre a carga completa.",
+      ),
+    );
     el.appendChild(this.buildAttackRow("Ataque ligero", "light"));
     el.appendChild(this.buildAttackRow("Ataque fuerte", "heavy"));
 
-    // Botón para detener el bucle de ataques.
-    const stop = this.menuButton("Parar ataques", () => {
-      trainingOptions.dummyAttack = null;
-      this.renderStack(); // refresca los resaltados
-    });
-    stop.classList.add("pause-btn-danger");
+    const stop = this.menuButton(
+      "Parar ataques",
+      () => {
+        trainingOptions.dummyAttack = null;
+        this.rerender("dummy-stop");
+      },
+      "danger",
+      "dummy-stop",
+    );
+    stop.classList.add("kb-pause__spaced");
     el.appendChild(stop);
   }
 
-  private buildDummyRadio(
-    value: DummyBehavior,
-    label: string,
-    hint: string,
-  ): HTMLElement {
-    const row = document.createElement("label");
-    row.className = "pause-row";
-
-    const radio = document.createElement("input");
-    radio.type = "radio";
-    radio.name = "dummy-behavior";
-    radio.checked = trainingOptions.dummyBehavior === value;
-    radio.addEventListener("change", () => {
-      if (radio.checked) trainingOptions.dummyBehavior = value;
-    });
-
-    const text = document.createElement("div");
-    text.className = "pause-text";
-    const name = document.createElement("span");
-    name.className = "pause-label";
-    name.textContent = label;
-    text.appendChild(name);
-    const h = document.createElement("span");
-    h.className = "pause-hint";
-    h.textContent = hint;
-    text.appendChild(h);
-
-    row.appendChild(radio);
-    row.appendChild(text);
-    return row;
-  }
-
   /**
-   * Fila con un ataque y 4 botones de dirección. Pulsar un botón SELECCIONA ese
-   * ataque+dirección para que el dummy lo repita en bucle; vuelve a pulsarlo
-   * para desactivarlo. El botón activo queda resaltado.
+   * Fila con un ataque y 4 direcciones. Activar una dirección la selecciona
+   * para que el dummy la repita; volver a activarla la desactiva.
    */
   private buildAttackRow(label: string, kind: "light" | "heavy"): HTMLElement {
     const wrap = document.createElement("div");
-    wrap.className = "pause-attackrow";
+    wrap.className = "kb-pause__attackrow";
 
     const name = document.createElement("span");
-    name.className = "pause-label";
+    name.className = "kb-pause__label";
     name.textContent = label;
     wrap.appendChild(name);
 
-    const dirs: Array<{ dir: "neutral" | "side" | "up" | "down"; glyph: string }> = [
-      { dir: "neutral", glyph: "●" },
-      { dir: "side", glyph: "→" },
-      { dir: "up", glyph: "↑" },
-      { dir: "down", glyph: "↓" },
+    const dirs: Array<{ dir: "neutral" | "side" | "up" | "down"; glyph: string; name: string }> = [
+      { dir: "neutral", glyph: "●", name: "neutral" },
+      { dir: "side", glyph: "→", name: "lateral" },
+      { dir: "up", glyph: "↑", name: "arriba" },
+      { dir: "down", glyph: "↓", name: "abajo" },
     ];
 
     const btns = document.createElement("div");
-    btns.className = "pause-dirbtns";
+    btns.className = "kb-pause__dirbtns";
     for (const d of dirs) {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.className = "pause-dirbtn";
-      b.textContent = d.glyph;
-      b.title = d.dir;
-      // Marca activo si coincide con la selección actual.
       const active =
-        trainingOptions.dummyAttack?.kind === kind &&
-        trainingOptions.dummyAttack?.dir === d.dir;
-      if (active) b.classList.add("active");
-      b.addEventListener("click", () => {
-        const current = trainingOptions.dummyAttack;
-        const isSame = current?.kind === kind && current?.dir === d.dir;
-        trainingOptions.dummyAttack = isSame ? null : { kind, dir: d.dir };
-        this.renderStack(); // refresca resaltados de toda la página
+        trainingOptions.dummyAttack?.kind === kind && trainingOptions.dummyAttack?.dir === d.dir;
+      const key = `atk-${kind}-${d.dir}`;
+      const b = button({
+        label: d.glyph,
+        variant: active ? "primary" : "secondary",
+        onActivate: () => {
+          const current = trainingOptions.dummyAttack;
+          const isSame = current?.kind === kind && current?.dir === d.dir;
+          trainingOptions.dummyAttack = isSame ? null : { kind, dir: d.dir };
+          this.rerender(key);
+        },
       });
+      b.classList.add("kb-pause__dirbtn");
+      b.title = d.dir;
+      b.setAttribute("aria-label", `${label} ${d.name}`);
+      b.setAttribute("aria-pressed", active ? "true" : "false");
+      b.setAttribute(KEY_ATTR, key);
       btns.appendChild(b);
     }
     wrap.appendChild(btns);
     return wrap;
   }
 
-  /** Resumen de controles de P1 (leído en vivo de los bindings) + la pausa. */
-  private fillControls(el: HTMLElement): void {
-    const rows: Array<[string, string]> = ACTION_LABELS.map(
-      ({ action, label }) => [
-        label,
-        bindings.p1[action].map(keyLabel).join(" / "),
-      ],
+  // ── Piezas ─────────────────────────────────────────────────────────────────
+
+  private buildPovSlider(): HTMLElement {
+    const field = document.createElement("div");
+    field.className = "kb-pause__field";
+    field.appendChild(
+      slider({
+        label: "POV (zoom de la partida)",
+        min: POV.min,
+        max: POV.max,
+        step: POV.step,
+        value: debug.povZoom,
+        format: (v) => `${Math.round(v * 100)}%`,
+        onChange: (v) => {
+          debug.povZoom = v;
+        },
+      }),
     );
-    rows.push(["Pausa", "Esc"]);
-
-    for (const [action, keys] of rows) {
-      const row = document.createElement("div");
-      row.className = "pause-control";
-      const a = document.createElement("span");
-      a.className = "pause-control-action";
-      a.textContent = action;
-      const k = document.createElement("span");
-      k.className = "pause-control-keys";
-      k.textContent = keys;
-      row.appendChild(a);
-      row.appendChild(k);
-      el.appendChild(row);
-    }
-
-    // Botón para reasignar teclas (antes estaba en Ajustes).
-    el.appendChild(this.menuButton("Cambiar teclas", () => this.goTo("keys")));
-  }
-
-  /** Botón de menú uniforme (mismo tamaño y estilo gris, azul al hover). */
-  private menuButton(label: string, onClick: () => void): HTMLButtonElement {
-    const btn = document.createElement("button");
-    btn.className = "pause-btn";
-    btn.type = "button";
-    btn.textContent = label;
-    btn.addEventListener("click", onClick);
-    return btn;
+    field.appendChild(
+      this.hint(
+        "Menos % aleja la cámara (ves más campo); más % acerca. No afecta al juego, solo a tu vista.",
+      ),
+    );
+    return field;
   }
 
   private buildToggle(def: ToggleDef): HTMLElement {
-    const row = document.createElement("label");
-    row.className = "pause-row";
+    const field = document.createElement("div");
+    field.className = "kb-pause__field";
+    field.appendChild(
+      toggle({
+        label: def.label,
+        checked: debug[def.key] as boolean,
+        onChange: (v) => {
+          (debug[def.key] as boolean) = v;
+        },
+      }),
+    );
+    if (def.hint) field.appendChild(this.hint(def.hint));
+    return field;
+  }
 
-    const cb = document.createElement("input");
-    cb.type = "checkbox";
-    cb.checked = debug[def.key] as boolean;
-    cb.addEventListener("change", () => {
-      (debug[def.key] as boolean) = cb.checked;
-    });
+  private category(title: string): HTMLElement {
+    const h = document.createElement("h3");
+    h.className = "kb-pause__subtitle";
+    h.textContent = title;
+    return h;
+  }
 
-    const text = document.createElement("div");
-    text.className = "pause-text";
+  private hint(text: string): HTMLElement {
+    const s = document.createElement("p");
+    s.className = "kb-pause__hint";
+    s.textContent = text;
+    return s;
+  }
 
-    const name = document.createElement("span");
-    name.className = "pause-label";
-    name.textContent = def.label;
-    text.appendChild(name);
-
-    if (def.hint) {
-      const hint = document.createElement("span");
-      hint.className = "pause-hint";
-      hint.textContent = def.hint;
-      text.appendChild(hint);
-    }
-
-    row.appendChild(cb);
-    row.appendChild(text);
-    return row;
+  private menuButton(
+    label: string,
+    onClick: () => void,
+    variant: "primary" | "secondary" | "danger",
+    key: string,
+  ): HTMLButtonElement {
+    const b = button({ label, variant, onActivate: onClick });
+    b.classList.add("kb-pause__btn");
+    b.setAttribute(KEY_ATTR, key);
+    return b;
   }
 }

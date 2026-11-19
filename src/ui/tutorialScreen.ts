@@ -7,6 +7,13 @@ import type { Renderer } from "../render/renderer.ts";
 import type { Camera } from "../render/camera.ts";
 import { PauseMenu } from "./pauseMenu.ts";
 import { markTutorialDone } from "./mainMenu.ts";
+import { button, panel, setDisabled } from "./design/components.ts";
+import "./tutorial.css";
+
+/** Escapa texto para insertarlo en `innerHTML` (etiquetas de teclas). */
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+}
 
 /**
  * Pantalla de TUTORIAL: un modo guiado autónomo (con su propio bucle, como el
@@ -192,13 +199,19 @@ const OBJECTIVES: Objective[] = [
 ];
 
 export class TutorialScreen {
-  private readonly panel: HTMLDivElement;
+  private readonly panel: HTMLElement;
+  private readonly stepNumEl: HTMLSpanElement;
+  private readonly stepTotalEl: HTMLSpanElement;
   private readonly titleEl: HTMLDivElement;
   private readonly instrEl: HTMLDivElement;
   private readonly progressEl: HTMLDivElement;
-  private readonly taskListEl: HTMLDivElement;
+  private readonly taskListEl: HTMLUListElement;
+  private readonly prevBtn: HTMLButtonElement;
+  private readonly nextBtn: HTMLButtonElement;
   private readonly doneEl: HTMLDivElement;
   private readonly cheerEl: HTMLDivElement;
+  /** Objetivos ya completados (al volver a ellos con "Anterior" no se re-avanza). */
+  private objDone: boolean[] = OBJECTIVES.map(() => false);
 
   private world: World | null = null;
   private tut: Tutorial | null = null;
@@ -210,7 +223,7 @@ export class TutorialScreen {
 
   private objIndex = 0;
   /** Elementos de check de las tareas del objetivo actual. */
-  private taskEls: HTMLDivElement[] = [];
+  private taskEls: HTMLLIElement[] = [];
   private taskDone: boolean[] = [];
 
   /** Transición entre objetivos: >0 = mostrando "¡Bien hecho!" y reiniciando. */
@@ -227,34 +240,78 @@ export class TutorialScreen {
     private readonly camera: Camera,
     private readonly cb: TutorialScreenCallbacks,
   ) {
-    this.panel = document.createElement("div");
-    this.panel.id = "tutorial-panel";
-
-    this.progressEl = document.createElement("div");
-    this.progressEl.className = "tutorial-progress";
-    this.panel.appendChild(this.progressEl);
+    // Cabecera: número de paso en fuente display + "de N".
+    const head = document.createElement("div");
+    head.className = "kb-tut__head";
+    const step = document.createElement("div");
+    step.className = "kb-tut__step";
+    this.stepNumEl = document.createElement("span");
+    this.stepNumEl.className = "kb-tut__step-num";
+    this.stepTotalEl = document.createElement("span");
+    this.stepTotalEl.className = "kb-tut__step-total";
+    step.append(this.stepNumEl, this.stepTotalEl);
 
     this.titleEl = document.createElement("div");
-    this.titleEl.className = "tutorial-title";
-    this.panel.appendChild(this.titleEl);
+    this.titleEl.className = "kb-tut__title";
+    this.titleEl.setAttribute("aria-live", "polite");
+    head.append(step, this.titleEl);
+
+    // Barra de progreso segmentada: un segmento por objetivo.
+    this.progressEl = document.createElement("div");
+    this.progressEl.className = "kb-tut__progress";
+    this.progressEl.setAttribute("role", "progressbar");
+    this.progressEl.setAttribute("aria-label", "Progreso del tutorial");
+    this.progressEl.setAttribute("aria-valuemin", "0");
+    this.progressEl.setAttribute("aria-valuemax", String(OBJECTIVES.length));
+    for (let i = 0; i < OBJECTIVES.length; i++) {
+      const seg = document.createElement("span");
+      seg.className = "kb-tut__seg";
+      this.progressEl.appendChild(seg);
+    }
 
     this.instrEl = document.createElement("div");
-    this.instrEl.className = "tutorial-instr";
-    this.panel.appendChild(this.instrEl);
+    this.instrEl.className = "kb-tut__instr";
 
     // Lista de sub-tareas con sus checks.
-    this.taskListEl = document.createElement("div");
-    this.taskListEl.className = "tutorial-tasks";
-    this.panel.appendChild(this.taskListEl);
+    this.taskListEl = document.createElement("ul");
+    this.taskListEl.className = "kb-tut__tasks";
+
+    // Anterior / Siguiente: navegan entre objetivos. Se desenfocan tras usarse
+    // para que Espacio/Enter sigan yendo a la partida y no al botón.
+    this.prevBtn = button({
+      label: "Anterior",
+      variant: "secondary",
+      onActivate: () => {
+        this.prevBtn.blur();
+        this.goTo(this.objIndex - 1);
+      },
+    });
+    this.nextBtn = button({
+      label: "Siguiente",
+      variant: "primary",
+      onActivate: () => {
+        this.nextBtn.blur();
+        this.goTo(this.objIndex + 1);
+      },
+    });
+    const nav = document.createElement("div");
+    nav.className = "kb-tut__nav";
+    nav.append(this.prevBtn, this.nextBtn);
+
+    this.panel = panel({ children: [head, this.progressEl, this.instrEl, this.taskListEl, nav] });
+    this.panel.id = "kb-tutorial";
+    this.panel.classList.add("kb-tut");
+    this.panel.setAttribute("aria-label", "Tutorial");
 
     // Texto "¡Bien hecho!" al completar un objetivo.
     this.cheerEl = document.createElement("div");
-    this.cheerEl.id = "tutorial-cheer";
+    this.cheerEl.className = "kb-tut-cheer";
+    this.cheerEl.setAttribute("aria-live", "polite");
     this.cheerEl.textContent = "¡Bien hecho!";
 
     // Cartel grande de "tutorial completado".
     this.doneEl = document.createElement("div");
-    this.doneEl.id = "tutorial-done";
+    this.doneEl.className = "kb-tut-done";
     this.doneEl.textContent = "¡Tutorial completado!";
 
     document.body.appendChild(this.panel);
@@ -269,6 +326,7 @@ export class TutorialScreen {
     });
     this.tut = new Tutorial(this.world);
     this.objIndex = 0;
+    this.objDone = OBJECTIVES.map(() => false);
     this.completed = false;
     this.completeTimer = 0;
     this.advanceTimer = 0;
@@ -374,11 +432,42 @@ export class TutorialScreen {
       if (!done) allDone = false;
     });
 
-    if (allDone) {
-      // Objetivo completado: "¡Bien hecho!" y, tras un instante, avanzar.
+    // Objetivo completado por primera vez: "¡Bien hecho!" y, tras un instante,
+    // avanzar. Si se volvió a un objetivo ya hecho con "Anterior", se queda.
+    if (allDone && !this.objDone[this.objIndex]) {
+      this.objDone[this.objIndex] = true;
+      this.renderProgress();
       this.cheer();
       this.advanceTimer = 1.1;
     }
+  }
+
+  /** Salta manualmente a otro objetivo (botones Anterior/Siguiente). */
+  private goTo(index: number): void {
+    if (this.completed || index < 0 || index >= OBJECTIVES.length || index === this.objIndex) return;
+    this.advanceTimer = 0;
+    this.cheerEl.classList.remove("show");
+    this.objIndex = index;
+    this.resetPlayer();
+    this.buildObjective();
+  }
+
+  /** Actualiza segmentos de progreso, número de paso y estado de los botones. */
+  private renderProgress(): void {
+    const n = OBJECTIVES.length;
+    this.stepNumEl.textContent = String(this.objIndex + 1).padStart(2, "0");
+    this.stepTotalEl.textContent = `/ ${String(n).padStart(2, "0")}`;
+    const segs = this.progressEl.children;
+    for (let i = 0; i < segs.length; i++) {
+      const seg = segs[i]!;
+      seg.classList.toggle("is-done", this.objDone[i] === true);
+      seg.classList.toggle("is-current", i === this.objIndex);
+    }
+    const doneCount = this.objDone.filter(Boolean).length;
+    this.progressEl.setAttribute("aria-valuenow", String(doneCount));
+    this.progressEl.setAttribute("aria-valuetext", `Objetivo ${this.objIndex + 1} de ${n}`);
+    setDisabled(this.prevBtn, this.objIndex <= 0);
+    setDisabled(this.nextBtn, this.objIndex >= n - 1);
   }
 
   /** Muestra el texto de ánimo al completar un objetivo. */
@@ -424,11 +513,11 @@ export class TutorialScreen {
   private buildObjective(): void {
     const obj = OBJECTIVES[this.objIndex];
     if (!obj) return;
-    this.progressEl.textContent = `Objetivo ${this.objIndex + 1} / ${OBJECTIVES.length}`;
+    this.renderProgress();
     this.titleEl.textContent = obj.title;
     this.instrEl.innerHTML = obj.instruction.replace(
       /\{(\w+)\}/g,
-      (_m, action: string) => `<b class="tutorial-key">${key(action)}</b>`,
+      (_m, action: string) => `<kbd class="kb-tut__key">${escapeHtml(key(action))}</kbd>`,
     );
 
     // Reconstruye la lista de sub-tareas con sus checks (vacíos).
@@ -436,12 +525,14 @@ export class TutorialScreen {
     this.taskEls = [];
     this.taskDone = obj.tasks.map(() => false);
     obj.tasks.forEach((task) => {
-      const row = document.createElement("div");
-      row.className = "tutorial-task";
+      const row = document.createElement("li");
+      row.className = "kb-tut__task";
       const check = document.createElement("span");
-      check.className = "tutorial-check";
-      check.textContent = "○";
+      check.className = "kb-tut__check";
+      check.setAttribute("aria-hidden", "true");
+      check.textContent = "";
       const label = document.createElement("span");
+      label.className = "kb-tut__task-label";
       label.textContent = task.label;
       row.appendChild(check);
       row.appendChild(label);
@@ -455,7 +546,8 @@ export class TutorialScreen {
     const row = this.taskEls[i];
     if (!row) return;
     row.classList.add("done");
-    const check = row.querySelector(".tutorial-check");
+    row.setAttribute("aria-label", `${row.textContent ?? ""}: completado`);
+    const check = row.querySelector(".kb-tut__check");
     if (check) check.textContent = "✓";
   }
 }
