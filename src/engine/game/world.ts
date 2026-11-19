@@ -1,5 +1,7 @@
-import { BLAST_ZONE, RULES, WORLD } from "../config.ts";
+import { BLAST_ZONE, MOVESETS_ENGINE_VERSION, RULES, WORLD } from "../config.ts";
 import { DUMMY_ATTACK } from "../combat/attacks.ts";
+import { getMoveset } from "../combat/movesets.ts";
+import { Projectile } from "../combat/projectile.ts";
 import { CpuBrain } from "./cpuBrain.ts";
 import { Player } from "../entities/player.ts";
 import { Platform } from "../physics/platform.ts";
@@ -46,6 +48,13 @@ export interface MatchConfig {
    * defecto (P1/P2… o CPU). Se guarda en el replay para reproducir los nombres.
    */
   labels?: string[];
+  /**
+   * Versión del motor con la que se grabó la partida (al reproducir un
+   * replay). Si es anterior a los sets de movimientos propios, todos los
+   * personajes usan el set común antiguo para reproducirse igual. Las partidas
+   * nuevas no lo indican (usan los sets actuales).
+   */
+  engineVersion?: number;
 }
 
 /**
@@ -185,6 +194,9 @@ export class World {
   /** Efectos de muerte activos (visuales). */
   readonly deathEffects: DeathEffect[] = [];
 
+  /** Proyectiles en vuelo (simulados; el render solo los lee). */
+  readonly projectiles: Projectile[] = [];
+
   /** ¿Terminó la partida? Y el índice del ganador (o -1 = empate). */
   gameOver = false;
   winnerIndex = -1;
@@ -250,6 +262,10 @@ export class World {
       : this.characters.map(() => diff ?? "normal");
     this.buildStage();
 
+    // Replays anteriores a los sets propios: set común para todos.
+    const legacyMoves =
+      config?.engineVersion !== undefined && config.engineVersion < MOVESETS_ENGINE_VERSION;
+
     // Creamos N combatientes (2..4) repartidos simétricamente sobre el suelo.
     const n = this.characters.length;
     const spawnY = WORLD.groundY - Player.bodyHeight - 2;
@@ -262,6 +278,7 @@ export class World {
         RULES.respawnX + offset - Player.halfWidth,
         spawnY,
       );
+      player.moveset = getMoveset(c.id, legacyMoves);
       const isCpu = config?.controllers?.[i] === "cpu";
       // Etiqueta personalizada (p. ej. el apodo del usuario en P1) si viene y
       // no es CPU/dummy; si no, la etiqueta por defecto.
@@ -411,8 +428,97 @@ export class World {
       f.hudAnim += (target - f.hudAnim) * Math.min(1, dt * 12);
     }
 
+    this.spawnProjectiles();
     this.resolveHits();
+    this.updateProjectiles(dt, platforms);
     this.updateDeathEffects(dt);
+  }
+
+  /** Lanza los proyectiles de los ataques que acaban de entrar en fase activa. */
+  private spawnProjectiles(): void {
+    for (const f of this.fighters) {
+      const atk = f.player.attack;
+      if (!atk || !atk.wantsProjectile || !f.alive || f.isDead) continue;
+      atk.markProjectileSpawned();
+      const def = atk.def.projectile!;
+      const p = f.player;
+      const facing = atk.attackerFacing;
+      const cx = p.pos.x + p.width / 2;
+      const cy = p.pos.y + p.height * 0.42;
+      const x = facing === 1 ? cx + p.width / 2 - 4 : cx - p.width / 2 + 4 - def.w;
+      // Escalado por carga igual que el golpe cuerpo a cuerpo.
+      const dMult = atk.damage / atk.def.damage;
+      const kMult = atk.knockback / atk.def.knockback;
+      this.projectiles.push(new Projectile(def, f.index, x, cy - def.h / 2, facing, dMult, kMult));
+    }
+  }
+
+  /** Mueve los proyectiles, los refleja, los choca con el escenario y golpea. */
+  private updateProjectiles(dt: number, platforms: Platform[]): void {
+    for (const pr of this.projectiles) {
+      pr.step(dt);
+
+      // Reflejo: una hitbox con `reflect` de otro combatiente lo devuelve.
+      for (const f of this.fighters) {
+        if (f.index === pr.owner || pr.reflections >= 3) continue;
+        const atk = f.player.attack;
+        if (!atk?.hitbox || !atk.def.reflect) continue;
+        if (overlaps(atk.hitbox, pr.box)) {
+          pr.owner = f.index;
+          pr.vx = -pr.vx * 1.15;
+          pr.vy = -Math.abs(pr.vy) * 0.5;
+          pr.damage *= 1.2;
+          pr.life = Math.max(pr.life, 40);
+          pr.reflections++;
+          pr.hit.clear();
+        }
+      }
+
+      // Escenario: las plataformas sólidas lo rompen (o rebota en el suelo).
+      for (const pl of platforms) {
+        if (pl.oneWay) continue;
+        if (!overlaps(pr.box, pl.box)) continue;
+        const fromAbove = pr.prevY + pr.h <= pl.box.y + 2 && pr.vy > 0;
+        if (pr.bounce && fromAbove) {
+          pr.y = pl.box.y - pr.h;
+          pr.vy = -Math.max(280, pr.vy * 0.55);
+        } else {
+          pr.dead = true;
+        }
+      }
+
+      // Fuera de las blast zones.
+      if (pr.x > BLAST_ZONE.right || pr.x + pr.w < BLAST_ZONE.left || pr.y > BLAST_ZONE.bottom || pr.y + pr.h < BLAST_ZONE.top) {
+        pr.dead = true;
+      }
+      if (pr.dead) continue;
+
+      // Impactos.
+      const owner = this.fighters[pr.owner];
+      for (const target of this.fighters) {
+        if (target.index === pr.owner || target.respawnTimer > 0 || !target.alive || target.isDead) continue;
+        if (pr.hit.has(target.player) || !overlaps(pr.box, target.player.box)) continue;
+        pr.hit.add(target.player);
+        const mult = owner?.player.furyDamageMult ?? 1;
+        const res = target.player.receiveHit(pr.knockback * mult, pr.knockbackUp, pr.damage * mult, pr.facing);
+        if (res.connected && owner) {
+          owner.player.stats.dealt += res.effectiveDamage;
+          owner.player.addFuryCharge(res.effectiveDamage);
+          target.lastHitBy = owner.index;
+        }
+        if (!pr.pierce) {
+          pr.dead = true;
+          break;
+        }
+      }
+    }
+    // Compacta en el sitio (orden estable: determinista).
+    let w = 0;
+    for (let i = 0; i < this.projectiles.length; i++) {
+      const pr = this.projectiles[i];
+      if (!pr.dead) this.projectiles[w++] = pr;
+    }
+    this.projectiles.length = w;
   }
 
   private updateFighter(
@@ -559,9 +665,12 @@ export class World {
         if (overlaps(atk.hitbox, target.player.box)) {
           // El modo furia multiplica el daño y el knockback del atacante.
           const mult = attacker.player.furyDamageMult;
+          // Golpe múltiple: los golpes previos al último apenas empujan (el
+          // rival queda enganchado), el último lanza con toda la fuerza.
+          const final = atk.isFinalHit;
           const res = target.player.receiveHit(
-            atk.knockback * mult,
-            atk.def.knockbackUp,
+            atk.knockback * mult * (final ? 1 : 0.22),
+            final ? atk.def.knockbackUp : 0.45,
             atk.damage * mult,
             atk.attackerFacing,
           );

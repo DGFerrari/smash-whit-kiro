@@ -1,4 +1,12 @@
 import type { GameMode } from "../engine/game/world.ts";
+import { createLogo } from "./brand/logo.ts";
+import { CreditsScreen } from "./creditsScreen.ts";
+import { button } from "./design/components.ts";
+import { CHANGELOG, formatChangelogDate, type ChangeTag } from "../content/changelog.ts";
+import { getMenuNavigator } from "./nav/menuNavigator.ts";
+import { keyHint } from "./nav/keyHints.ts";
+import { setLegend } from "./nav/legend.ts";
+import "./mainMenu.css";
 
 /**
  * Menú principal del juego, en dos fases:
@@ -30,6 +38,20 @@ export interface MainMenuCallbacks {
   onLogout: () => void;
   /** Abrir el diálogo para cambiar el apodo. */
   onChangeNickname: () => void;
+  /**
+   * Abrir los créditos. Opcional: si no se indica, el menú abre su propia
+   * pantalla de créditos (`creditsScreen.ts`) encima del menú.
+   */
+  onOpenCredits?: () => void;
+  /**
+   * Solo en desarrollo: entrar con la cuenta de prueba local. Si se indica,
+   * junto al login aparece el botón "Usuario de prueba".
+   */
+  onDevLogin?: () => void;
+  /** Solo cuenta de prueba: sumar monedas. */
+  onDevCoins?: () => void;
+  /** Solo cuenta de prueba: borrar su progreso. */
+  onDevReset?: () => void;
 }
 
 /** Datos del usuario con sesión (para el widget del menú). */
@@ -37,17 +59,27 @@ export interface MenuUser {
   /** Apodo que se muestra (editable por el usuario). */
   nickname: string;
   avatarUrl: string | null;
+  /** ¿Es la cuenta de prueba local? (etiqueta "PRUEBA" y herramientas). */
+  dev?: boolean;
 }
 
 /** Valor de una opción del menú: modo jugable, ver replay, tutorial o ranking. */
 type MenuOption = GameMode | "replay" | "tutorial" | "ranking" | "gacha" | "online";
+
+/** Inactividad en la selección de modos tras la que se vuelve al título. */
+export const IDLE_TO_TITLE_MS = 30_000;
 
 /** Clave de localStorage: ¿el jugador ya ha hecho el tutorial alguna vez? */
 const TUTORIAL_DONE_KEY = "smashb.tutorialDone.v1";
 
 /** ¿Se ha completado el tutorial alguna vez? (para el parpadeo del menú). */
 export function isTutorialDone(): boolean {
-  return localStorage.getItem(TUTORIAL_DONE_KEY) === "1";
+  try {
+    if (typeof localStorage === "undefined" || typeof localStorage.getItem !== "function") return false;
+    return localStorage.getItem(TUTORIAL_DONE_KEY) === "1";
+  } catch {
+    return false;
+  }
 }
 /** Marca el tutorial como completado (deja de parpadear en el menú). */
 export function markTutorialDone(): void {
@@ -74,51 +106,117 @@ const MODES: ModeDef[] = [
     label: "Singleplayer",
     hint: "Varios jugadores en el mismo teclado (o contra la CPU). Elige personajes y escenario; gana el último en pie.",
     playable: true,
-    accent: "#ff6a8b",
+    accent: "var(--color-secondary)",
   },
   {
     value: "online",
     label: "Multiplayer",
     hint: "Juega en vivo contra tus amigos por internet (hasta 4). Crea una sala y comparte el código, o únete con el suyo.",
     playable: true,
-    accent: "#ff6a8b",
+    accent: "var(--color-primary)",
   },
   {
     value: "training",
     label: "Entrenamiento",
     hint: "Practica combos y recuperaciones contra un dummy configurable en un escenario con regla de distancias.",
     playable: true,
-    accent: "#45c88a",
+    accent: "var(--color-success)",
   },
   {
     value: "replay",
     label: "Replay",
     hint: "Tus partidas se guardan solas. Míralas desde la lista (o importa un .json): pausa, velocidad, avance/retroceso y cámara libre.",
     playable: true,
-    accent: "#f0b429",
+    accent: "var(--color-focus)",
   },
   {
     value: "tutorial",
     label: "Tutorial",
     hint: "Aprende los controles: moverte, saltar, atacar, el escudo y más, completando objetivos.",
     playable: true,
-    accent: "#9b6bff",
+    accent: "var(--color-secondary)",
   },
   {
     value: "ranking",
     label: "Clasificación",
     hint: "Tabla de jugadores: victorias, kills, muertes y monedas. Ordena por cualquier columna y encuentra tu posición.",
     playable: true,
-    accent: "#4dd0e1",
+    accent: "var(--color-primary)",
   },
   {
     value: "gacha",
     label: "Gacha",
     hint: "Gasta tus monedas en tiradas y consigue tokens (común, épico o legendario). Tira x1 o x10 con descuento.",
     playable: true,
-    accent: "#ffa726",
+    accent: "var(--color-danger)",
   },
 ];
+
+const TAG_LABEL: Record<ChangeTag, string> = { new: "Nuevo", improve: "Mejoras", fix: "Arreglos" };
+
+/** Panel "Novedades": versiones del changelog, la más reciente arriba. */
+function buildNewsPanel(): { panel: HTMLElement; list: HTMLElement } {
+  const panel = document.createElement("section");
+  panel.className = "menu-news";
+  panel.setAttribute("aria-labelledby", "menu-news-title");
+
+  const head = document.createElement("header");
+  head.className = "menu-news__head";
+  const title = document.createElement("h2");
+  title.id = "menu-news-title";
+  title.className = "menu-news__title";
+  title.textContent = "Novedades";
+  head.appendChild(title);
+  const latest = CHANGELOG[0];
+  if (latest) {
+    const ver = document.createElement("span");
+    ver.className = "menu-news__current";
+    ver.textContent = `v${latest.version}`;
+    head.appendChild(ver);
+  }
+  panel.appendChild(head);
+
+  const list = document.createElement("div");
+  list.className = "menu-news__list";
+  // Región desplazable accesible (AvPág/RePág o LB/RB la desplazan).
+  list.setAttribute("role", "region");
+  list.setAttribute("aria-label", "Historial de cambios");
+  CHANGELOG.forEach((entry, i) => {
+    const art = document.createElement("article");
+    art.className = `menu-news__entry is-${entry.tag}`;
+    if (i === 0) art.classList.add("is-latest");
+    const top = document.createElement("div");
+    top.className = "menu-news__entry-top";
+    const tag = document.createElement("span");
+    tag.className = "menu-news__tag";
+    tag.textContent = i === 0 ? "Última" : TAG_LABEL[entry.tag];
+    const ver = document.createElement("span");
+    ver.className = "menu-news__ver";
+    ver.textContent = `v${entry.version}`;
+    top.append(tag, ver);
+    if (entry.date) {
+      const date = document.createElement("time");
+      date.className = "menu-news__date";
+      date.dateTime = entry.date;
+      date.textContent = formatChangelogDate(entry.date);
+      top.appendChild(date);
+    }
+    const h = document.createElement("h3");
+    h.className = "menu-news__entry-title";
+    h.textContent = entry.title;
+    const ul = document.createElement("ul");
+    ul.className = "menu-news__items";
+    for (const item of entry.items) {
+      const li = document.createElement("li");
+      li.textContent = item;
+      ul.appendChild(li);
+    }
+    art.append(top, h, ul);
+    list.appendChild(art);
+  });
+  panel.appendChild(list);
+  return { panel, list };
+}
 
 export class MainMenu {
   private readonly root: HTMLDivElement;
@@ -126,13 +224,18 @@ export class MainMenu {
   private readonly selectPhase: HTMLDivElement;
   private readonly rows = new Map<MenuOption, HTMLButtonElement>();
   private readonly hintEl: HTMLParagraphElement;
-  private readonly playBtn: HTMLButtonElement;
+  /** Lista desplazable del panel de novedades. */
+  private readonly newsList: HTMLElement;
   /** Logo compartido entre fases: se desliza del centro a arriba-izquierda. */
-  private readonly logo: HTMLHeadingElement;
+  private readonly logo: HTMLElement;
+  /** Pantalla de créditos propia (si la app no aporta `onOpenCredits`). */
+  private credits: CreditsScreen | null = null;
   /** Widget de cuenta (arriba a la derecha): botón de login o chip de usuario. */
   private readonly accountEl: HTMLDivElement;
   private selected: MenuOption | null = null;
   private phase: "title" | "select" = "title";
+  /** Desmontaje del Navegador_Menús de la fase visible (R4.9). */
+  private unmountNav: (() => void) | null = null;
 
   constructor(private readonly cb: MainMenuCallbacks) {
     this.root = document.createElement("div");
@@ -140,9 +243,8 @@ export class MainMenu {
 
     // Logo ÚNICO compartido: su posición la decide la clase de fase del root,
     // así la transición de centro -> arriba-izquierda es un deslizamiento suave.
-    this.logo = document.createElement("h1");
-    this.logo.className = "menu-logo";
-    this.logo.textContent = "Título";
+    // Logo SVG de KiroBrawl (con respaldo de texto "KiroBrawl", R1.2/R1.9).
+    this.logo = createLogo({ className: "menu-logo" });
     this.root.appendChild(this.logo);
 
     // Widget de cuenta (arriba a la derecha), visible en ambas fases. Arranca
@@ -159,6 +261,9 @@ export class MainMenu {
     const press = document.createElement("div");
     press.className = "menu-press-start";
     press.textContent = "Press start";
+    // Enfocable para teclado/gamepad: A (o Enter) entra a la selección.
+    press.tabIndex = 0;
+    press.setAttribute("role", "button");
     this.titlePhase.appendChild(press);
     this.titlePhase.addEventListener("click", () => this.enterSelect());
     this.root.appendChild(this.titlePhase);
@@ -175,6 +280,14 @@ export class MainMenu {
       this.rows.set(def.value, row);
       list.appendChild(row);
     }
+    // "Créditos": abre directamente la pantalla de créditos (R14.3).
+    const creditsBtn = button({
+      label: "Créditos",
+      variant: "ghost",
+      onActivate: () => this.openCredits(),
+    });
+    creditsBtn.classList.add("menu-credits-btn");
+    list.appendChild(keyHint(creditsBtn, "c", { pad: "y" }));
     this.selectPhase.appendChild(list);
 
     // Descripción del modo (abajo, centrada).
@@ -183,21 +296,65 @@ export class MainMenu {
     this.hintEl.textContent = "Selecciona un modo.";
     this.selectPhase.appendChild(this.hintEl);
 
-    // Botón Jugar (abajo a la derecha).
-    this.playBtn = document.createElement("button");
-    this.playBtn.type = "button";
-    this.playBtn.className = "menu-btn play-btn";
-    this.playBtn.textContent = "jugar";
-    this.playBtn.disabled = true;
-    this.playBtn.addEventListener("click", () => this.tryPlay());
-    this.selectPhase.appendChild(this.playBtn);
+    // Panel de novedades (changelog), a la derecha.
+    const news = buildNewsPanel();
+    this.newsList = news.list;
+    this.selectPhase.appendChild(news.panel);
 
     this.root.appendChild(this.selectPhase);
+
+    // Leyendas: en el título solo "Empezar"; en la selección, Esc vuelve al título.
+    setLegend(this.titlePhase, { nav: false, items: [{ key: "enter", pad: "a", label: "Empezar" }] });
+    setLegend(this.selectPhase, {
+      accept: "Entrar",
+      items: [
+        { key: "pagedown", pad: "rb", label: "Novedades" },
+        { key: "escape", pad: "b", label: "Título" },
+      ],
+    });
     document.body.appendChild(this.root);
 
     window.addEventListener("keydown", this.onKey);
     // Clic fuera del chip de usuario: cierra su desplegable.
     document.addEventListener("click", () => this.closeUserMenu());
+    // Actividad de ratón/táctil (el teclado y el mando los cuenta el navegador).
+    for (const ev of ["pointermove", "pointerdown", "wheel"] as const) {
+      window.addEventListener(ev, this.markActivity, { passive: true });
+    }
+  }
+
+  // ── Inactividad: vuelta a la pantalla de título ─────────────────────────────
+
+  private idleTimer = 0;
+  private lastPointerAt = 0;
+
+  private markActivity = (): void => {
+    this.lastPointerAt = performance.now();
+  };
+
+  private startIdleWatch(): void {
+    this.stopIdleWatch();
+    this.markActivity();
+    this.idleTimer = window.setInterval(() => this.checkIdle(), 1000);
+  }
+
+  private stopIdleWatch(): void {
+    if (this.idleTimer) window.clearInterval(this.idleTimer);
+    this.idleTimer = 0;
+  }
+
+  /** Tras `IDLE_TO_TITLE_MS` sin tocar nada en la selección, vuelve al título. */
+  private checkIdle(): void {
+    if (this.phase !== "select" || !this.root.classList.contains("open")) return;
+    // Con otra ventana encima (créditos, apodo, confirmaciones…) no cuenta.
+    const active = document.activeElement;
+    const elsewhere = active instanceof HTMLElement && active !== document.body && !this.root.contains(active);
+    if (this.credits?.isOpen || elsewhere) {
+      this.markActivity();
+      return;
+    }
+    const last = Math.max(this.lastPointerAt, getMenuNavigator().lastInputAt());
+    if (performance.now() - last >= IDLE_TO_TITLE_MS) this.enterTitle();
   }
 
   show(): void {
@@ -210,27 +367,87 @@ export class MainMenu {
     for (const row of this.rows.values()) row.classList.remove("selected");
     this.hintEl.textContent = "Selecciona un modo.";
     this.hintEl.style.color = "";
-    this.playBtn.disabled = true;
 
     // Reevaluamos el parpadeo del Tutorial (puede haberse completado ya).
     const tut = this.rows.get("tutorial");
     if (tut) tut.classList.toggle("nudge", !isTutorialDone());
+
+    this.mountNav(this.titlePhase);
   }
 
   hide(): void {
+    this.stopIdleWatch();
+    this.credits?.close();
     this.root.classList.remove("open");
+    this.unmountNav?.();
+    this.unmountNav = null;
+  }
+
+  /** Monta el Navegador_Menús sobre la fase visible (sustituye al anterior). */
+  private mountNav(root: HTMLElement): void {
+    this.unmountNav?.();
+    const back = (): void => this.enterTitle();
+    const news = (dir: 1 | -1) => (): void => {
+      this.newsList.scrollBy({ top: dir * this.newsList.clientHeight * 0.8, behavior: "smooth" });
+    };
+    this.unmountNav = getMenuNavigator().mount(
+      root,
+      root === this.selectPhase
+        ? {
+            hotkeys: { escape: back, backspace: back, pagedown: news(1), pageup: news(-1) },
+            padHotkeys: { rb: news(1), lb: news(-1) },
+          }
+        : {},
+    );
+  }
+
+  /** Vuelve de la selección a la pantalla de título ("Press start"). */
+  private enterTitle(): void {
+    if (this.phase === "title") return;
+    this.stopIdleWatch();
+    this.closeUserMenu();
+    this.phase = "title";
+    this.root.classList.remove("in-select");
+    this.root.classList.add("in-title");
+    if (this.root.classList.contains("open")) this.mountNav(this.titlePhase);
   }
 
   private onKey = (e: KeyboardEvent): void => {
     if (!this.root.classList.contains("open")) return;
-    if (this.phase === "title" && e.key === "Enter") {
+    // Con los créditos abiertos, el teclado es del diálogo.
+    if (this.credits?.isOpen) return;
+    if (e.key !== "Enter") return;
+    if (this.phase === "title") {
       e.preventDefault();
       this.enterSelect();
-    } else if (this.phase === "select" && e.key === "Enter") {
-      e.preventDefault();
-      this.tryPlay();
+      return;
     }
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && this.root.contains(active)) {
+      const def = MODES.find((m) => this.rows.get(m.value) === active);
+      if (def) {
+        // Enter sobre un modo: lo elige y juega (sin el clic nativo duplicado).
+        e.preventDefault();
+        this.select(def);
+        this.tryPlay();
+        return;
+      }
+      // Otros botones del menú (Jugar, Créditos, cuenta): clic nativo.
+      if (active.matches("button")) return;
+    }
+    e.preventDefault();
+    this.tryPlay();
   };
+
+  /** Abre los créditos (callback de la app o pantalla propia). */
+  private openCredits(): void {
+    if (this.cb.onOpenCredits) {
+      this.cb.onOpenCredits();
+      return;
+    }
+    this.credits ??= new CreditsScreen();
+    this.credits.open();
+  }
 
   /** Pasa de la fase título a la de selección. */
   private enterSelect(): void {
@@ -238,6 +455,11 @@ export class MainMenu {
     this.phase = "select";
     this.root.classList.remove("in-title");
     this.root.classList.add("in-select");
+    // Solo la lista de modos (la cuenta queda para ratón/Tab nativo).
+    if (this.root.classList.contains("open")) {
+      this.mountNav(this.selectPhase);
+      this.startIdleWatch();
+    }
   }
 
   private tryPlay(): void {
@@ -269,28 +491,42 @@ export class MainMenu {
   }
 
   private buildModeRow(def: ModeDef): HTMLButtonElement {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "mode-row";
+    // Sin botón "Jugar": activar un modo (clic, Enter o A) entra directamente.
+    const btn = button({
+      label: def.label,
+      variant: "secondary",
+      onActivate: () => {
+        this.select(def);
+        this.tryPlay();
+      },
+    });
+    btn.classList.add("mode-row");
+    // Enfocar o pasar el ratón por un modo lo marca y muestra su descripción.
+    btn.addEventListener("focus", () => this.select(def));
+    btn.addEventListener("pointerenter", () => this.select(def));
+    btn.querySelector(".kb-btn__label")?.classList.add("mode-row-label");
     btn.style.setProperty("--accent", def.accent);
 
-    // El Tutorial parpadea (clase "nudge") si el jugador nunca lo ha completado.
-    if (def.value === "tutorial" && !isTutorialDone()) {
-      btn.classList.add("nudge");
+    // El Tutorial destaca (clase "nudge": brillo, destello y etiqueta) si el
+    // jugador nunca lo ha completado.
+    if (def.value === "tutorial") {
+      if (!isTutorialDone()) btn.classList.add("nudge");
+      const shine = document.createElement("span");
+      shine.className = "mode-shine";
+      shine.setAttribute("aria-hidden", "true");
+      const badge = document.createElement("span");
+      badge.className = "mode-nudge-badge";
+      badge.setAttribute("aria-hidden", "true");
+      badge.textContent = "¡Empieza aquí!";
+      btn.append(shine, badge);
     }
 
     // Indicador ">" que aparece solo en el seleccionado.
     const caret = document.createElement("span");
     caret.className = "mode-caret";
     caret.textContent = "❯";
-    btn.appendChild(caret);
-
-    const name = document.createElement("span");
-    name.className = "mode-row-label";
-    name.textContent = def.label;
-    btn.appendChild(name);
-
-    btn.addEventListener("click", () => this.select(def));
+    caret.setAttribute("aria-hidden", "true");
+    btn.prepend(caret);
     return btn;
   }
 
@@ -303,10 +539,6 @@ export class MainMenu {
     this.root.classList.add("mode-chosen");
     this.hintEl.textContent = def.hint;
     this.hintEl.style.color = def.accent;
-
-    // La opción "dev" no es jugable: deshabilita Jugar.
-    this.playBtn.disabled = !def.playable;
-    this.playBtn.style.setProperty("--accent", def.accent);
   }
 
   /**
@@ -335,6 +567,16 @@ export class MainMenu {
         "</svg></span>";
       btn.addEventListener("click", () => this.cb.onLogin());
       this.accountEl.appendChild(btn);
+      const devLogin = this.cb.onDevLogin;
+      if (import.meta.env.DEV && devLogin) {
+        const dev = document.createElement("button");
+        dev.type = "button";
+        dev.className = "menu-btn login-btn login-btn--dev";
+        dev.title = "Solo en desarrollo: sesión simulada en este navegador, sin servidor";
+        dev.textContent = "🧪 Usuario de prueba";
+        dev.addEventListener("click", () => devLogin());
+        this.accountEl.appendChild(dev);
+      }
       return;
     }
 
@@ -364,6 +606,14 @@ export class MainMenu {
     name.textContent = user.nickname;
     trigger.appendChild(name);
 
+    if (user.dev) {
+      const tag = document.createElement("span");
+      tag.className = "user-dev-tag";
+      tag.textContent = "PRUEBA";
+      tag.title = "Cuenta de prueba local (sin servidor)";
+      trigger.appendChild(tag);
+    }
+
     const caret = document.createElement("span");
     caret.className = "user-caret";
     caret.textContent = "▾";
@@ -384,6 +634,22 @@ export class MainMenu {
       this.cb.onChangeNickname();
     });
     menu.appendChild(renameOpt);
+
+    // Herramientas de la cuenta de prueba.
+    const devItem = (label: string, fn: (() => void) | undefined): void => {
+      if (!user.dev || !fn) return;
+      const opt = document.createElement("button");
+      opt.type = "button";
+      opt.className = "user-menu-item dev";
+      opt.textContent = label;
+      opt.addEventListener("click", () => {
+        this.closeUserMenu();
+        fn();
+      });
+      menu.appendChild(opt);
+    };
+    devItem("🧪 +1000 monedas", this.cb.onDevCoins);
+    devItem("🧪 Reiniciar datos de prueba", this.cb.onDevReset);
 
     const logoutOpt = document.createElement("button");
     logoutOpt.type = "button";
@@ -411,250 +677,11 @@ export class MainMenu {
 }
 
 /**
- * Pantalla de fin de partida (versus): primero un "FINISH" dramático, luego un
- * podio con las calificaciones de cada jugador (daño infligido/recibido/
- * bloqueado, KOs, muertes y una nota global).
+ * Pantalla de fin de partida (versus): vive en `resultsScreen.ts` (rediseño
+ * KiroBrawl). Se re-exporta aquí para mantener los imports existentes.
  */
-export interface FighterResult {
-  label: string;
-  color: string;
-  dealt: number;
-  taken: number;
-  blocked: number;
-  kos: number;
-  deaths: number;
-  isWinner: boolean;
-}
-
-export interface MatchOverCallbacks {
-  onRematch: () => void;
-  onMenu: () => void;
-  /** Ir a la lista de repeticiones (la partida ya quedó guardada). */
-  onViewReplays: () => void;
-}
-
-export class MatchOverScreen {
-  private readonly root: HTMLDivElement;
-  private readonly finishEl: HTMLDivElement;
-  private readonly panel: HTMLDivElement;
-  private readonly titleEl: HTMLHeadingElement;
-  private readonly podium: HTMLDivElement;
-  /** Fila de monedas ganadas (solo en partidas que puntúan). */
-  private readonly rewardEl: HTMLDivElement;
-  private finishTimer = 0;
-
-  constructor(private readonly cb: MatchOverCallbacks) {
-    this.root = document.createElement("div");
-    this.root.id = "match-over";
-
-    // Cartel "FINISH" que aparece primero.
-    this.finishEl = document.createElement("div");
-    this.finishEl.className = "finish-text";
-    this.finishEl.textContent = "FINISH";
-    this.root.appendChild(this.finishEl);
-
-    // Panel con el podio (aparece tras el FINISH).
-    this.panel = document.createElement("div");
-    this.panel.className = "menu-panel results-panel";
-
-    this.titleEl = document.createElement("h1");
-    this.titleEl.className = "menu-title";
-    this.panel.appendChild(this.titleEl);
-
-    this.podium = document.createElement("div");
-    this.podium.className = "podium";
-    this.panel.appendChild(this.podium);
-
-    // Fila de RECOMPENSA (monedas ganadas). Oculta por defecto; se muestra solo
-    // en partidas que puntúan (versus con sesión). Empieza en "cargando".
-    this.rewardEl = document.createElement("div");
-    this.rewardEl.className = "match-reward";
-    this.panel.appendChild(this.rewardEl);
-
-    const actions = document.createElement("div");
-    actions.className = "results-actions";
-
-    // Revancha: botón primario (acento, icono de repetir).
-    const rematch = document.createElement("button");
-    rematch.type = "button";
-    rematch.className = "result-btn result-btn-rematch";
-    rematch.innerHTML =
-      '<span class="result-btn-icon">↻</span><span class="result-btn-text">Revancha</span><span class="result-btn-sub">Misma config</span>';
-    rematch.addEventListener("click", () => this.cb.onRematch());
-    actions.appendChild(rematch);
-
-    // Ver repeticiones: la partida se guarda sola; este botón lleva a la lista.
-    const replays = document.createElement("button");
-    replays.type = "button";
-    replays.className = "result-btn result-btn-download";
-    replays.innerHTML =
-      '<span class="result-btn-icon">▶</span><span class="result-btn-text">Ver repeticiones</span><span class="result-btn-sub">Guardada automáticamente</span>';
-    replays.addEventListener("click", () => this.cb.onViewReplays());
-    actions.appendChild(replays);
-
-    // Menú: botón secundario (neutro, icono de casa).
-    const menu = document.createElement("button");
-    menu.type = "button";
-    menu.className = "result-btn result-btn-menu";
-    menu.innerHTML =
-      '<span class="result-btn-icon">⌂</span><span class="result-btn-text">Menú principal</span><span class="result-btn-sub">Salir de la partida</span>';
-    menu.addEventListener("click", () => this.cb.onMenu());
-    actions.appendChild(menu);
-    this.panel.appendChild(actions);
-
-    this.root.appendChild(this.panel);
-    document.body.appendChild(this.root);
-  }
-
-  /** Muestra SOLO el cartel "FINISH" (durante la cámara lenta del remate). */
-  showFinish(): void {
-    this.root.classList.add("open");
-    this.panel.classList.remove("show");
-    this.finishEl.classList.remove("show");
-    void this.finishEl.offsetWidth;
-    this.finishEl.classList.add("show");
-  }
-
-  /**
-   * Muestra el podio tras el FINISH, con entrada en dos tiempos: primero el
-   * GANADOR destacado y, un instante después, se acopla el perdedor.
-   */
-  show(winnerLabel: string, winnerColor: string, results: FighterResult[]): void {
-    this.root.classList.add("open");
-    this.finishEl.classList.remove("show");
-    this.buildPodium(winnerLabel, winnerColor, results);
-    this.hideReward(); // por defecto sin recompensa; la app la activa si procede
-    this.panel.classList.add("show");
-  }
-
-  /** Oculta la fila de recompensa (partidas que no puntúan). */
-  hideReward(): void {
-    this.rewardEl.classList.remove("show", "loading");
-    this.rewardEl.replaceChildren();
-  }
-
-  /** Estado "enviando partida al servidor" (spinner + texto). */
-  showRewardLoading(): void {
-    this.rewardEl.classList.add("show", "loading");
-    this.rewardEl.replaceChildren();
-    const spin = document.createElement("span");
-    spin.className = "match-reward-spinner";
-    const txt = document.createElement("span");
-    txt.textContent = "Guardando resultado…";
-    this.rewardEl.appendChild(spin);
-    this.rewardEl.appendChild(txt);
-  }
-
-  /**
-   * Muestra el resultado del envío: monedas ganadas, o un aviso si no puntuó
-   * (sin sesión / error). `coins` es null cuando no hubo recompensa.
-   */
-  setReward(message: string, coins: number | null): void {
-    this.rewardEl.classList.remove("loading");
-    this.rewardEl.classList.add("show");
-    this.rewardEl.replaceChildren();
-    if (coins !== null) {
-      const amount = document.createElement("span");
-      amount.className = "match-reward-coins";
-      amount.textContent = `+${coins}`;
-      const icon = document.createElement("span");
-      icon.className = "match-reward-icon";
-      icon.textContent = "🪙";
-      const label = document.createElement("span");
-      label.textContent = message;
-      this.rewardEl.appendChild(amount);
-      this.rewardEl.appendChild(icon);
-      this.rewardEl.appendChild(label);
-    } else {
-      const label = document.createElement("span");
-      label.className = "match-reward-note";
-      label.textContent = message;
-      this.rewardEl.appendChild(label);
-    }
-  }
-
-  private buildPodium(
-    winnerLabel: string,
-    winnerColor: string,
-    results: FighterResult[],
-  ): void {
-    this.titleEl.textContent =
-      winnerLabel === "Empate" ? "¡Empate!" : `¡Gana ${winnerLabel}!`;
-    this.titleEl.style.color = winnerColor;
-
-    // Ganador primero; el resto después (orden de entrada).
-    const sorted = [...results].sort(
-      (a, b) => Number(b.isWinner) - Number(a.isWinner) || b.dealt - a.dealt,
-    );
-
-    this.podium.replaceChildren();
-    sorted.forEach((r, i) => {
-      const card = this.buildCard(r);
-      // Entrada escalonada: el ganador entra ya; los demás, con retraso, para
-      // que se vea primero al ganador y luego se "acople" el perdedor.
-      card.style.animationDelay = r.isWinner ? "0s" : `${0.7 + i * 0.15}s`;
-      this.podium.appendChild(card);
-    });
-    // Marca para que el ganador tenga su efecto extra de realce.
-    window.clearTimeout(this.finishTimer);
-  }
-
-  private buildCard(r: FighterResult): HTMLElement {
-    const card = document.createElement("div");
-    card.className = "podium-card";
-    card.style.borderColor = r.color;
-    if (r.isWinner) card.classList.add("winner");
-
-    const head = document.createElement("div");
-    head.className = "podium-head";
-    head.style.color = r.color;
-    head.textContent = r.isWinner ? `🏆 ${r.label}` : r.label;
-    card.appendChild(head);
-
-    const grade = document.createElement("div");
-    grade.className = "podium-grade";
-    grade.textContent = this.grade(r);
-    card.appendChild(grade);
-
-    const rows: Array<[string, string]> = [
-      ["Daño infligido", `${Math.round(r.dealt)}%`],
-      ["Daño recibido", `${Math.round(r.taken)}%`],
-      ["Daño bloqueado", `${Math.round(r.blocked)}%`],
-      ["KOs", String(r.kos)],
-      ["Muertes", String(r.deaths)],
-    ];
-    const stats = document.createElement("div");
-    stats.className = "podium-stats";
-    for (const [k, v] of rows) {
-      const row = document.createElement("div");
-      row.className = "podium-stat";
-      const kEl = document.createElement("span");
-      kEl.textContent = k;
-      const vEl = document.createElement("span");
-      vEl.className = "podium-stat-value";
-      vEl.textContent = v;
-      row.appendChild(kEl);
-      row.appendChild(vEl);
-      stats.appendChild(row);
-    }
-    card.appendChild(stats);
-    return card;
-  }
-
-  /** Nota global simple a partir de las stats (no es ciencia, es sabor). */
-  private grade(r: FighterResult): string {
-    const score = r.dealt + r.kos * 40 + r.blocked * 0.5 - r.taken * 0.6 - r.deaths * 25;
-    if (score >= 220) return "S";
-    if (score >= 150) return "A";
-    if (score >= 90) return "B";
-    if (score >= 40) return "C";
-    return "D";
-  }
-
-  hide(): void {
-    window.clearTimeout(this.finishTimer);
-    this.root.classList.remove("open");
-    this.panel.classList.remove("show");
-    this.finishEl.classList.remove("show");
-  }
-}
+export {
+  MatchOverScreen,
+  type FighterResult,
+  type MatchOverCallbacks,
+} from "./resultsScreen.ts";

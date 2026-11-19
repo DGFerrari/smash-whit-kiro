@@ -91,6 +91,8 @@ export function validateMatch(data: ReplayData, attributedSlot?: number): Valida
     controllers: data.controllers,
     cpuDifficulty: data.cpuDifficulties ?? data.cpuDifficulty,
     stage: data.stage,
+    // Sin versión = replay antiguo (v1): set de movimientos común.
+    engineVersion: data.engineVersion ?? 1,
   });
   const player = new ReplayPlayer(data);
   for (let step = 0; step < player.totalSteps; step++) {

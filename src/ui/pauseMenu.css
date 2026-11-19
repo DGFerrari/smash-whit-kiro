@@ -1,0 +1,334 @@
+/*
+ * Pausa, opciones y reasignación de teclas (R3.1, R3.4, R6.3–R6.7, R9.1, R9.5).
+ * Solo consume tokens de tokens.css. Usa clases `kb-pause*` propias para no
+ * depender de las reglas antiguas `.pause-*` de style.css.
+ */
+
+#pause-menu.kb-pause {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: none;
+  place-items: center;
+  padding: var(--space-6);
+  color: var(--color-text);
+  font-family: var(--font-text);
+  pointer-events: none;
+}
+
+#pause-menu.kb-pause.open {
+  display: grid;
+  pointer-events: auto;
+}
+
+.kb-pause__scrim {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in oklab, var(--color-bg) 62%, transparent);
+  backdrop-filter: blur(4px);
+}
+
+.kb-pause__dialog,
+.kb-pause-online__dialog {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  width: min(560px, 100%);
+  max-height: min(86vh, 860px);
+  background: var(--color-surface);
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-2), var(--glow-primary);
+  overflow: hidden;
+  animation: kb-pause-in var(--dur-base) var(--ease-pop);
+}
+
+.kb-pause__dialog[data-page="options"] {
+  width: min(760px, 100%);
+}
+
+.kb-pause__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-6);
+  background: linear-gradient(
+    100deg,
+    color-mix(in oklab, var(--color-primary) 38%, var(--color-surface)) 0%,
+    var(--color-surface) 70%
+  );
+  border-bottom: 2px solid var(--color-border);
+}
+
+.kb-pause__back[hidden] {
+  display: none;
+}
+
+.kb-pause__title,
+.kb-pause-online__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--fs-h2);
+  font-weight: var(--fw-display);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.kb-pause__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-6);
+}
+
+.kb-pause__page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.kb-pause__page[data-enter="forward"] {
+  animation: kb-pause-forward var(--dur-base) var(--ease-out);
+}
+
+.kb-pause__page[data-enter="back"] {
+  animation: kb-pause-back var(--dur-base) var(--ease-out);
+}
+
+.kb-pause__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.kb-pause__btn,
+.kb-pause__list > .kb-btn {
+  width: 100%;
+}
+
+.kb-pause__spaced {
+  margin-top: var(--space-4);
+}
+
+.kb-pause__tabs {
+  flex-wrap: wrap;
+}
+
+.kb-pause__tabpanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-top: var(--space-2);
+}
+
+.kb-pause__subtitle {
+  margin: var(--space-4) 0 0;
+  color: var(--color-text-muted);
+  font-family: var(--font-text);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-caption);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.kb-pause__subtitle:first-child {
+  margin-top: 0;
+}
+
+.kb-pause__presets {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.kb-pause__custom {
+  padding: var(--space-1) var(--space-3);
+  color: var(--color-on-accent);
+  background: var(--color-focus);
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-caption);
+  text-transform: uppercase;
+  user-select: none;
+}
+
+.kb-pause__custom[hidden] {
+  display: none;
+}
+
+.kb-pause__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.kb-pause__hint {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-body);
+}
+
+.kb-pause__label {
+  font-size: var(--fs-body);
+  font-weight: var(--fw-body-lg);
+}
+
+.kb-pause__controls {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+}
+
+.kb-pause__controls dt {
+  color: var(--color-text-muted);
+}
+
+.kb-pause__controls dd {
+  margin: 0;
+  color: var(--color-primary);
+  font-weight: var(--fw-h2);
+  text-align: right;
+}
+
+.kb-pause__keyrow,
+.kb-pause__attackrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.kb-pause__key {
+  min-width: 140px;
+  font-family: var(--font-mono);
+}
+
+.kb-pause__radios {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.kb-pause__dirbtns {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.kb-pause__warn,
+.kb-pause__capture-text,
+.kb-pause-online__note {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--fs-body);
+}
+
+/* ── Pausa online (no congela el juego) ───────────────────────────────── */
+
+.kb-pause-online__dialog {
+  gap: var(--space-4);
+  width: min(420px, 100%);
+  padding: var(--space-6);
+}
+
+.kb-pause-online__dialog > .kb-btn {
+  width: 100%;
+}
+
+/* ── Animaciones ──────────────────────────────────────────────────────── */
+
+@keyframes kb-pause-in {
+  from {
+    opacity: 0;
+    transform: scale(var(--scale-press));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes kb-pause-forward {
+  from {
+    opacity: 0;
+    transform: translateX(var(--space-8));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes kb-pause-back {
+  from {
+    opacity: 0;
+    transform: translateX(calc(-1 * var(--space-8)));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes kb-pause-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Movimiento_Reducido: solo fundidos (R9.5). */
+html[data-reduced-motion] .kb-pause__dialog,
+html[data-reduced-motion] .kb-pause-online__dialog,
+html[data-reduced-motion] .kb-pause__page[data-enter] {
+  animation: kb-pause-fade var(--dur-fast) linear;
+}
+
+html[data-reduced-motion] .kb-pause__scrim {
+  backdrop-filter: none;
+}
+
+/* ── Cambiar personaje (entrenamiento) ── */
+.kb-pause__chars {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.kb-pause__char {
+  border-left: 4px solid var(--c, var(--color-primary));
+}
+
+.kb-pause__moves {
+  display: grid;
+  gap: 2px;
+  font-size: var(--fs-caption);
+}
+
+.kb-pause__moves-row {
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklab, var(--color-surface) 70%, transparent);
+  color: var(--color-text);
+}
+
+.kb-pause__moves-row > span:first-child {
+  color: var(--color-text-muted);
+  font-weight: var(--fw-display);
+}
+
+.kb-pause__moves-head {
+  background: transparent;
+  color: var(--color-text-muted);
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}

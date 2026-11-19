@@ -1,0 +1,989 @@
+/*
+ * Pantallas online de KiroBrawl (R3.1, R3.4, R13.4): entrada (crear / unirse),
+ * lobby (código de sala, placas de jugador, conexión, listo), fin de partida
+ * online y diálogo de apodo. Solo consume tokens de tokens.css. Reglas acotadas
+ * por id para imponerse a las heredadas de style.css sin editarlo.
+ */
+
+/* ── Contenedor común ─────────────────────────────────────────────────────── */
+#online-screen.select-screen,
+#online-lobby.select-screen,
+#online-post.select-screen {
+  box-sizing: border-box;
+  gap: var(--space-4);
+  padding: var(--space-6) var(--space-12);
+  overflow-x: hidden;
+  overflow-y: auto;
+  color: var(--color-text);
+  font-family: var(--font-text);
+  background:
+    repeating-linear-gradient(
+      -62deg,
+      transparent 0 var(--space-12),
+      color-mix(in oklab, var(--color-text) 5%, transparent) var(--space-12) calc(var(--space-12) + var(--space-1) / 2),
+      transparent calc(var(--space-12) + var(--space-1) / 2) calc(var(--space-12) * 2.5)
+    ),
+    radial-gradient(
+      ellipse 70% 70% at 22% 30%,
+      color-mix(in oklab, var(--color-secondary) 22%, transparent),
+      transparent 70%
+    ),
+    linear-gradient(
+      -118deg,
+      color-mix(in oklab, var(--color-primary) 30%, var(--color-bg)) 0%,
+      var(--color-bg) 58%
+    );
+}
+
+#online-lobby.select-screen {
+  justify-content: flex-start;
+  align-items: stretch;
+}
+
+.kb-online .kb-online__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2) var(--space-8);
+  min-width: 0;
+  text-align: center;
+}
+
+#online-screen .kb-online__header {
+  flex-direction: column;
+}
+
+#online-lobby .kb-lobby__header {
+  justify-content: space-between;
+  text-align: left;
+}
+
+.kb-online .select-title {
+  margin: 0;
+  color: var(--color-text);
+  font-family: var(--font-display);
+  font-size: var(--fs-h1);
+  font-weight: var(--fw-h1);
+  font-style: italic;
+  letter-spacing: 0.04em;
+  line-height: 1.1;
+  text-transform: uppercase;
+  text-shadow: var(--glow-primary);
+  transform: skewX(-10deg);
+}
+
+.kb-online .select-hint {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-body);
+}
+
+/* Botones del Sistema_Diseño inclinados (estilo lucha). */
+.kb-online .select-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.kb-online .select-actions .kb-btn,
+#online-screen .online-form .kb-btn {
+  min-width: calc(var(--space-12) * 3);
+  padding: var(--space-3) var(--space-8);
+  font-family: var(--font-display);
+  font-size: var(--fs-body-lg);
+  font-weight: var(--fw-display);
+  font-style: italic;
+  transform: skewX(-10deg);
+}
+
+.kb-online .kb-btn .kb-btn__label {
+  display: inline-block;
+  transform: skewX(10deg);
+}
+
+#online-lobby .kb-lobby__go:not([aria-disabled="true"]) {
+  background-color: color-mix(in oklab, var(--color-primary) 35%, var(--color-surface));
+  box-shadow: var(--glow-primary), var(--shadow-1);
+}
+
+/* Indicador de conexión: punto con halo (éxito / ocupado / error). */
+.kb-online .kb-conn-dot {
+  flex: 0 0 auto;
+  width: var(--space-3);
+  height: var(--space-3);
+  border-radius: var(--radius-pill);
+  background: var(--color-text-muted);
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--color-text-muted) 30%, transparent);
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+
+/* ══ Entrada online (crear / unirse) ════════════════════════════════════════ */
+#online-screen .online-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-8);
+  width: min(100%, calc(var(--space-12) * 18));
+  margin: var(--space-4) auto 0;
+}
+
+#online-screen .kb-online__plate {
+  --pc: var(--color-primary);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-6);
+  border: 2px solid var(--pc);
+  border-radius: var(--radius-md);
+  background: linear-gradient(
+    135deg,
+    color-mix(in oklab, var(--pc) 34%, var(--color-surface)) 0%,
+    var(--color-surface) 65%
+  );
+  box-shadow:
+    0 0 var(--space-6) color-mix(in oklab, var(--pc) 35%, transparent),
+    var(--shadow-2);
+  transform: skewX(-6deg);
+}
+
+#online-screen .kb-online__plate > * {
+  transform: skewX(6deg);
+}
+
+#online-screen .kb-online__plate--join {
+  --pc: var(--color-secondary);
+}
+
+#online-screen .kb-online__plate-title {
+  margin: 0;
+  color: var(--color-text);
+  font-family: var(--font-display);
+  font-size: var(--fs-h2);
+  font-weight: var(--fw-display);
+  font-style: italic;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-shadow: 0 0 var(--space-3) color-mix(in oklab, var(--pc) 80%, transparent);
+}
+
+#online-screen .kb-online__plate-desc {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-body);
+}
+
+#online-screen .online-create {
+  width: 100%;
+  margin-top: auto;
+}
+
+#online-screen .online-join-row {
+  display: flex;
+  gap: var(--space-3);
+  margin-top: auto;
+}
+
+#online-screen .online-code-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-display);
+  font-size: var(--fs-h2);
+  font-weight: var(--fw-display);
+  letter-spacing: 0.3em;
+  text-align: center;
+  text-transform: uppercase;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+
+#online-screen .online-code-input::placeholder {
+  color: var(--color-text-muted);
+  letter-spacing: 0.12em;
+}
+
+#online-screen .online-code-input:focus,
+#online-screen .online-code-input:focus-visible {
+  outline: none;
+  border-color: var(--color-focus);
+  box-shadow: var(--glow-focus);
+}
+
+#online-screen .online-join {
+  min-width: 0;
+}
+
+#online-screen .online-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: calc(var(--space-8) + var(--space-2));
+  margin: 0 auto;
+  padding: var(--space-1) var(--space-4);
+  border-radius: var(--radius-pill);
+  color: var(--color-text);
+  font-size: var(--fs-body-lg);
+  font-weight: var(--fw-body-lg);
+}
+
+#online-screen .online-status[data-tone="idle"],
+#online-screen .online-status:not([data-tone]) {
+  visibility: hidden;
+}
+
+#online-screen .online-status[data-tone="busy"] {
+  background: color-mix(in oklab, var(--color-focus) 14%, var(--color-surface));
+}
+
+#online-screen .online-status[data-tone="busy"] .kb-conn-dot {
+  background: var(--color-focus);
+  box-shadow: 0 0 var(--space-2) var(--color-focus);
+  animation: kbConnPulse 1s ease-in-out infinite;
+}
+
+#online-screen .online-status[data-tone="ok"] {
+  background: color-mix(in oklab, var(--color-success) 16%, var(--color-surface));
+}
+
+#online-screen .online-status[data-tone="ok"] .kb-conn-dot {
+  background: var(--color-success);
+  box-shadow: 0 0 var(--space-2) var(--color-success);
+}
+
+#online-screen .online-status[data-tone="error"] {
+  background: color-mix(in oklab, var(--color-danger) 18%, var(--color-surface));
+  box-shadow: var(--glow-danger);
+}
+
+#online-screen .online-status[data-tone="error"] .kb-conn-dot {
+  background: var(--color-danger);
+  box-shadow: 0 0 var(--space-2) var(--color-danger);
+}
+
+@keyframes kbConnPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+html[data-reduced-motion] .kb-online .kb-conn-dot {
+  animation: none !important;
+}
+
+/* ══ Lobby ═════════════════════════════════════════════════════════════════ */
+
+/* Código de sala grande en tipografía display + botón copiar. */
+#online-lobby .lobby-code-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0;
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-6);
+  border: 2px solid var(--color-focus);
+  border-radius: var(--radius-sm);
+  background: linear-gradient(
+    135deg,
+    color-mix(in oklab, var(--color-focus) 22%, var(--color-surface)) 0%,
+    var(--color-surface) 70%
+  );
+  box-shadow:
+    0 0 var(--space-6) color-mix(in oklab, var(--color-focus) 30%, transparent),
+    var(--shadow-1);
+  transform: skewX(-10deg);
+}
+
+#online-lobby .lobby-code-bar > * {
+  transform: skewX(10deg);
+}
+
+#online-lobby .lobby-code-label {
+  color: var(--color-text-muted);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-caption);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+#online-lobby .lobby-code-value {
+  color: var(--color-focus);
+  font-family: var(--font-display);
+  font-size: var(--fs-h1);
+  font-weight: var(--fw-display);
+  letter-spacing: 0.18em;
+  line-height: 1;
+  text-shadow:
+    0 0 var(--space-3) color-mix(in oklab, var(--color-focus) 70%, transparent),
+    0 2px 0 var(--color-bg);
+  user-select: all;
+}
+
+#online-lobby .lobby-code-copy {
+  padding: var(--space-2) var(--space-4);
+  border: 2px solid var(--color-focus);
+  border-radius: var(--radius-sm);
+  background: var(--color-focus);
+  color: var(--color-on-accent);
+  font-family: var(--font-display);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-display);
+  text-transform: uppercase;
+  cursor: pointer;
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+
+#online-lobby .lobby-code-copy:hover {
+  background: var(--color-focus);
+  box-shadow: var(--glow-focus);
+}
+
+#online-lobby .lobby-code-copy:focus-visible {
+  outline: 3px solid var(--color-text);
+  outline-offset: 2px;
+}
+
+#online-lobby .lobby-code-copy:active {
+  scale: var(--scale-press);
+}
+
+#online-lobby .lobby-phase {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+#online-lobby .css-stage.char-stage {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: var(--space-6);
+  min-width: 0;
+}
+
+/* Retratos (mismas clases que Batalla). */
+#online-lobby .portrait-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-4);
+  width: min(100%, calc(var(--space-12) * 20));
+  margin: 0 auto;
+  padding: var(--space-2) var(--space-4) 0;
+}
+
+#online-lobby .portrait {
+  --c: var(--color-primary);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 3px solid color-mix(in oklab, var(--c) 45%, var(--color-border));
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  box-shadow: var(--shadow-1);
+  transform: skewX(-8deg);
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+
+#online-lobby .portrait-face {
+  height: auto;
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
+  background: var(--color-bg);
+}
+
+#online-lobby .portrait-face .kb-portrait {
+  display: block;
+  width: 124%;
+  height: 100%;
+  margin-left: -12%;
+  transform: skewX(8deg);
+}
+
+#online-lobby .portrait-name {
+  padding: var(--space-1) var(--space-3);
+  border-top: 3px solid var(--c);
+  background: color-mix(in oklab, var(--c) 22%, var(--color-bg));
+  color: var(--color-text);
+  font-family: var(--font-display);
+  font-size: var(--fs-body-lg);
+  font-weight: var(--fw-display);
+  letter-spacing: 0.04em;
+  text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#online-lobby .portrait-name > span {
+  display: inline-block;
+  transform: skewX(8deg);
+}
+
+#online-lobby .portrait.hover-drop {
+  border-color: var(--color-focus);
+  box-shadow: var(--glow-focus), var(--shadow-2);
+  transform: skewX(-8deg) translateY(calc(-1 * var(--space-2))) scale(var(--scale-focus));
+}
+
+#online-lobby .portrait.selected {
+  border-color: var(--c);
+  box-shadow:
+    0 0 var(--space-4) color-mix(in oklab, var(--c) 60%, transparent),
+    var(--shadow-1);
+}
+
+#online-lobby .portrait.selected .portrait-name {
+  background: color-mix(in oklab, var(--c) 50%, var(--color-bg));
+}
+
+/* Placas de jugador inclinadas: casa de la ficha + conexión + listo. */
+#online-lobby .player-cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-4);
+  width: min(100%, calc(var(--space-12) * 20));
+  margin: 0 auto;
+  padding: 0 var(--space-4);
+}
+
+#online-lobby .player-card {
+  --pc: var(--color-primary);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  width: auto;
+  min-width: 0;
+  min-height: 0;
+  padding: var(--space-2) var(--space-3) var(--space-3);
+  border: 2px solid var(--pc);
+  border-radius: var(--radius-sm);
+  background: linear-gradient(
+    135deg,
+    color-mix(in oklab, var(--pc) 38%, var(--color-surface)) 0%,
+    var(--color-surface) 62%
+  );
+  text-align: left;
+  box-shadow:
+    0 0 var(--space-4) color-mix(in oklab, var(--pc) 35%, transparent),
+    var(--shadow-1);
+  transform: skewX(-8deg);
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    filter var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out);
+}
+
+#online-lobby .player-card > * {
+  transform: skewX(8deg);
+}
+
+#online-lobby .player-card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+#online-lobby .player-card-tag {
+  flex: 0 0 auto;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--pc);
+  color: var(--color-on-accent);
+  font-family: var(--font-display);
+  font-size: var(--fs-body-lg);
+  font-weight: var(--fw-display);
+  font-style: italic;
+  line-height: 1.2;
+}
+
+#online-lobby .player-card-label {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--color-text);
+  font-family: var(--font-display);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-display);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+#online-lobby .player-card.host .player-card-label::after {
+  content: " ★";
+  color: var(--color-focus);
+}
+
+#online-lobby .kb-lobby__dock {
+  height: calc(var(--space-12) + var(--space-3));
+  margin-top: var(--space-1);
+  border: 2px dashed color-mix(in oklab, var(--pc) 60%, var(--color-border));
+  border-radius: var(--radius-pill);
+}
+
+#online-lobby .kb-lobby__card-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+#online-lobby .player-card-slot {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-caption);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Conectado: punto de éxito. Vacío: atenuado y punto apagado. */
+#online-lobby .player-card:not(.off) .kb-conn-dot {
+  background: var(--color-success);
+  box-shadow: 0 0 var(--space-2) var(--color-success);
+}
+
+#online-lobby .player-card.off {
+  opacity: 0.45;
+  filter: grayscale(0.8);
+  border-style: dashed;
+}
+
+#online-lobby .player-card.off .kb-conn-dot {
+  animation: kbConnPulse 1.4s ease-in-out infinite;
+}
+
+#online-lobby .player-card.me {
+  outline: 2px solid var(--color-text);
+  outline-offset: 2px;
+}
+
+/* Listo: brillo intenso del color del jugador. */
+#online-lobby .player-card.ready {
+  box-shadow:
+    0 0 var(--space-6) color-mix(in oklab, var(--pc) 75%, transparent),
+    0 0 0 2px color-mix(in oklab, var(--pc) 60%, transparent),
+    var(--shadow-2);
+  animation: kbReadyGlow 1.6s ease-in-out infinite;
+}
+
+#online-lobby .player-card.ready .player-card-slot {
+  color: var(--color-text);
+}
+
+#online-lobby .player-card.ready .kb-lobby__dock {
+  border-style: solid;
+  border-color: var(--pc);
+}
+
+@keyframes kbReadyGlow {
+  0%,
+  100% {
+    filter: brightness(1);
+  }
+  50% {
+    filter: brightness(1.15);
+  }
+}
+
+html[data-reduced-motion] #online-lobby .player-card.ready,
+html[data-reduced-motion] #online-lobby .player-card.off .kb-conn-dot {
+  animation: none;
+}
+
+/* Fichas. */
+#online-lobby .token-chip {
+  font-family: var(--font-display);
+  border-color: var(--color-text);
+  box-shadow:
+    0 0 var(--space-4) color-mix(in oklab, var(--tc) 70%, transparent),
+    var(--shadow-1);
+  transition:
+    left var(--dur-fast) var(--ease-out),
+    top var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+
+#online-lobby .char-stage .token-chip {
+  width: var(--space-12);
+  height: var(--space-12);
+  color: var(--color-on-primary);
+  font-size: var(--fs-body);
+  text-shadow: 0 1px 0 var(--color-bg), 0 0 var(--space-1) var(--color-bg);
+}
+
+#online-lobby .stage-chip {
+  --tc: var(--color-focus);
+}
+
+#online-lobby .token-chip.dragging {
+  transition: transform var(--dur-fast) var(--ease-out);
+  box-shadow:
+    0 0 var(--space-6) color-mix(in oklab, var(--tc) 80%, transparent),
+    var(--shadow-2);
+}
+
+/* Fase escenario. */
+#online-lobby .stage-layout {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  align-items: center;
+  gap: var(--space-8);
+}
+
+#online-lobby .stage-preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+#online-lobby .stage-preview-thumb {
+  width: min(100%, calc(48vh * 16 / 9));
+  height: auto;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border: 3px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow:
+    0 0 var(--space-8) color-mix(in oklab, var(--color-secondary) 30%, transparent),
+    var(--shadow-2);
+}
+
+#online-lobby .stage-preview-thumb .kb-stage-preview,
+#online-lobby .stage-preview-thumb .kb-stage-preview > * {
+  width: 100%;
+  height: 100%;
+}
+
+#online-lobby .stage-preview-name {
+  color: var(--color-text);
+  font-family: var(--font-display);
+  font-size: var(--fs-h1);
+  font-weight: var(--fw-h1);
+  font-style: italic;
+  letter-spacing: 0.04em;
+  text-align: left;
+  text-transform: uppercase;
+  text-shadow: var(--glow-primary);
+}
+
+#online-lobby .stage-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+#online-lobby .stage-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 3px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-family: var(--font-text);
+  box-shadow: var(--shadow-1);
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+
+#online-lobby .stage-cell__preview {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+}
+
+#online-lobby .stage-cell__preview > * {
+  width: 100%;
+  height: 100%;
+}
+
+#online-lobby .stage-name {
+  padding: var(--space-2) var(--space-3);
+  border-top: 2px solid var(--color-border);
+  font-family: var(--font-display);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-display);
+  letter-spacing: 0.04em;
+  text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#online-lobby .stage-cell.hover-drop {
+  border-color: var(--color-focus);
+  box-shadow: var(--glow-focus), var(--shadow-2);
+  transform: translateY(calc(-1 * var(--space-1)));
+}
+
+#online-lobby .stage-cell.selected {
+  border-color: var(--color-secondary);
+}
+
+#online-lobby .stage-cell.selected .stage-name {
+  border-top-color: var(--color-secondary);
+  background: color-mix(in oklab, var(--color-secondary) 30%, var(--color-surface));
+}
+
+/* Aviso de espera de los guests. */
+#online-lobby .lobby-wait {
+  min-height: var(--space-6);
+  margin: 0 auto;
+  color: var(--color-text-muted);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-body);
+  text-align: center;
+}
+
+#online-lobby .lobby-wait:not(:empty)::before {
+  content: "";
+  display: inline-block;
+  width: var(--space-2);
+  height: var(--space-2);
+  margin-right: var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--color-focus);
+  vertical-align: middle;
+  animation: kbConnPulse 1s ease-in-out infinite;
+}
+
+html[data-reduced-motion] #online-lobby .lobby-wait::before {
+  animation: none;
+}
+
+/* ══ Fin de partida online (solo estilo) ════════════════════════════════════ */
+#online-post .results-panel {
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(
+    160deg,
+    color-mix(in oklab, var(--color-primary) 22%, var(--color-surface)) 0%,
+    var(--color-bg) 75%
+  );
+  box-shadow: var(--shadow-2);
+}
+
+#online-post .menu-title {
+  font-family: var(--font-display);
+  font-size: var(--fs-h1);
+  font-weight: var(--fw-h1);
+  font-style: italic;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-shadow: 0 0 var(--space-4) currentColor, 0 2px 0 var(--color-bg);
+  transform: skewX(-10deg);
+}
+
+#online-post .podium-card {
+  --pc: var(--color-primary);
+  border-radius: var(--radius-sm);
+  background: linear-gradient(
+    135deg,
+    color-mix(in oklab, var(--pc) 28%, var(--color-surface)) 0%,
+    var(--color-surface) 65%
+  );
+  box-shadow:
+    0 0 var(--space-4) color-mix(in oklab, var(--pc) 35%, transparent),
+    var(--shadow-1);
+}
+
+#online-post .podium-head {
+  font-family: var(--font-display);
+  font-weight: var(--fw-display);
+  letter-spacing: 0.03em;
+}
+
+#online-post .podium-grade {
+  font-family: var(--font-display);
+  font-size: var(--fs-h2);
+  font-weight: var(--fw-display);
+  text-transform: uppercase;
+}
+
+#online-post .podium-stat {
+  font-size: var(--fs-body);
+}
+
+#online-post .podium-accept-tick {
+  background: var(--color-success);
+  color: var(--color-on-accent);
+  box-shadow: 0 0 var(--space-3) var(--color-success);
+}
+
+#online-post .podium-card.accepted {
+  box-shadow:
+    0 0 0 2px var(--color-success),
+    0 0 var(--space-4) color-mix(in oklab, var(--color-success) 45%, transparent),
+    var(--shadow-1);
+}
+
+#online-post .online-post-status {
+  color: var(--color-text-muted);
+  font-family: var(--font-display);
+  font-size: var(--fs-body-lg);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+#online-post .result-btn {
+  font-family: var(--font-display);
+}
+
+#online-post .result-btn:focus-visible {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+/* ══ Diálogo de apodo ═══════════════════════════════════════════════════════ */
+#nickname-dialog {
+  background: color-mix(in oklab, var(--color-bg) 78%, transparent);
+}
+
+#nickname-dialog .nickname-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-6);
+  border: 2px solid var(--color-primary);
+  border-radius: var(--radius-md);
+  background: linear-gradient(
+    150deg,
+    color-mix(in oklab, var(--color-primary) 28%, var(--color-surface)) 0%,
+    var(--color-surface) 65%
+  );
+  box-shadow: var(--glow-primary), var(--shadow-2);
+  color: var(--color-text);
+  font-family: var(--font-text);
+}
+
+#nickname-dialog .nickname-title {
+  color: var(--color-text);
+  font-family: var(--font-display);
+  font-size: var(--fs-h2);
+  font-weight: var(--fw-display);
+  font-style: italic;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  transform: skewX(-8deg);
+}
+
+#nickname-dialog .nickname-hint {
+  color: var(--color-text-muted);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-body);
+}
+
+#nickname-dialog .nickname-input {
+  padding: var(--space-3);
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-display);
+  font-size: var(--fs-body-lg);
+}
+
+#nickname-dialog .nickname-input:focus,
+#nickname-dialog .nickname-input:focus-visible {
+  outline: none;
+  border-color: var(--color-focus);
+  box-shadow: var(--glow-focus);
+}
+
+#nickname-dialog .nickname-error {
+  min-height: var(--space-4);
+  color: var(--color-danger);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-caption);
+}
+
+#nickname-dialog .nickname-actions .menu-btn {
+  font-family: var(--font-display);
+  border-radius: var(--radius-sm);
+}
+
+#nickname-dialog .nickname-actions .menu-btn:focus-visible {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+#nickname-dialog .nickname-save:not(:disabled) {
+  border-color: var(--color-primary);
+  background: color-mix(in oklab, var(--color-primary) 35%, var(--color-surface));
+  box-shadow: var(--glow-primary);
+}
+
+/* ── Ventanas pequeñas: una columna y desplazamiento vertical ── */
+@media (max-width: 1279px), (max-height: 719px) {
+  #online-screen.select-screen,
+  #online-lobby.select-screen,
+  #online-post.select-screen {
+    padding: var(--space-4) var(--space-6);
+  }
+
+  #online-lobby .lobby-phase,
+  #online-lobby .stage-layout {
+    flex: 0 0 auto;
+  }
+}
+
+@media (max-width: 899px) {
+  #online-screen .online-form,
+  #online-lobby .stage-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Parrilla de 12 en el lobby: 6 columnas y cartas más bajas. */
+#online-lobby .portrait-grid {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+#online-lobby .portrait-face {
+  aspect-ratio: 16 / 11;
+}
+
+#online-lobby .portrait.is-crossover {
+  border-color: var(--color-focus);
+  box-shadow: var(--glow-focus), var(--shadow-1);
+}

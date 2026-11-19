@@ -1,5 +1,3 @@
-import { getCharacter } from "../engine/game/characters.ts";
-import { getStage } from "../engine/game/stages.ts";
 import type { ReplayData } from "../engine/game/replay.ts";
 import {
   listReplays,
@@ -7,14 +5,21 @@ import {
   importReplay,
   type StoredReplay,
 } from "../game/replayStore.ts";
+import { characterLore, stageLore } from "../content/lore.ts";
+import { createCharacterPortrait, createStagePreview } from "./brand/portraits.ts";
+import { button, card } from "./design/components.ts";
+import { screenNav } from "./nav/screenNav.ts";
+import { backHint, keyHint } from "./nav/keyHints.ts";
+import "./replays.css";
 
 /**
- * Pantalla de LISTA de replays guardados en el navegador.
+ * Pantalla de LISTA de replays guardados en el navegador (rediseño KiroBrawl).
  *
- * Diseño (como pediste): a la IZQUIERDA la lista de replays (fecha + personajes
- * implicados); a la DERECHA el detalle del seleccionado (escenario + tarjetas
- * de jugador con estadísticas). Acciones por replay: Ver (reproducir), Guardar
- * (exportar .json), Borrar. Arriba, Importar (.json) y Volver.
+ * A la IZQUIERDA la lista de replays como tarjetas (retratos + personajes +
+ * fecha); a la DERECHA el detalle del seleccionado (vista previa y nombre del
+ * escenario + tarjetas de jugador con estadísticas). Acciones por replay: Ver
+ * (reproducir), Guardar (exportar .json), Borrar. Arriba, Importar (.json) y
+ * Volver. Los nombres visibles se resuelven desde los ids guardados (R1.6).
  */
 export interface ReplayListCallbacks {
   /** Reproducir el replay elegido. */
@@ -29,6 +34,7 @@ export interface ReplayListCallbacks {
 
 export class ReplayListScreen {
   private readonly root: HTMLDivElement;
+  private readonly nav = screenNav(() => this.root);
   private readonly listEl: HTMLDivElement;
   private readonly detailEl: HTMLDivElement;
   private readonly fileInput: HTMLInputElement;
@@ -39,45 +45,47 @@ export class ReplayListScreen {
   constructor(private readonly cb: ReplayListCallbacks) {
     this.root = document.createElement("div");
     this.root.id = "replay-list";
+    this.root.classList.add("kb-replays");
 
     // Cabecera.
     const header = document.createElement("div");
-    header.className = "rl-header";
+    header.className = "rl-header kb-replays__header";
     const title = document.createElement("h2");
-    title.className = "rl-title";
+    title.className = "rl-title kb-replays__title";
     title.textContent = "Repeticiones";
     header.appendChild(title);
 
     const actions = document.createElement("div");
-    actions.className = "rl-header-actions";
-
-    const importBtn = document.createElement("button");
-    importBtn.type = "button";
-    importBtn.className = "rl-btn";
-    importBtn.textContent = "Importar .json";
-    importBtn.addEventListener("click", () => this.fileInput.click());
-    actions.appendChild(importBtn);
-
-    const back = document.createElement("button");
-    back.type = "button";
-    back.className = "rl-btn rl-btn-ghost";
-    back.textContent = "‹ Volver";
-    back.addEventListener("click", () => this.cb.onBack());
-    actions.appendChild(back);
-
+    actions.className = "rl-header-actions kb-replays__header-actions";
+    actions.appendChild(
+      keyHint(
+        button({
+          label: "Importar .json",
+          variant: "secondary",
+          onActivate: () => this.fileInput.click(),
+        }),
+        "i",
+        { label: "Importar" },
+      ),
+    );
+    actions.appendChild(
+      backHint(button({ label: "‹ Volver", variant: "ghost", onActivate: () => this.cb.onBack() })),
+    );
     header.appendChild(actions);
     this.root.appendChild(header);
 
     // Cuerpo en dos columnas.
     const body = document.createElement("div");
-    body.className = "rl-body";
+    body.className = "rl-body kb-replays__body";
 
     this.listEl = document.createElement("div");
-    this.listEl.className = "rl-list";
+    this.listEl.className = "rl-list kb-replays__list";
+    this.listEl.setAttribute("aria-label", "Repeticiones guardadas");
     body.appendChild(this.listEl);
 
     this.detailEl = document.createElement("div");
-    this.detailEl.className = "rl-detail";
+    this.detailEl.className = "rl-detail kb-replays__detail";
+    this.detailEl.setAttribute("aria-live", "polite");
     body.appendChild(this.detailEl);
 
     this.root.appendChild(body);
@@ -100,10 +108,12 @@ export class ReplayListScreen {
   show(): void {
     this.refresh();
     this.root.classList.add("open");
+    this.nav.mount();
   }
 
   hide(): void {
     this.root.classList.remove("open");
+    this.nav.unmount();
   }
 
   /** Relee del almacén y re-dibuja lista + detalle. */
@@ -133,7 +143,7 @@ export class ReplayListScreen {
 
     if (this.entries.length === 0) {
       const empty = document.createElement("div");
-      empty.className = "rl-empty";
+      empty.className = "rl-empty kb-replays__empty";
       empty.textContent =
         "No hay repeticiones guardadas todavía. Juega una partida o importa un .json.";
       this.listEl.appendChild(empty);
@@ -146,32 +156,31 @@ export class ReplayListScreen {
   }
 
   private buildListItem(entry: StoredReplay): HTMLElement {
-    const item = document.createElement("button");
-    item.type = "button";
-    item.className = "rl-item";
-    if (entry.id === this.selectedId) item.classList.add("selected");
-    item.addEventListener("click", () => {
-      this.selectedId = entry.id;
-      this.renderList();
-      this.renderDetail();
+    const data = entry.data;
+    const ids = characterIds(data);
+
+    // Retratos en miniatura de los personajes implicados.
+    const media = document.createElement("div");
+    media.className = "kb-replays__item-portraits";
+    for (const id of ids) {
+      media.appendChild(createCharacterPortrait(id, { decorative: true }));
+    }
+
+    const dur = data.result ? ` · ${fmtDuration(data.result.durationSec)}` : "";
+    const item = card({
+      label: characterNames(data).join("  vs  "),
+      subtitle: `${fmtDate(data.recordedAt)}${dur} · ${stageLore(replayStageId(data)).name}`,
+      media,
+      onActivate: () => {
+        this.selectedId = entry.id;
+        this.renderList();
+        this.renderDetail();
+      },
     });
-
-    // Fila 1: personajes implicados.
-    const chars = this.characterNames(entry.data);
-    const who = document.createElement("div");
-    who.className = "rl-item-who";
-    who.textContent = chars.join("  vs  ");
-    item.appendChild(who);
-
-    // Fila 2: fecha + duración.
-    const meta = document.createElement("div");
-    meta.className = "rl-item-meta";
-    const dur = entry.data.result
-      ? ` · ${fmtDuration(entry.data.result.durationSec)}`
-      : "";
-    meta.textContent = `${fmtDate(entry.data.recordedAt)}${dur}`;
-    item.appendChild(meta);
-
+    item.classList.add("kb-replays__item");
+    const selected = entry.id === this.selectedId;
+    item.classList.toggle("is-selected", selected);
+    item.setAttribute("aria-pressed", selected ? "true" : "false");
     return item;
   }
 
@@ -181,7 +190,7 @@ export class ReplayListScreen {
     const entry = this.entries.find((e) => e.id === this.selectedId) ?? null;
     if (!entry) {
       const hint = document.createElement("div");
-      hint.className = "rl-detail-empty";
+      hint.className = "rl-detail-empty kb-replays__empty";
       hint.textContent = "Selecciona una repetición para ver sus detalles.";
       this.detailEl.appendChild(hint);
       return;
@@ -189,24 +198,28 @@ export class ReplayListScreen {
 
     const data = entry.data;
 
-    // Escenario (mapa seleccionado).
-    const stage = getStage(data.stage);
+    // Escenario: vista previa + nombre visible resuelto desde el id guardado.
     const stageEl = document.createElement("div");
-    stageEl.className = "rl-stage";
+    stageEl.className = "kb-replays__stage";
+    stageEl.appendChild(
+      createStagePreview(replayStageId(data), { decorative: true, className: "kb-replays__stage-preview" }),
+    );
+    const stageText = document.createElement("div");
+    stageText.className = "kb-replays__stage-text";
     const stageName = document.createElement("div");
-    stageName.className = "rl-stage-name";
-    stageName.textContent = stage.name;
-    stageEl.appendChild(stageName);
+    stageName.className = "kb-replays__stage-name";
+    stageName.textContent = stageLore(replayStageId(data)).name;
+    stageText.appendChild(stageName);
     const stageTag = document.createElement("div");
-    stageTag.className = "rl-stage-tag";
-    stageTag.textContent =
-      data.mode === "training" ? "Entrenamiento" : "Batalla";
-    stageEl.appendChild(stageTag);
+    stageTag.className = "kb-replays__stage-tag";
+    stageTag.textContent = data.mode === "training" ? "Entrenamiento" : "Batalla";
+    stageText.appendChild(stageTag);
+    stageEl.appendChild(stageText);
     this.detailEl.appendChild(stageEl);
 
     // Tarjetas de jugador con estadísticas.
     const cards = document.createElement("div");
-    cards.className = "rl-cards";
+    cards.className = "kb-replays__cards";
     if (data.result) {
       for (const f of data.result.fighters) {
         cards.appendChild(this.buildFighterCard(f));
@@ -214,7 +227,7 @@ export class ReplayListScreen {
     } else {
       // Replay antiguo sin resumen: mostramos al menos los personajes.
       const note = document.createElement("div");
-      note.className = "rl-detail-empty";
+      note.className = "kb-replays__empty";
       note.textContent =
         "Esta repetición es de una versión anterior y no tiene estadísticas guardadas.";
       cards.appendChild(note);
@@ -223,52 +236,61 @@ export class ReplayListScreen {
 
     // Acciones.
     const actions = document.createElement("div");
-    actions.className = "rl-detail-actions";
-
-    const play = document.createElement("button");
-    play.type = "button";
-    play.className = "rl-btn rl-btn-primary";
-    play.textContent = "▶ Ver repetición";
-    play.addEventListener("click", () => this.cb.onPlay(data));
-    actions.appendChild(play);
-
-    const save = document.createElement("button");
-    save.type = "button";
-    save.className = "rl-btn";
-    save.textContent = "⭳ Guardar .json";
-    save.title = "Exportar esta repetición como archivo";
-    save.addEventListener("click", () => this.cb.onExport(data));
-    actions.appendChild(save);
-
-    const del = document.createElement("button");
-    del.type = "button";
-    del.className = "rl-btn rl-btn-danger";
-    del.textContent = "🗑 Borrar";
-    del.addEventListener("click", () => {
-      deleteReplay(entry.id);
-      this.refresh();
+    actions.className = "kb-replays__detail-actions";
+    actions.appendChild(
+      keyHint(
+        button({ label: "▶ Ver repetición", variant: "primary", onActivate: () => this.cb.onPlay(data) }),
+        "p",
+        { pad: "x", label: "Ver" },
+      ),
+    );
+    const save = button({
+      label: "⭳ Guardar .json",
+      variant: "secondary",
+      onActivate: () => this.cb.onExport(data),
     });
-    actions.appendChild(del);
-
+    save.title = "Exportar esta repetición como archivo";
+    actions.appendChild(keyHint(save, "g", { label: "Guardar" }));
+    actions.appendChild(
+      keyHint(
+        button({
+          label: "🗑 Borrar",
+          variant: "danger",
+          onActivate: () => {
+            deleteReplay(entry.id);
+            this.refresh();
+          },
+        }),
+        "delete",
+        { pad: "y", label: "Borrar" },
+      ),
+    );
     this.detailEl.appendChild(actions);
   }
 
   private buildFighterCard(f: ReplayDataFighter): HTMLElement {
-    const card = document.createElement("div");
-    card.className = "rl-card";
-    card.style.borderColor = f.color;
-    if (f.isWinner) card.classList.add("winner");
+    const el = document.createElement("div");
+    el.className = "kb-replays__fighter";
+    el.style.setProperty("--kb-row-color", f.color);
+    if (f.isWinner) el.classList.add("is-winner");
+
+    const portrait = document.createElement("div");
+    portrait.className = "kb-replays__fighter-portrait";
+    portrait.appendChild(createCharacterPortrait(f.character, { decorative: true }));
+    el.appendChild(portrait);
+
+    const info = document.createElement("div");
+    info.className = "kb-replays__fighter-info";
 
     const head = document.createElement("div");
-    head.className = "rl-card-head";
-    head.style.color = f.color;
+    head.className = "kb-replays__fighter-head";
     head.textContent = f.isWinner ? `🏆 ${f.label}` : f.label;
-    card.appendChild(head);
+    info.appendChild(head);
 
     const sub = document.createElement("div");
-    sub.className = "rl-card-sub";
-    sub.textContent = getCharacter(f.character).name;
-    card.appendChild(sub);
+    sub.className = "kb-replays__fighter-sub";
+    sub.textContent = characterLore(f.character).name;
+    info.appendChild(sub);
 
     const rows: Array<[string, string]> = [
       ["Daño infligido", `${Math.round(f.dealt)}%`],
@@ -277,38 +299,49 @@ export class ReplayListScreen {
       ["KOs", String(f.kos)],
       ["Muertes", String(f.deaths)],
     ];
-    const stats = document.createElement("div");
-    stats.className = "rl-card-stats";
+    const stats = document.createElement("dl");
+    stats.className = "kb-replays__fighter-stats";
     for (const [k, v] of rows) {
       const row = document.createElement("div");
-      row.className = "rl-card-stat";
-      const kEl = document.createElement("span");
+      row.className = "kb-replays__fighter-stat";
+      const kEl = document.createElement("dt");
       kEl.textContent = k;
-      const vEl = document.createElement("span");
-      vEl.className = "rl-card-stat-value";
+      const vEl = document.createElement("dd");
       vEl.textContent = v;
       row.appendChild(kEl);
       row.appendChild(vEl);
       stats.appendChild(row);
     }
-    card.appendChild(stats);
-    return card;
-  }
-
-  /** Nombres de personaje de un replay (desde result o desde characters). */
-  private characterNames(data: ReplayData): string[] {
-    if (data.result) {
-      return data.result.fighters.map((f) => getCharacter(f.character).name);
-    }
-    if (data.characters) {
-      return data.characters.map((c) => getCharacter(c).name);
-    }
-    return ["Azul", "Rojo"];
+    info.appendChild(stats);
+    el.appendChild(info);
+    return el;
   }
 }
 
 /** Tipo auxiliar: una entrada de fighter del resumen del replay. */
 type ReplayDataFighter = NonNullable<ReplayData["result"]>["fighters"][number];
+
+/** Ids de personaje de un replay (desde result o desde characters). */
+export function characterIds(data: ReplayData): string[] {
+  if (data.result) return data.result.fighters.map((f) => f.character);
+  if (data.characters) return [...data.characters];
+  return [];
+}
+
+/** Nombres visibles de personaje de un replay, resueltos desde los ids (R1.6). */
+export function characterNames(data: ReplayData): string[] {
+  const ids = characterIds(data);
+  if (ids.length === 0) return ["Azul", "Rojo"];
+  return ids.map((id) => characterLore(id).name);
+}
+
+/**
+ * Id de escenario de un replay. Los v1 no lo guardan: se usa el mismo
+ * respaldo que el `World` (entrenamiento → training; si no, isla neón).
+ */
+export function replayStageId(data: ReplayData): string {
+  return data.stage ?? (data.mode === "training" ? "training" : "neonIsland");
+}
 
 function fmtDate(iso: string): string {
   const d = new Date(iso);

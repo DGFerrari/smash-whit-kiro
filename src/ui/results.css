@@ -1,0 +1,365 @@
+/*
+ * Post-partida KiroBrawl (R3.1): pantalla de victoria con retrato grande del
+ * ganador, "¡VICTORIA!" en tipografía display con ráfaga y líneas de
+ * velocidad, tabla de resultados y acciones. Solo consume tokens (var(--*)).
+ * `--kb-winner` / `--kb-row-color` son colores de personaje (datos, no estilo).
+ */
+
+#match-over.kb-results {
+  background:
+    radial-gradient(ellipse at 30% 40%, color-mix(in srgb, var(--color-primary) 28%, transparent), transparent 60%),
+    radial-gradient(ellipse at 80% 80%, color-mix(in srgb, var(--color-secondary) 22%, transparent), transparent 55%),
+    color-mix(in srgb, var(--color-bg) 94%, transparent);
+  font-family: var(--font-text);
+  color: var(--color-text);
+  padding: var(--space-6);
+  overflow: auto;
+}
+
+#match-over.kb-results .kb-results__finish {
+  font-family: var(--font-display);
+  color: var(--color-focus);
+  text-shadow: 0 6px 0 var(--color-bg), var(--glow-focus);
+  letter-spacing: 0.06em;
+}
+
+.kb-results__panel {
+  --kb-winner: var(--color-primary);
+  display: none;
+  flex-direction: column;
+  gap: var(--space-4);
+  width: min(1080px, 100%);
+  max-height: 100%;
+  padding: var(--space-6);
+  background: color-mix(in srgb, var(--color-surface) 92%, transparent);
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-2);
+  position: relative;
+  z-index: 1;
+}
+
+.kb-results__panel.show {
+  display: flex;
+  animation: kbResultsIn var(--dur-slow) var(--ease-pop) both;
+}
+
+/* ── Héroe ─────────────────────────────────────────────────── */
+.kb-results__hero {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  min-height: 220px;
+  padding: var(--space-4) var(--space-6);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: linear-gradient(
+    115deg,
+    color-mix(in srgb, var(--kb-winner) 55%, var(--color-bg)) 0%,
+    var(--color-bg) 70%
+  );
+  transform: skewX(-6deg);
+}
+
+.kb-results__hero > * {
+  transform: skewX(6deg);
+}
+
+.kb-results__burst {
+  position: absolute;
+  inset: -50%;
+  background: repeating-conic-gradient(
+    from 0deg at 22% 50%,
+    color-mix(in srgb, var(--color-focus) 30%, transparent) 0deg 6deg,
+    transparent 6deg 18deg
+  );
+  animation: kbBurstSpin 18s linear infinite;
+  pointer-events: none;
+}
+
+.kb-results__speedlines {
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    -12deg,
+    transparent 0 22px,
+    color-mix(in srgb, var(--color-text) 14%, transparent) 22px 24px
+  );
+  animation: kbSpeed 0.6s linear infinite;
+  pointer-events: none;
+}
+
+.kb-results__portrait {
+  position: relative;
+  flex: 0 0 auto;
+  width: 170px;
+  height: 204px;
+  border: 3px solid var(--kb-winner);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  box-shadow: 0 0 24px color-mix(in srgb, var(--kb-winner) 70%, transparent), var(--shadow-1);
+  animation: kbPortraitIn var(--dur-slow) var(--ease-pop) both;
+}
+
+.kb-results__canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.kb-results__portrait[data-preview="3d"] .kb-portrait {
+  opacity: 0.3;
+}
+
+.kb-results__portrait[hidden] {
+  display: none;
+}
+
+.kb-results__portrait .kb-portrait {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.kb-results__heading {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.kb-results__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: var(--fw-display);
+  font-size: var(--fs-display);
+  line-height: 1;
+  color: var(--color-focus);
+  letter-spacing: 0.04em;
+  text-shadow: 4px 4px 0 var(--color-bg), -2px -2px 0 var(--kb-winner), var(--glow-focus);
+  animation: kbTitleSlam var(--dur-slow) var(--ease-pop) both;
+}
+
+.kb-results__hero.is-draw .kb-results__title {
+  color: var(--color-text);
+}
+
+.kb-results__winner {
+  font-family: var(--font-display);
+  font-size: var(--fs-h2);
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+
+/* ── Tabla ─────────────────────────────────────────────────── */
+.kb-results__table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0 var(--space-1);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-body);
+}
+
+.kb-results__caption {
+  text-align: left;
+  font-family: var(--font-display);
+  font-size: var(--fs-caption);
+  color: var(--color-text-muted);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding-bottom: var(--space-1);
+}
+
+.kb-results__table thead th {
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-caption);
+  color: var(--color-text-muted);
+  text-align: center;
+  padding: var(--space-1) var(--space-2);
+}
+
+.kb-results__table thead th:first-child {
+  text-align: left;
+}
+
+.kb-results__row {
+  --kb-row-color: var(--color-border);
+  background: var(--color-surface-raised);
+  animation: kbRowIn var(--dur-slow) var(--ease-out) both;
+}
+
+.kb-results__row > * {
+  padding: var(--space-2) var(--space-3);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.kb-results__row > :first-child {
+  border-left: 4px solid var(--kb-row-color);
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+}
+
+.kb-results__row > :last-child {
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.kb-results__row.is-winner {
+  background: color-mix(in srgb, var(--kb-row-color) 22%, var(--color-surface-raised));
+  box-shadow: 0 0 0 1px var(--kb-row-color);
+}
+
+.kb-results__who {
+  text-align: left !important;
+  font-weight: var(--fw-h2);
+  white-space: nowrap;
+}
+
+.kb-results__dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--kb-row-color);
+}
+
+.kb-results__char {
+  margin-left: var(--space-2);
+  font-size: var(--fs-caption);
+  color: var(--color-text-muted);
+}
+
+.kb-results__grade {
+  font-family: var(--font-display);
+  font-size: var(--fs-body-lg);
+  color: var(--color-focus);
+}
+
+/* ── Recompensa ────────────────────────────────────────────── */
+#match-over .kb-results__reward {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  font-size: var(--fs-body-lg);
+  font-weight: var(--fw-body-lg);
+  color: var(--color-text);
+}
+
+#match-over .kb-results__reward.show {
+  display: flex;
+}
+
+.kb-results__coins {
+  font-family: var(--font-display);
+  color: var(--color-focus);
+}
+
+.kb-results__note {
+  color: var(--color-text-muted);
+}
+
+.kb-results__spinner {
+  width: 18px;
+  height: 18px;
+  border: 3px solid var(--color-border);
+  border-top-color: var(--color-focus);
+  border-radius: var(--radius-pill);
+  animation: kbSpin 0.8s linear infinite;
+}
+
+/* ── Acciones ──────────────────────────────────────────────── */
+.kb-results__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-4);
+}
+
+.kb-results__action.kb-btn {
+  display: inline-grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto;
+  column-gap: var(--space-3);
+  align-items: center;
+  min-width: 220px;
+  text-align: left;
+}
+
+.kb-results__action-icon {
+  grid-row: 1 / span 2;
+  font-size: var(--fs-h2);
+  line-height: 1;
+}
+
+.kb-results__action-sub {
+  font-family: var(--font-text);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-caption);
+  opacity: 0.8;
+}
+
+/* ── Animaciones ───────────────────────────────────────────── */
+@keyframes kbResultsIn {
+  from { opacity: 0; transform: scale(0.94); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes kbTitleSlam {
+  from { opacity: 0; transform: scale(1.6) skewX(-8deg); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes kbPortraitIn {
+  from { opacity: 0; transform: translateX(-40px) skewX(6deg); }
+  to { opacity: 1; transform: skewX(6deg); }
+}
+
+@keyframes kbRowIn {
+  from { opacity: 0; transform: translateX(24px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes kbBurstSpin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes kbSpeed {
+  from { background-position: 0 0; }
+  to { background-position: -48px 0; }
+}
+
+@keyframes kbSpin {
+  to { transform: rotate(360deg); }
+}
+
+/* Movimiento reducido (R9.8): sin ráfaga giratoria ni líneas animadas. */
+html[data-reduced-motion] .kb-results__burst,
+html[data-reduced-motion] .kb-results__speedlines,
+html[data-reduced-motion] .kb-results__panel.show,
+html[data-reduced-motion] .kb-results__title,
+html[data-reduced-motion] .kb-results__portrait,
+html[data-reduced-motion] .kb-results__row {
+  animation: none;
+}
+
+@media (max-height: 820px) {
+  .kb-results__hero { min-height: 160px; }
+  .kb-results__portrait { width: 120px; height: 144px; }
+  .kb-results__title { font-size: var(--fs-h1); }
+}
+
+/* Tecla del atajo en la esquina del botón de acción. */
+.kb-results__action {
+  position: relative;
+}
+.kb-results__action .kb-keycap--inline {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  margin: 0;
+}

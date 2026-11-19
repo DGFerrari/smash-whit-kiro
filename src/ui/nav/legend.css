@@ -1,0 +1,136 @@
+/* Leyenda de controles + teclas dibujadas (keycaps). */
+
+:root {
+  --kb-legend-h: 34px;
+}
+
+/* ── Keycap ─────────────────────────────────────────────────────────────── */
+.kb-keycap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 24px;
+  padding: 0 var(--space-2);
+  border: 1px solid #ffffff55;
+  border-bottom-width: 3px;
+  border-radius: var(--radius-sm);
+  background: #0b0e1fcc;
+  color: var(--color-text);
+  font-family: var(--font-display);
+  font-size: 12px;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  box-sizing: border-box;
+  flex: none;
+}
+
+.kb-keycap__key::before,
+.kb-keycap__pad::before {
+  content: attr(data-glyph);
+}
+
+/* Por defecto (teclado) se ve la tecla; en modo mando, el botón del mando. */
+.kb-keycap__pad {
+  display: none;
+}
+html[data-kb-input="pad"] .kb-keycap__key {
+  display: none;
+}
+html[data-kb-input="pad"] .kb-keycap__pad {
+  display: inline;
+}
+/* Sin equivalente en mando: la tecla se atenúa. */
+html[data-kb-input="pad"] .kb-keycap--keyonly {
+  opacity: 0.45;
+}
+html[data-kb-input="pad"] .kb-keycap:has(.kb-keycap__pad--a, .kb-keycap__pad--b, .kb-keycap__pad--x, .kb-keycap__pad--y) {
+  min-width: 24px;
+  width: 24px;
+  padding: 0;
+  border-radius: 50%;
+  border-bottom-width: 1px;
+}
+html[data-kb-input="pad"] .kb-keycap:has(.kb-keycap__pad--a) { background: #1f9d55; border-color: #6ef0a3; }
+html[data-kb-input="pad"] .kb-keycap:has(.kb-keycap__pad--b) { background: #c62f2f; border-color: #ff8a8a; }
+html[data-kb-input="pad"] .kb-keycap:has(.kb-keycap__pad--x) { background: #2659d9; border-color: #8fb0ff; }
+html[data-kb-input="pad"] .kb-keycap:has(.kb-keycap__pad--y) { background: #c99a10; border-color: #ffe27a; }
+
+/* Tecla dentro de un botón: a la derecha del texto, discreta. */
+.kb-keycap--inline {
+  margin-left: var(--space-2);
+  height: 20px;
+  min-width: 22px;
+  font-size: 11px;
+  opacity: 0.85;
+  vertical-align: middle;
+  pointer-events: none;
+}
+
+/* ── Barra de leyenda ───────────────────────────────────────────────────── */
+.kb-legend {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1100;
+  height: var(--kb-legend-h);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-6);
+  padding: 0 var(--space-6);
+  box-sizing: border-box;
+  background: linear-gradient(180deg, #0b0e1fb3, #0b0e1ff2);
+  border-top: 1px solid #ffffff1f;
+  color: var(--color-text);
+  font-family: var(--font-text);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-caption);
+  pointer-events: none;
+  user-select: none;
+  overflow: hidden;
+}
+.kb-legend[hidden] {
+  display: none;
+}
+.kb-legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  white-space: nowrap;
+}
+.kb-legend__label {
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* Las pantallas completas dejan sitio a la barra SIN cambiar su caja (antes
+   se acortaban con `bottom`, y las de altura fija o rejilla se deformaban):
+   solo reservan hueco abajo con padding. */
+body.kb-legend-on :is(.select-screen, #replay-list, #match-over) {
+  padding-bottom: calc(var(--space-3) + var(--kb-legend-h));
+}
+body.kb-legend-on #char-select.select-screen {
+  padding-bottom: calc(var(--space-2) + var(--kb-legend-h));
+}
+body.kb-legend-on #main-menu .menu-select-phase {
+  padding-bottom: calc(var(--menu-pad-y) + var(--kb-legend-h));
+}
+/* El cajón de la mochila (gacha) asoma justo encima de la barra. */
+body.kb-legend-on .inv-drawer {
+  bottom: var(--kb-legend-h);
+}
+
+@media (max-width: 720px) {
+  .kb-legend {
+    justify-content: center;
+    gap: var(--space-3);
+    padding: 0 var(--space-3);
+  }
+  .kb-legend__label {
+    letter-spacing: 0;
+  }
+}

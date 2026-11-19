@@ -1,0 +1,659 @@
+{
+  "pbtResults": {},
+  "executionHistory": {
+    "1.1 Añadir infraestructura de pruebas al cliente": [
+      {
+        "executionId": "75e5da96-d7f9-4f4c-bf42-d3905423b3c3",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795041613419
+      },
+      {
+        "executionId": "75e5da96-d7f9-4f4c-bf42-d3905423b3c3",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795041629289
+      },
+      {
+        "executionId": "5ae0c8b8-ecac-4b1c-8a00-a99f01e03902",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795044360309
+      }
+    ],
+    "1.2 Autoalojar fuentes y renombrar el título": [
+      {
+        "executionId": "75e5da96-d7f9-4f4c-bf42-d3905423b3c3",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795041613522
+      },
+      {
+        "executionId": "75e5da96-d7f9-4f4c-bf42-d3905423b3c3",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795041630303
+      },
+      {
+        "executionId": "5ae0c8b8-ecac-4b1c-8a00-a99f01e03902",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795044365130
+      },
+      {
+        "executionId": "5ae0c8b8-ecac-4b1c-8a00-a99f01e03902",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795044537110
+      }
+    ],
+    "2.1 Crear `src/ui/design/tokens.css`": [
+      {
+        "executionId": "75e5da96-d7f9-4f4c-bf42-d3905423b3c3",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795041613604
+      },
+      {
+        "executionId": "5ae0c8b8-ecac-4b1c-8a00-a99f01e03902",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795044545825
+      },
+      {
+        "executionId": "5ae0c8b8-ecac-4b1c-8a00-a99f01e03902",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795045031230
+      }
+    ],
+    "2.3 Implementar `src/ui/design/components.ts`": [
+      {
+        "executionId": "75e5da96-d7f9-4f4c-bf42-d3905423b3c3",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795041613684
+      },
+      {
+        "executionId": "5ae0c8b8-ecac-4b1c-8a00-a99f01e03902",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795045040412
+      },
+      {
+        "executionId": "5ae0c8b8-ecac-4b1c-8a00-a99f01e03902",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795046285211
+      }
+    ],
+    "2.4 Implementar `src/ui/design/transitions.ts`": [
+      {
+        "executionId": "75e5da96-d7f9-4f4c-bf42-d3905423b3c3",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795041613788
+      },
+      {
+        "executionId": "5ae0c8b8-ecac-4b1c-8a00-a99f01e03902",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795046289014
+      },
+      {
+        "executionId": "5ae0c8b8-ecac-4b1c-8a00-a99f01e03902",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795046785995
+      }
+    ],
+    "2.6 Implementar `src/ui/nav/menuNavigator.ts`": [
+      {
+        "executionId": "75e5da96-d7f9-4f4c-bf42-d3905423b3c3",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795041613856
+      },
+      {
+        "executionId": "5ae0c8b8-ecac-4b1c-8a00-a99f01e03902",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795046290013
+      },
+      {
+        "executionId": "5ae0c8b8-ecac-4b1c-8a00-a99f01e03902",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795046786563
+      }
+    ],
+    "3.1 Crear `src/content/lore.ts`": [
+      {
+        "executionId": "75e5da96-d7f9-4f4c-bf42-d3905423b3c3",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795041613944
+      },
+      {
+        "executionId": "75e5da96-d7f9-4f4c-bf42-d3905423b3c3",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795041631322
+      },
+      {
+        "executionId": "5ae0c8b8-ecac-4b1c-8a00-a99f01e03902",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795044365713
+      },
+      {
+        "executionId": "5ae0c8b8-ecac-4b1c-8a00-a99f01e03902",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795044539029
+      }
+    ],
+    "3.3 Implementar `src/ui/brand/logo.ts` y `src/ui/brand/portraits.ts`": [
+      {
+        "executionId": "75e5da96-d7f9-4f4c-bf42-d3905423b3c3",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795041614017
+      },
+      {
+        "executionId": "5ae0c8b8-ecac-4b1c-8a00-a99f01e03902",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795045041264
+      },
+      {
+        "executionId": "5ae0c8b8-ecac-4b1c-8a00-a99f01e03902",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795046284752
+      }
+    ],
+    "4.1 Implementar `src/assets/progress.ts` (puro)": [
+      {
+        "executionId": "75e5da96-d7f9-4f4c-bf42-d3905423b3c3",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795041614101
+      },
+      {
+        "executionId": "75e5da96-d7f9-4f4c-bf42-d3905423b3c3",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795041632297
+      },
+      {
+        "executionId": "5ae0c8b8-ecac-4b1c-8a00-a99f01e03902",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795044359965
+      }
+    ],
+    "4.3 Implementar `src/assets/assetLoader.ts` y `src/assets/manifest.ts`": [
+      {
+        "executionId": "75e5da96-d7f9-4f4c-bf42-d3905423b3c3",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795041614213
+      },
+      {
+        "executionId": "5ae0c8b8-ecac-4b1c-8a00-a99f01e03902",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795044546793
+      },
+      {
+        "executionId": "5ae0c8b8-ecac-4b1c-8a00-a99f01e03902",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795045030757
+      }
+    ],
+    "4.6 Implementar `src/ui/loadingScreen.ts`": [
+      {
+        "executionId": "75e5da96-d7f9-4f4c-bf42-d3905423b3c3",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795041614282
+      },
+      {
+        "executionId": "5ae0c8b8-ecac-4b1c-8a00-a99f01e03902",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795046790199
+      },
+      {
+        "executionId": "8a4c3bb6-2c61-439e-a761-8a778ff78561",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795047071311
+      },
+      {
+        "executionId": "09b732b2-2ba5-4232-a1b6-b114288e217f",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795047395398
+      },
+      {
+        "executionId": "09b732b2-2ba5-4232-a1b6-b114288e217f",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795047514863
+      }
+    ],
+    "5.1 Implementar `src/render/quality/visualPrefs.ts`": [
+      {
+        "executionId": "75e5da96-d7f9-4f4c-bf42-d3905423b3c3",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795041614370
+      },
+      {
+        "executionId": "75e5da96-d7f9-4f4c-bf42-d3905423b3c3",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795041632906
+      },
+      {
+        "executionId": "5ae0c8b8-ecac-4b1c-8a00-a99f01e03902",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795044360160
+      }
+    ],
+    "5.5 Implementar `src/render/quality/qualityManager.ts`": [
+      {
+        "executionId": "75e5da96-d7f9-4f4c-bf42-d3905423b3c3",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795041614457
+      },
+      {
+        "executionId": "5ae0c8b8-ecac-4b1c-8a00-a99f01e03902",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795044548305
+      },
+      {
+        "executionId": "5ae0c8b8-ecac-4b1c-8a00-a99f01e03902",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795045032796
+      }
+    ],
+    "6. Checkpoint - Fundamentos de la fase 1": [
+      {
+        "executionId": "75e5da96-d7f9-4f4c-bf42-d3905423b3c3",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795041614532
+      },
+      {
+        "executionId": "04302481-78f3-4187-8bc9-64fe90ceacb8",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795050541828
+      }
+    ],
+    "7.1 Migrar estilos base, menú principal y créditos": [
+      {
+        "executionId": "75e5da96-d7f9-4f4c-bf42-d3905423b3c3",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795041614603
+      },
+      {
+        "executionId": "09b732b2-2ba5-4232-a1b6-b114288e217f",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795047526882
+      },
+      {
+        "executionId": "09b732b2-2ba5-4232-a1b6-b114288e217f",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795048177121
+      }
+    ],
+    "7.3 Rediseñar selección de personaje y de escenario": [
+      {
+        "executionId": "75e5da96-d7f9-4f4c-bf42-d3905423b3c3",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795041614674
+      },
+      {
+        "executionId": "09b732b2-2ba5-4232-a1b6-b114288e217f",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795048180900
+      },
+      {
+        "executionId": "09b732b2-2ba5-4232-a1b6-b114288e217f",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795048604436
+      }
+    ],
+    "7.4 Rediseñar el HUD": [
+      {
+        "executionId": "75e5da96-d7f9-4f4c-bf42-d3905423b3c3",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795041614851
+      },
+      {
+        "executionId": "09b732b2-2ba5-4232-a1b6-b114288e217f",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795048181821
+      },
+      {
+        "executionId": "09b732b2-2ba5-4232-a1b6-b114288e217f",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795048604618
+      }
+    ],
+    "7.8 Rediseñar pausa, opciones y reasignación de teclas": [
+      {
+        "executionId": "75e5da96-d7f9-4f4c-bf42-d3905423b3c3",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795041614939
+      },
+      {
+        "executionId": "09b732b2-2ba5-4232-a1b6-b114288e217f",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795048608053
+      },
+      {
+        "executionId": "09b732b2-2ba5-4232-a1b6-b114288e217f",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795048999456
+      }
+    ],
+    "7.9 Rediseñar gacha y ranking": [
+      {
+        "executionId": "75e5da96-d7f9-4f4c-bf42-d3905423b3c3",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795041615017
+      },
+      {
+        "executionId": "09b732b2-2ba5-4232-a1b6-b114288e217f",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795048609034
+      },
+      {
+        "executionId": "09b732b2-2ba5-4232-a1b6-b114288e217f",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795049000028
+      }
+    ],
+    "7.10 Rediseñar pantallas online": [
+      {
+        "executionId": "75e5da96-d7f9-4f4c-bf42-d3905423b3c3",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795041615085
+      },
+      {
+        "executionId": "09b732b2-2ba5-4232-a1b6-b114288e217f",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795048610471
+      },
+      {
+        "executionId": "09b732b2-2ba5-4232-a1b6-b114288e217f",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795049000359
+      }
+    ],
+    "7.11 Rediseñar post-partida y repeticiones": [
+      {
+        "executionId": "75e5da96-d7f9-4f4c-bf42-d3905423b3c3",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795041615168
+      },
+      {
+        "executionId": "09b732b2-2ba5-4232-a1b6-b114288e217f",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795049004706
+      },
+      {
+        "executionId": "09b732b2-2ba5-4232-a1b6-b114288e217f",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795049329515
+      }
+    ],
+    "7.12 Rediseñar tutorial y diálogos genéricos": [
+      {
+        "executionId": "75e5da96-d7f9-4f4c-bf42-d3905423b3c3",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795041615252
+      },
+      {
+        "executionId": "09b732b2-2ba5-4232-a1b6-b114288e217f",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795049005299
+      },
+      {
+        "executionId": "09b732b2-2ba5-4232-a1b6-b114288e217f",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795049330171
+      }
+    ],
+    "7.13 Integrar arranque y renombrar a KiroBrawl": [
+      {
+        "executionId": "75e5da96-d7f9-4f4c-bf42-d3905423b3c3",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795041615323
+      },
+      {
+        "executionId": "09b732b2-2ba5-4232-a1b6-b114288e217f",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795049333630
+      },
+      {
+        "executionId": "04302481-78f3-4187-8bc9-64fe90ceacb8",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795050326999
+      },
+      {
+        "executionId": "04302481-78f3-4187-8bc9-64fe90ceacb8",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795050537244
+      }
+    ],
+    "8. Checkpoint - Fin de la fase 1": [
+      {
+        "executionId": "75e5da96-d7f9-4f4c-bf42-d3905423b3c3",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795041615406
+      },
+      {
+        "executionId": "04302481-78f3-4187-8bc9-64fe90ceacb8",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795050542779
+      }
+    ],
+    "9.1 Implementar `src/render/visualRng.ts`": [
+      {
+        "executionId": "75e5da96-d7f9-4f4c-bf42-d3905423b3c3",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795041615487
+      },
+      {
+        "executionId": "5ae0c8b8-ecac-4b1c-8a00-a99f01e03902",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795044366711
+      },
+      {
+        "executionId": "5ae0c8b8-ecac-4b1c-8a00-a99f01e03902",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795044536218
+      }
+    ],
+    "9.3 Refactorizar `src/render/renderer.ts` a grafo retenido": [
+      {
+        "executionId": "75e5da96-d7f9-4f4c-bf42-d3905423b3c3",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795041615600
+      },
+      {
+        "executionId": "04302481-78f3-4187-8bc9-64fe90ceacb8",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795050543539
+      }
+    ],
+    "10.1 Implementar `src/render/vfx/eventDetector.ts`": [
+      {
+        "executionId": "75e5da96-d7f9-4f4c-bf42-d3905423b3c3",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795041615681
+      }
+    ],
+    "10.3 Implementar `src/render/vfx/particlePool.ts`": [
+      {
+        "executionId": "75e5da96-d7f9-4f4c-bf42-d3905423b3c3",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795041615769
+      }
+    ],
+    "10.5 Implementar `impactFx`, `speedLines` y `cameraShake`": [
+      {
+        "executionId": "75e5da96-d7f9-4f4c-bf42-d3905423b3c3",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795041615856
+      }
+    ],
+    "10.7 Implementar `trails`, `auras`, partículas de carga y `koFx`": [
+      {
+        "executionId": "75e5da96-d7f9-4f4c-bf42-d3905423b3c3",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795041615934
+      }
+    ],
+    "10.10 Implementar `src/render/vfx/flashLimiter.ts`": [
+      {
+        "executionId": "75e5da96-d7f9-4f4c-bf42-d3905423b3c3",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795041616002
+      }
+    ],
+    "10.12 Conectar el Sistema_VFX al renderer": [
+      {
+        "executionId": "75e5da96-d7f9-4f4c-bf42-d3905423b3c3",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795041616088
+      }
+    ],
+    "11.1 Implementar `src/render/post/postPipeline.ts` e integrarlo": [
+      {
+        "executionId": "75e5da96-d7f9-4f4c-bf42-d3905423b3c3",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795041616203
+      }
+    ],
+    "12. Checkpoint - Fin de la fase 2": [
+      {
+        "executionId": "75e5da96-d7f9-4f4c-bf42-d3905423b3c3",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795041616270
+      }
+    ],
+    "13.1 Implementar definiciones de escenario y `stageBuilder`": [
+      {
+        "executionId": "75e5da96-d7f9-4f4c-bf42-d3905423b3c3",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795041616350
+      }
+    ],
+    "13.3 Implementar `animatedProps` y `applyQuality`": [
+      {
+        "executionId": "75e5da96-d7f9-4f4c-bf42-d3905423b3c3",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795041616434
+      }
+    ],
+    "13.5 Implementar `proceduralFallback` e integrar escenarios en el renderer": [
+      {
+        "executionId": "75e5da96-d7f9-4f4c-bf42-d3905423b3c3",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795041616504
+      }
+    ],
+    "14. Checkpoint - Fin de la fase 3": [
+      {
+        "executionId": "75e5da96-d7f9-4f4c-bf42-d3905423b3c3",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795041616581
+      }
+    ],
+    "15.1 Implementar `src/render/characters/fitToHitbox.ts`": [
+      {
+        "executionId": "75e5da96-d7f9-4f4c-bf42-d3905423b3c3",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795041616664
+      },
+      {
+        "executionId": "5ae0c8b8-ecac-4b1c-8a00-a99f01e03902",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795044367676
+      },
+      {
+        "executionId": "5ae0c8b8-ecac-4b1c-8a00-a99f01e03902",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795044538608
+      }
+    ],
+    "15.3 Implementar `src/render/characters/animator.ts`": [
+      {
+        "executionId": "75e5da96-d7f9-4f4c-bf42-d3905423b3c3",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795041616758
+      },
+      {
+        "executionId": "5ae0c8b8-ecac-4b1c-8a00-a99f01e03902",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795044548874
+      },
+      {
+        "executionId": "5ae0c8b8-ecac-4b1c-8a00-a99f01e03902",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795045032231
+      }
+    ],
+    "15.6 Implementar `src/render/characters/materials.ts`": [
+      {
+        "executionId": "75e5da96-d7f9-4f4c-bf42-d3905423b3c3",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795041616832
+      }
+    ],
+    "15.7 Implementar `src/render/characters/fallbackModel.ts`": [
+      {
+        "executionId": "75e5da96-d7f9-4f4c-bf42-d3905423b3c3",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795041616916
+      }
+    ],
+    "15.8 Implementar `src/render/characters/modelLoader.ts`": [
+      {
+        "executionId": "75e5da96-d7f9-4f4c-bf42-d3905423b3c3",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795041616997
+      }
+    ],
+    "15.11 Incorporar assets de personajes y créditos": [
+      {
+        "executionId": "75e5da96-d7f9-4f4c-bf42-d3905423b3c3",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795041617063
+      }
+    ],
+    "15.12 Integrar personajes en renderer y pantallas": [
+      {
+        "executionId": "75e5da96-d7f9-4f4c-bf42-d3905423b3c3",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795041617136
+      }
+    ],
+    "16. Checkpoint final - Fin de la fase 4": [
+      {
+        "executionId": "75e5da96-d7f9-4f4c-bf42-d3905423b3c3",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795041617221
+      }
+    ],
+    "1. Configuración base del cliente": [
+      {
+        "executionId": "5ae0c8b8-ecac-4b1c-8a00-a99f01e03902",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795044537176
+      }
+    ],
+    "5. Preferencias visuales y calidad (módulos puros)": [
+      {
+        "executionId": "5ae0c8b8-ecac-4b1c-8a00-a99f01e03902",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795045032898
+      }
+    ],
+    "3. Marca y contenido": [
+      {
+        "executionId": "5ae0c8b8-ecac-4b1c-8a00-a99f01e03902",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795046284866
+      }
+    ],
+    "2. Sistema de diseño y navegación": [
+      {
+        "executionId": "5ae0c8b8-ecac-4b1c-8a00-a99f01e03902",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795046786663
+      }
+    ],
+    "4. Carga de assets": [
+      {
+        "executionId": "09b732b2-2ba5-4232-a1b6-b114288e217f",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795047514975
+      }
+    ],
+    "7. Rediseño de pantallas (fase 1)": [
+      {
+        "executionId": "04302481-78f3-4187-8bc9-64fe90ceacb8",
+        "chatSessionId": "sess_0250e610-aa06-4a48-b298-75dcf1e85547",
+        "timestamp": 1795050537383
+      }
+    ]
+  }
+}

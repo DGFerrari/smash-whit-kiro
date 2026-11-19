@@ -74,6 +74,8 @@ export class MenuBackground {
       // v5: array por slot; v4 antiguos: valor único. World admite ambos.
       cpuDifficulty: data.cpuDifficulties ?? data.cpuDifficulty,
       labels: data.labels,
+      // Replays del menú grabados con el motor v1: set de movimientos común.
+      engineVersion: data.engineVersion ?? 1,
     });
     this.step = 0;
     this.phase = "in";

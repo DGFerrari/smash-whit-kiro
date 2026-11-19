@@ -1,8 +1,14 @@
 import { CHARACTERS, SELECTABLE_CHARACTERS, type CharacterId } from "../engine/game/characters.ts";
-import { STAGES, SELECTABLE_STAGES, type StageId } from "../engine/game/stages.ts";
+import { SELECTABLE_STAGES, type StageId } from "../engine/game/stages.ts";
 import type { OnlineNetwork } from "../net/peer.ts";
 import { decodeLobby, encodeLobby, type LobbyState } from "../net/onlineProtocol.ts";
+import { characterLore, stageLore } from "../content/lore.ts";
+import { createCharacterPortrait, createStagePreview } from "./brand/portraits.ts";
+import { button, setDisabled } from "./design/components.ts";
 import type { HandCursor } from "./handCursor.ts";
+import { screenNav } from "./nav/screenNav.ts";
+import { backHint, keyHint } from "./nav/keyHints.ts";
+import "./online.css";
 
 /**
  * LOBBY online (2..4 jugadores, topología estrella) con la MISMA interfaz que
@@ -36,6 +42,7 @@ interface Chip {
 
 export class OnlineLobby {
   private readonly root: HTMLDivElement;
+  private readonly nav = screenNav(() => this.root);
   private readonly codeBar: HTMLDivElement;
   private readonly codeValue: HTMLSpanElement;
   private readonly copyBtn: HTMLButtonElement;
@@ -53,8 +60,12 @@ export class OnlineLobby {
   private readonly stagePreviewThumb: HTMLDivElement;
   private readonly stagePreviewName: HTMLDivElement;
 
+  private readonly stagePreviewCache = new Map<StageId, HTMLElement>();
+  private previewedStage: StageId | null = null;
+
   private readonly waitEl: HTMLDivElement;
   private readonly nextBtn: HTMLButtonElement;
+  private readonly nextLabel: HTMLSpanElement;
 
   private net: OnlineNetwork | null = null;
   private isHost = false;
@@ -70,19 +81,21 @@ export class OnlineLobby {
   ) {
     this.root = document.createElement("div");
     this.root.id = "online-lobby";
-    this.root.className = "select-screen";
+    this.root.className = "select-screen kb-online kb-lobby";
 
+    const header = document.createElement("div");
+    header.className = "kb-online__header kb-lobby__header";
     const title = document.createElement("h1");
     title.className = "select-title";
     title.textContent = "Sala online";
-    this.root.appendChild(title);
+    header.appendChild(title);
 
     // --- Barra de código de sala (copiable) ---
     this.codeBar = document.createElement("div");
     this.codeBar.className = "lobby-code-bar";
     const codeLabel = document.createElement("span");
     codeLabel.className = "lobby-code-label";
-    codeLabel.textContent = "Código de sala:";
+    codeLabel.textContent = "Código de sala";
     this.codeValue = document.createElement("span");
     this.codeValue.className = "lobby-code-value";
     this.codeValue.textContent = "—";
@@ -90,9 +103,11 @@ export class OnlineLobby {
     this.copyBtn.type = "button";
     this.copyBtn.className = "lobby-code-copy";
     this.copyBtn.textContent = "Copiar";
+    this.copyBtn.setAttribute("aria-label", "Copiar código de sala");
     this.copyBtn.addEventListener("click", () => this.copyCode());
     this.codeBar.append(codeLabel, this.codeValue, this.copyBtn);
-    this.root.appendChild(this.codeBar);
+    header.appendChild(this.codeBar);
+    this.root.appendChild(header);
 
     // --- Fase personajes (igual que Batalla) ---
     this.charsPhaseEl = document.createElement("div");
@@ -109,24 +124,36 @@ export class OnlineLobby {
     const grid = document.createElement("div");
     grid.className = "portrait-grid";
     for (const id of SELECTABLE_CHARACTERS) {
-      const def = CHARACTERS[id];
+      const lore = characterLore(id);
       const cell = document.createElement("button");
+      cell.type = "button";
       cell.className = "portrait";
       cell.dataset.char = id;
-      cell.style.setProperty("--c", def.color);
+      cell.style.setProperty("--c", CHARACTERS[id].color);
+      cell.setAttribute("aria-label", `${lore.name}, ${lore.title}`);
       const face = document.createElement("div");
       face.className = "portrait-face";
-      face.style.background = `linear-gradient(150deg, ${def.color}, ${shade(def.color, 0.6)})`;
-      const badge = document.createElement("div");
-      badge.className = "portrait-badge";
-      badge.textContent = def.name[0];
-      face.appendChild(badge);
+      face.appendChild(createCharacterPortrait(id, { decorative: true }));
       cell.appendChild(face);
+      if (lore.crossover) {
+        cell.classList.add("is-crossover");
+        const badge = document.createElement("div");
+        badge.className = "kb-crossover-badge";
+        badge.textContent = "Crossover";
+        badge.title = `Invitado de ${lore.crossover}`;
+        cell.appendChild(badge);
+      }
       const name = document.createElement("div");
       name.className = "portrait-name";
-      name.textContent = def.name;
+      const nameText = document.createElement("span");
+      nameText.textContent = lore.name;
+      name.appendChild(nameText);
       cell.appendChild(name);
-      cell.addEventListener("click", (e) => e.preventDefault());
+      cell.addEventListener("click", (e) => {
+        e.preventDefault();
+        // Enter / botón A (clic sin puntero): elige sin arrastrar la ficha.
+        if (e.detail === 0) this.chooseCharacter(id);
+      });
       this.portraitCells.set(id, cell);
       grid.appendChild(cell);
     }
@@ -140,14 +167,31 @@ export class OnlineLobby {
       card.className = "player-card";
       card.style.setProperty("--pc", TOKEN_COLORS[p]);
       card.dataset.slot = String(p);
+      const head = document.createElement("div");
+      head.className = "player-card-head";
+      const tag = document.createElement("span");
+      tag.className = "player-card-tag";
+      tag.textContent = TOKEN_LABELS[p];
       const label = document.createElement("div");
       label.className = "player-card-label";
       label.textContent = `Jugador ${p + 1}`;
-      card.appendChild(label);
+      head.append(tag, label);
+      card.appendChild(head);
+      // Hueco "casa" de la ficha (la ficha se posiciona encima).
+      const dock = document.createElement("div");
+      dock.className = "kb-lobby__dock";
+      dock.setAttribute("aria-hidden", "true");
+      card.appendChild(dock);
+      const foot = document.createElement("div");
+      foot.className = "kb-lobby__card-foot";
+      const conn = document.createElement("span");
+      conn.className = "kb-conn-dot";
+      conn.setAttribute("aria-hidden", "true");
       const who = document.createElement("div");
       who.className = "player-card-slot";
       who.textContent = "esperando…";
-      card.appendChild(who);
+      foot.append(conn, who);
+      card.appendChild(foot);
       this.cardsEl.appendChild(card);
     }
     this.charStage.appendChild(this.cardsEl);
@@ -196,18 +240,21 @@ export class OnlineLobby {
     const stageGrid = document.createElement("div");
     stageGrid.className = "stage-grid";
     for (const id of SELECTABLE_STAGES) {
-      const def = STAGES[id];
+      const lore = stageLore(id);
       const cell = document.createElement("button");
+      cell.type = "button";
       cell.className = "stage-cell";
-      const thumb = document.createElement("div");
-      thumb.className = "stage-thumb";
-      thumb.style.background = stageGradient(id);
-      cell.appendChild(thumb);
+      cell.setAttribute("aria-label", lore.name);
+      cell.dataset.stageId = id;
+      cell.appendChild(createStagePreview(id, { decorative: true, className: "stage-cell__preview" }));
       const name = document.createElement("span");
       name.className = "stage-name";
-      name.textContent = def.name;
+      name.textContent = lore.name;
       cell.appendChild(name);
-      cell.addEventListener("click", (e) => e.preventDefault());
+      cell.addEventListener("click", (e) => {
+        e.preventDefault();
+        if (e.detail === 0) this.chooseStage(id);
+      });
       this.stageCells.set(id, cell);
       stageGrid.appendChild(cell);
     }
@@ -232,17 +279,20 @@ export class OnlineLobby {
     // Acciones.
     const actions = document.createElement("div");
     actions.className = "select-actions";
-    const back = document.createElement("button");
-    back.className = "menu-btn select-back";
-    back.textContent = "‹ Salir";
-    back.addEventListener("click", () => {
-      this.teardown();
-      this.cb.onBack();
+    const back = button({
+      label: "‹ Salir",
+      variant: "ghost",
+      onActivate: () => {
+        this.teardown();
+        this.cb.onBack();
+      },
     });
-    actions.appendChild(back);
-    this.nextBtn = document.createElement("button");
-    this.nextBtn.className = "menu-btn select-go";
-    this.nextBtn.addEventListener("click", () => this.onNext());
+    back.classList.add("select-back");
+    actions.appendChild(backHint(back, "Salir"));
+    this.nextBtn = button({ label: "", onActivate: () => this.onNext() });
+    this.nextBtn.classList.add("select-go", "kb-lobby__go");
+    this.nextLabel = this.nextBtn.querySelector<HTMLSpanElement>(".kb-btn__label")!;
+    keyHint(this.nextBtn, "c", { pad: "start", label: "Continuar" });
     actions.appendChild(this.nextBtn);
     this.root.appendChild(actions);
 
@@ -282,10 +332,12 @@ export class OnlineLobby {
       this.resetStageChip();
       this.render();
     });
+    this.nav.mount();
   }
 
   hide(): void {
     this.root.classList.remove("open");
+    this.nav.unmount();
   }
 
   private teardown(): void {
@@ -385,9 +437,17 @@ export class OnlineLobby {
         return;
       }
       chip.el.style.display = "";
+      // Casa: centro del hueco de la placa (o la posición clásica si no existe).
+      const dock = card.querySelector<HTMLElement>(".kb-lobby__dock");
       const cRect = card.getBoundingClientRect();
       chip.homeLeft = cRect.left - sRect.left + cRect.width / 2 - 24;
-      chip.homeTop = cRect.top - sRect.top + 34;
+      if (dock) {
+        const dRect = dock.getBoundingClientRect();
+        chip.homeLeft = dRect.left - sRect.left + dRect.width / 2 - 24;
+        chip.homeTop = dRect.top - sRect.top + dRect.height / 2 - 24;
+      } else {
+        chip.homeTop = cRect.top - sRect.top + 34;
+      }
       const pick = this.state.picks[p];
       // No reposicionamos la ficha que tengo en la mano.
       if (this.heldChip === chip) return;
@@ -496,8 +556,16 @@ export class OnlineLobby {
   }
 
   private previewStage(id: StageId): void {
-    this.stagePreviewThumb.style.background = stageGradient(id);
-    this.stagePreviewName.textContent = STAGES[id].name;
+    if (this.previewedStage === id) return;
+    this.previewedStage = id;
+    let big = this.stagePreviewCache.get(id);
+    if (!big) {
+      big = createStagePreview(id, { decorative: true });
+      this.stagePreviewCache.set(id, big);
+    }
+    this.stagePreviewThumb.replaceChildren(big);
+    this.stagePreviewName.textContent = stageLore(id).name;
+    for (const [sid, cell] of this.stageCells) cell.classList.toggle("is-focused", sid === id);
   }
 
   // --- Acciones de estado ---------------------------------------------------
@@ -608,6 +676,9 @@ export class OnlineLobby {
       const label = card.querySelector<HTMLDivElement>(".player-card-label");
       const who = card.querySelector<HTMLDivElement>(".player-card-slot");
       card.classList.toggle("off", !occ);
+      card.classList.toggle("ready", occ && !!this.state.picks[p]);
+      card.classList.toggle("me", occ && p === this.mySlot);
+      card.classList.toggle("host", occ && p === 0);
       if (label) {
         label.textContent = occ
           ? (this.state.names[p] || `Jugador ${p + 1}`) + (p === this.mySlot ? " (tú)" : "")
@@ -618,7 +689,7 @@ export class OnlineLobby {
         who.textContent = !occ
           ? "esperando…"
           : pick
-            ? CHARACTERS[pick].name
+            ? characterLore(pick).name
             : "eligiendo…";
       }
     }
@@ -644,13 +715,15 @@ export class OnlineLobby {
       this.waitEl.textContent = "";
       const count = this.state.occupied.filter(Boolean).length;
       if (chars) {
-        this.nextBtn.textContent = "Siguiente ›";
+        this.nextLabel.textContent = "Siguiente ›";
         const ready = this.state.occupied.every((o, i) => !o || this.state.picks[i]);
         const disabled = !ready || count < 2;
+        setDisabled(this.nextBtn, disabled);
         this.nextBtn.disabled = disabled;
         this.nextBtn.classList.toggle("disabled", disabled);
       } else {
-        this.nextBtn.textContent = "¡A luchar! ›";
+        this.nextLabel.textContent = "¡A luchar! ›";
+        setDisabled(this.nextBtn, false);
         this.nextBtn.disabled = false;
         this.nextBtn.classList.remove("disabled");
       }
@@ -671,19 +744,4 @@ function emptyState(): LobbyState {
     names: ["", "", "", ""],
     stage: SELECTABLE_STAGES[0],
   };
-}
-
-function shade(hex: string, f: number): string {
-  const n = parseInt(hex.slice(1), 16);
-  const r = Math.round(((n >> 16) & 255) * f);
-  const g = Math.round(((n >> 8) & 255) * f);
-  const b = Math.round((n & 255) * f);
-  return `rgb(${r},${g},${b})`;
-}
-
-function stageGradient(id: StageId): string {
-  const def = STAGES[id];
-  const bg = `#${def.theme.background.toString(16).padStart(6, "0")}`;
-  const top = `#${def.theme.solidTop.toString(16).padStart(6, "0")}`;
-  return `linear-gradient(160deg, ${bg} 55%, ${top} 55%)`;
 }

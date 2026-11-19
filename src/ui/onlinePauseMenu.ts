@@ -1,9 +1,14 @@
+import { button } from "./design/components.ts";
+import "./pauseMenu.css";
+
 /**
  * Menú de pausa para partidas ONLINE. A diferencia del de un jugador, NO
  * congela el juego: en online el lockstep sigue corriendo para todos, así que
  * este overlay es solo un menú superpuesto (puedes seguir recibiendo golpes
  * mientras está abierto). Se abre/cierra con Escape y ofrece reanudar (cerrar)
  * y un botón específico para SALIR de la partida online.
+ *
+ * Usa el mismo estilo de diálogo que la pausa local (`pauseMenu.css`).
  */
 export interface OnlinePauseCallbacks {
   /** Salir de la partida online y volver al menú (cierra la sala/conexión). */
@@ -23,39 +28,45 @@ export class OnlinePauseMenu {
     this.root.className = "online-pause";
 
     const scrim = document.createElement("div");
-    scrim.className = "online-pause-scrim";
+    scrim.className = "online-pause-scrim kb-pause__scrim";
     this.root.appendChild(scrim);
 
     const panel = document.createElement("div");
-    panel.className = "online-pause-panel";
+    panel.className = "kb-pause-online__dialog";
+    panel.setAttribute("role", "dialog");
+    panel.setAttribute("aria-modal", "false");
 
     const title = document.createElement("h2");
-    title.className = "online-pause-title";
+    title.className = "kb-pause-online__title";
+    title.id = "kb-online-pause-title";
     title.textContent = "Pausa";
+    panel.setAttribute("aria-labelledby", title.id);
     panel.appendChild(title);
 
     const note = document.createElement("p");
-    note.className = "online-pause-note";
+    note.className = "kb-pause-online__note";
     note.textContent =
       "En online el juego NO se detiene: sigues en la partida mientras este menú está abierto.";
     panel.appendChild(note);
 
-    const resume = document.createElement("button");
-    resume.type = "button";
-    resume.className = "pause-btn";
-    resume.textContent = "Reanudar";
-    resume.addEventListener("click", () => this.setOpen(false));
-    panel.appendChild(resume);
+    panel.appendChild(
+      button({
+        label: "Continuar",
+        variant: "primary",
+        onActivate: () => this.setOpen(false),
+      }),
+    );
 
-    const quit = document.createElement("button");
-    quit.type = "button";
-    quit.className = "pause-btn pause-btn-danger";
-    quit.textContent = "Salir de la partida online";
-    quit.addEventListener("click", () => {
-      this.setOpen(false);
-      this.cb.onQuit();
-    });
-    panel.appendChild(quit);
+    panel.appendChild(
+      button({
+        label: "Salir de la partida online",
+        variant: "danger",
+        onActivate: () => {
+          this.setOpen(false);
+          this.cb.onQuit();
+        },
+      }),
+    );
 
     this.root.appendChild(panel);
     document.body.appendChild(this.root);
@@ -92,6 +103,7 @@ export class OnlinePauseMenu {
   private setOpen(value: boolean): void {
     if (value === this.open) return;
     this.open = value;
+    // Sin mover el foco: el juego sigue y las teclas deben llegar a la partida.
     this.root.classList.toggle("open", this.open);
   }
 }

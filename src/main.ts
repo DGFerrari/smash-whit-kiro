@@ -1,3 +1,6 @@
+import "./ui/design/fonts.css";
+import "./ui/design/tokens.css";
+import "./ui/design/components.css";
 import "./style.css";
 import { World, type GameMode, type MatchConfig } from "./engine/game/world.ts";
 import { CharacterSelect, StageSelect } from "./ui/selectScreens.ts";
@@ -9,6 +12,7 @@ import { PauseMenu } from "./ui/pauseMenu.ts";
 import { MainMenu, MatchOverScreen, type FighterResult } from "./ui/mainMenu.ts";
 import { TutorialScreen } from "./ui/tutorialScreen.ts";
 import { LoadingScreen, Countdown, KOFlash } from "./ui/overlays.ts";
+import { MenuSweep, SWEEP, toMenuTheme, type SweepDir, type SweepTheme } from "./ui/menuSweep.ts";
 import { ReplayScreen } from "./ui/replayScreen.ts";
 import { ReplayListScreen } from "./ui/replayListScreen.ts";
 import { MenuBackground } from "./ui/menuBackground.ts";
@@ -29,9 +33,17 @@ import {
   updateNickname,
   type AuthUser,
 } from "./net/api.ts";
+import {
+  DEV_ACCOUNT_AVAILABLE,
+  enableDevAccount,
+  grantDevCoins,
+  isDevAccountActive,
+  resetDevAccount,
+} from "./net/devAccount.ts";
 import { NicknameDialog } from "./ui/nicknameDialog.ts";
 import { RankingScreen } from "./ui/rankingScreen.ts";
 import { GachaScreen } from "./ui/gachaScreen.ts";
+import { InventoryScreen } from "./ui/inventoryScreen.ts";
 import { OnlineScreen } from "./ui/onlineScreen.ts";
 import { OnlineLobby } from "./ui/onlineLobby.ts";
 import { OnlineLoop } from "./game/onlineLoop.ts";
@@ -45,6 +57,26 @@ import {
 import type { OnlineNetwork } from "./net/peer.ts";
 import type { CharacterId } from "./engine/game/characters.ts";
 import type { StageId } from "./engine/game/stages.ts";
+import { createAssetLoader } from "./assets/assetLoader.ts";
+import { BOOT_GROUP, matchGroup } from "./assets/manifest.ts";
+import { ensureCharacterModel, prefetchCharacterModels } from "./render/characters/modelLibrary.ts";
+import { createLoadingScreen, type LoadingScreen as KbLoadingScreen } from "./ui/loadingScreen.ts";
+import * as transitions from "./ui/design/transitions.ts";
+import { getMenuNavigator } from "./ui/nav/menuNavigator.ts";
+import { getQualityManager, showStorageWarning as showToast } from "./render/quality/qualityManager.ts";
+
+// Calidad/Movimiento_Reducido antes de la primera pantalla: fija
+// `data-reduced-motion` en <html> para tokens y transiciones (R9.2, R2.8).
+getQualityManager();
+
+/** AssetLoader compartido (con Caché_Assets en memoria) de toda la sesión. */
+const assetLoader = createAssetLoader();
+
+/** Tiempo mínimo visible de la Pantalla_Carga previa a partida (VS). */
+const MATCH_LOADING_MIN_MS = 3000;
+
+const delay = (ms: number): Promise<void> =>
+  new Promise((resolve) => window.setTimeout(resolve, ms));
 
 const canvas = document.querySelector<HTMLCanvasElement>("#game");
 if (!canvas) {
@@ -81,6 +113,8 @@ class App {
   };
 
   private readonly loading = new LoadingScreen();
+  /** Barrido de color entre menús (ver `ui/menuSweep.ts`). */
+  private readonly sweep = new MenuSweep();
   private readonly countdown = new Countdown();
   private readonly koFlash = new KOFlash();
   /** Cursor de mano cartoon (sustituye al cursor nativo). */
@@ -96,35 +130,96 @@ class App {
     onLogin: () => startGoogleLogin(),
     onLogout: () => void this.onLogout(),
     onChangeNickname: () => this.openNicknameDialog(),
+    // Cuenta de prueba local: solo existe en `npm run dev`.
+    ...(DEV_ACCOUNT_AVAILABLE
+      ? {
+          onDevLogin: () => {
+            enableDevAccount();
+            void this.checkAuth();
+          },
+          onDevCoins: () => {
+            const stats = grantDevCoins(1000);
+            showToast(`🧪 +1000 monedas de prueba (saldo: ${stats.coins})`);
+          },
+          onDevReset: () => {
+            resetDevAccount();
+            enableDevAccount();
+            void this.checkAuth();
+            showToast("🧪 Datos de prueba reiniciados");
+          },
+        }
+      : {}),
   });
 
   /** Pantalla de clasificación (ranking). */
   private readonly rankingScreen = new RankingScreen({
     onBack: () => {
-      void this.transition(() => {
-        this.rankingScreen.hide();
-        this.showMenu();
-      });
+      void this.transition(
+        () => {
+          this.rankingScreen.hide();
+          this.showMenu();
+        },
+        toMenuTheme(SWEEP.ranking),
+        "back",
+      );
     },
   });
 
   /** Pantalla de cofres (gacha) + mochila de tokens. */
   private readonly gachaScreen = new GachaScreen({
     onBack: () => {
+      void this.transition(
+        () => {
+          this.gachaScreen.hide();
+          this.showMenu();
+        },
+        toMenuTheme(SWEEP.gacha),
+        "back",
+      );
+    },
+    onOpenInventory: () => {
       void this.transition(() => {
         this.gachaScreen.hide();
-        this.showMenu();
-      });
+        this.inventoryScreen.show();
+      }, SWEEP.inventory);
+    },
+  });
+
+  /** Inventario (pantalla propia, se abre desde el gacha). */
+  private readonly inventoryScreen = new InventoryScreen({
+    onBack: () => {
+      void this.transition(
+        () => {
+          this.inventoryScreen.hide();
+          this.gachaScreen.show();
+        },
+        SWEEP.gacha,
+        "back",
+      );
+    },
+    onOpenGacha: () => {
+      void this.transition(
+        () => {
+          this.inventoryScreen.hide();
+          this.gachaScreen.show();
+        },
+        SWEEP.gacha,
+        "back",
+      );
     },
   });
 
   /** Pantalla de online (crear/unirse a sala P2P). */
   private readonly onlineScreen = new OnlineScreen({
     onBack: () => {
-      void this.transition(() => {
-        this.onlineScreen.hide();
-        this.showMenu();
-      });
+      void this.transition(
+        () => {
+          this.onlineScreen.hide();
+          this.showMenu();
+        },
+        toMenuTheme(SWEEP.online),
+        "back",
+      );
     },
     onReady: (net, code) => this.openOnlineLobby(net, code),
   });
@@ -134,10 +229,14 @@ class App {
     {
       onBack: () => {
         this.onlineNet = null;
-        void this.transition(() => {
-          this.onlineLobby.hide();
-          this.showMenu();
-        });
+        void this.transition(
+          () => {
+            this.onlineLobby.hide();
+            this.showMenu();
+          },
+          toMenuTheme(SWEEP.lobby),
+          "back",
+        );
       },
       onStart: (seed, characters, stage, names) =>
         this.startOnlineMatch(seed, characters, stage, names),
@@ -189,7 +288,7 @@ class App {
         if (this.currentUser) this.currentUser.nickname = res.nickname;
         this.mainMenu.setUser(
           this.currentUser
-            ? { nickname: res.nickname, avatarUrl: this.currentUser.avatarUrl }
+            ? { nickname: res.nickname, avatarUrl: this.currentUser.avatarUrl, dev: isDevAccountActive() }
             : null,
         );
         // Y el selector de personajes (etiqueta de P1), que si no se quedaba
@@ -210,10 +309,14 @@ class App {
   private readonly charSelect = new CharacterSelect(
     {
       onBack: () => {
-        void this.transition(() => {
-          this.charSelect.hide();
-          this.showMenu();
-        });
+        void this.transition(
+          () => {
+            this.charSelect.hide();
+            this.showMenu();
+          },
+          toMenuTheme(SWEEP.versus),
+          "back",
+        );
       },
       onConfirm: (characters, controllers, cpuDifficulties, labels) => {
         this.pendingConfig = {
@@ -226,7 +329,7 @@ class App {
         void this.transition(() => {
           this.charSelect.hide();
           this.stageSelect.show();
-        });
+        }, SWEEP.stage);
       },
     },
     this.hand,
@@ -236,14 +339,18 @@ class App {
   private readonly stageSelect = new StageSelect(
     {
       onBack: () => {
-        void this.transition(() => {
-          this.stageSelect.hide();
-          this.charSelect.show();
-        });
+        void this.transition(
+          () => {
+            this.stageSelect.hide();
+            this.charSelect.show();
+          },
+          SWEEP.stage,
+          "back",
+        );
       },
       onConfirm: (stage) => {
         this.pendingConfig = { ...this.pendingConfig, stage };
-        this.stageSelect.hide();
+        // startMatch tapa la pantalla antes de ocultar la selección (sin parpadeo).
         void this.startMatch("versus", this.pendingConfig);
       },
     },
@@ -274,22 +381,60 @@ class App {
     onExport: (data) => downloadReplay(data),
     onImportFile: (file) => loadReplayFile(file),
     onBack: () => {
-      // Con transición de iris, igual que el resto de cambios de pantalla.
-      void this.transition(() => {
-        this.replayListScreen.hide();
-        this.showMenu();
-      });
+      void this.transition(
+        () => {
+          this.replayListScreen.hide();
+          this.showMenu();
+        },
+        toMenuTheme(SWEEP.replays),
+        "back",
+      );
     },
   });
+
+  /** Personaje del jugador en el entrenamiento (se recuerda entre sesiones de la app). */
+  private trainingCharacter: CharacterId = "kael";
 
   /** Fondo animado del menú (replays en bucle). Se inicia perezosamente. */
   private menuBg: MenuBackground | null = null;
 
-  start(): void {
+  async start(): Promise<void> {
+    // Pantalla_Carga del grupo `boot` → menú principal (R1.1, R15.1).
+    this.busy = true;
+    const boot = createLoadingScreen({ variant: "boot" });
+    const handle = assetLoader.load([...BOOT_GROUP]);
+    void transitions.show(boot.el, { parent: document.body });
+    await boot.bind(handle);
+    // El menú se monta debajo (z-index menor) y la carga sale encima de él.
     this.showMenu();
+    await transitions.hide(boot.el);
+    boot.destroy();
+    this.busy = false;
     // Comprobamos la sesión en segundo plano: el menú se muestra ya y el widget
     // de cuenta se rellena cuando responda el servidor (si está disponible).
     void this.checkAuth();
+    // Modelos 3D en segundo plano: así la selección y la partida los tienen listos.
+    prefetchCharacterModels(assetLoader);
+  }
+
+  /**
+   * Pantalla_Carga previa a partida (variante `match`): retratos VS y vista
+   * previa del escenario mientras se cargan sus assets. Con todo en caché (o
+   * grupos vacíos) llega al 100 % al instante (R15.13).
+   */
+  private async preloadMatch(config: MatchConfig): Promise<KbLoadingScreen> {
+    const screen = createLoadingScreen({
+      variant: "match",
+      characters: config.characters,
+      stage: config.stage,
+    });
+    document.body.appendChild(screen.el);
+    const handle = assetLoader.load(matchGroup(config.characters, config.stage));
+    // El iris se abre sobre la pantalla VS mientras progresa la carga.
+    await Promise.all([this.loading.reveal(700), screen.bind(handle), delay(MATCH_LOADING_MIN_MS)]);
+    // Interpreta los modelos 3D ya descargados (los que fallen usan el respaldo).
+    await Promise.all(config.characters.map((id) => ensureCharacterModel(id, assetLoader)));
+    return screen;
   }
 
   /** Consulta la sesión al servidor y actualiza el widget de cuenta del menú. */
@@ -306,7 +451,7 @@ class App {
     const user = await getMe();
     this.currentUser = user;
     this.mainMenu.setUser(
-      user ? { nickname: user.nickname, avatarUrl: user.avatarUrl } : null,
+      user ? { nickname: user.nickname, avatarUrl: user.avatarUrl, dev: isDevAccountActive() } : null,
     );
     // El selector de personajes necesita el apodo para la etiqueta de P1.
     this.charSelect.setLocalNickname(user?.nickname ?? null);
@@ -342,11 +487,11 @@ class App {
       void this.transition(() => {
         this.hideMenu();
         this.charSelect.show();
-      });
+      }, SWEEP.versus);
     } else {
-      // Entrenamiento: jugador azul contra el saco en el escenario de práctica.
+      // Entrenamiento: el último personaje probado contra el saco.
       const config: MatchConfig = {
-        characters: ["blue", "sandbag"],
+        characters: [this.trainingCharacter, "sandbag"],
         stage: "training",
       };
       void this.startMatch("training", config);
@@ -370,27 +515,29 @@ class App {
    * Transición de iris para cambiar de pantalla DENTRO de los menús (sin tocar
    * el loop): cierra el iris, ejecuta `swap` (ocultar/mostrar overlays) y abre.
    */
-  private async transition(swap: () => void): Promise<void> {
+  private async transition(swap: () => void, theme: SweepTheme = SWEEP.menu, dir: SweepDir = "forward"): Promise<void> {
     if (this.busy) return;
     this.busy = true;
-    await this.loading.cover(320);
+    // Bloque del color del destino: entra, cambia la pantalla debajo y sigue.
+    await this.sweep.cover(theme, dir);
     swap();
-    await this.loading.reveal(380);
+    // Un fotograma para que la pantalla nueva se pinte antes de destaparla.
+    await new Promise<void>((r) => requestAnimationFrame(() => r()));
+    await this.sweep.reveal();
     this.busy = false;
   }
 
-  /** Vuelve al menú principal con transición de iris de por medio. */
+  /** Vuelve al menú principal con el barrido "Menú principal" de por medio. */
   private async toMenu(): Promise<void> {
     if (this.busy) return;
     this.busy = true;
-    // Iris se cierra tapando la escena actual.
-    await this.loading.cover();
+    // Mismo barrido que el resto de vueltas: "Menú principal" de derecha a izquierda.
+    await this.sweep.cover(toMenuTheme(), "back");
     this.teardownMatch();
     this.showMenu();
-    // Con la pantalla tapada, el anillo de carga se llena.
-    await this.loading.fill(500);
-    // Iris se abre revelando el menú.
-    await this.loading.reveal();
+    // Dos fotogramas: el fondo de replays del menú arranca antes de destapar.
+    await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+    await this.sweep.reveal();
     this.busy = false;
   }
 
@@ -408,8 +555,8 @@ class App {
     this.charSelect.hide();
     this.stageSelect.hide();
     this.teardownMatch();
-    // Con la pantalla tapada, el anillo de carga se llena.
-    await this.loading.fill(600);
+    // Pantalla_Carga previa a partida (personajes + escenario).
+    const preload = await this.preloadMatch(config);
 
     const world = new World(mode, undefined, config);
     this.world = world;
@@ -459,11 +606,22 @@ class App {
       onQuitToMenu: () => void this.toMenu(),
       // Solo se puede pausar cuando la partida ya empezó (no en la cuenta atrás).
       canOpen: () => loop.canPause,
+      // Entrenamiento: cambiar de personaje reinicia la sesión con él.
+      ...(mode === "training"
+        ? {
+            currentCharacter: config.characters[0],
+            onChangeCharacter: (id: CharacterId) => {
+              this.trainingCharacter = id;
+              void this.startMatch("training", { ...config, characters: [id, "sandbag"] });
+            },
+          }
+        : {}),
     });
 
-    // Arrancamos el loop (ya renderiza el primer frame) y abrimos el iris.
+    // Arrancamos el loop (ya renderiza el primer frame) y retiramos la carga.
     loop.start();
-    await this.loading.reveal();
+    await transitions.hide(preload.el);
+    preload.destroy();
     this.busy = false;
   }
 
@@ -479,6 +637,7 @@ class App {
     const results: FighterResult[] = (world?.fighters ?? []).map((f) => ({
       label: f.label,
       color: f.color,
+      character: f.characterId,
       dealt: f.player.stats.dealt,
       taken: f.player.stats.taken,
       blocked: f.player.stats.blocked,
@@ -587,10 +746,11 @@ class App {
       cancelText: "Quedarme aquí",
     });
     if (!ok) return;
-    this.matchOver.hide();
+    // El podio sigue visible hasta que el bloque lo tapa.
     await this.transition(() => {
+      this.matchOver.hide();
       this.replayListScreen.show();
-    });
+    }, SWEEP.replays);
   }
 
   /** Abre la lista de repeticiones guardadas (desde el menú). */
@@ -600,7 +760,7 @@ class App {
     await this.transition(() => {
       this.hideMenu();
       this.replayListScreen.show();
-    });
+    }, SWEEP.replays);
   }
 
   /** Abre la clasificación (ranking) desde el menú. */
@@ -608,7 +768,7 @@ class App {
     await this.transition(() => {
       this.hideMenu();
       this.rankingScreen.show();
-    });
+    }, SWEEP.ranking);
   }
 
   /** Abre los cofres (gacha) desde el menú. */
@@ -616,7 +776,7 @@ class App {
     await this.transition(() => {
       this.hideMenu();
       this.gachaScreen.show();
-    });
+    }, SWEEP.gacha);
   }
 
   /** Abre el online (crear/unirse a sala P2P) desde el menú. */
@@ -624,7 +784,7 @@ class App {
     await this.transition(() => {
       this.hideMenu();
       this.onlineScreen.show();
-    });
+    }, SWEEP.online);
   }
 
   /** La red está lista: pasamos de la sala al lobby de selección. */
@@ -635,7 +795,7 @@ class App {
     void this.transition(() => {
       this.onlineScreen.hide();
       this.onlineLobby.open(net, myName, roomCode);
-    });
+    }, SWEEP.lobby);
   }
 
   /**
@@ -693,7 +853,7 @@ class App {
       this.onlineLoop.start();
       // Activa el menú de pausa online (Escape lo abre; no congela el juego).
       this.onlinePause.setActive(true);
-    });
+    }, { color: "var(--color-danger)", icon: "swords", label: "¡A luchar!" });
   }
 
   /**
@@ -1000,4 +1160,13 @@ class App {
 
 const app = new App();
 window.addEventListener("resize", () => app.onResize());
-app.start();
+void app.start();
+
+// Navegador_Menús: sondeo del gamepad en cada frame (R4.2, R4.9). Bucle propio
+// de rAF para cubrir también los menús, donde el GameLoop no está activo.
+const menuNav = getMenuNavigator();
+const pollMenuGamepad = (now: number): void => {
+  menuNav.pollGamepad(now);
+  requestAnimationFrame(pollMenuGamepad);
+};
+requestAnimationFrame(pollMenuGamepad);

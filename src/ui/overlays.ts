@@ -102,13 +102,13 @@ export class LoadingScreen {
   }
 
   /** Cierra el iris (tapa la pantalla). Promesa al terminar. */
-  cover(duration = 450): Promise<void> {
+  cover(duration = 650): Promise<void> {
     this.root.classList.add("open");
     return this.animate(this.maxRadius, 0, duration);
   }
 
   /** Abre el iris (destapa la pantalla) y oculta el overlay al acabar. */
-  reveal(duration = 550): Promise<void> {
+  reveal(duration = 750): Promise<void> {
     this.root.classList.add("open");
     return this.animate(0, this.maxRadius, duration).then(() => {
       this.root.classList.remove("open");
@@ -134,8 +134,9 @@ export class LoadingScreen {
   }
 }
 
+/** Smootherstep: arranque y frenada muy suaves (derivadas 1.ª y 2.ª nulas). */
 function easeInOut(t: number): number {
-  return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+  return t * t * t * (t * (t * 6 - 15) + 10);
 }
 
 /** Texto grande centrado para la cuenta atrás de la intro. */

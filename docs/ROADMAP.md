@@ -1,4 +1,4 @@
-# Hoja de ruta — smash-B
+# Hoja de ruta — KiroBrawl
 
 Documento vivo para seguir **qué hemos hecho y qué falta** de cara a convertir
 el juego (hoy 100% cliente) en algo con **puntos, gachas, rankings y modo

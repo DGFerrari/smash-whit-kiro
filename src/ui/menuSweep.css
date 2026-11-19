@@ -1,0 +1,106 @@
+/* Transición entre menús: bloque inclinado del color del menú + icono. */
+
+.kb-sweep {
+  --sweep-color: var(--color-primary);
+  position: fixed;
+  inset: 0;
+  z-index: 1200; /* por encima de pantallas, diálogos y la leyenda */
+  display: none;
+  overflow: hidden;
+  pointer-events: none;
+}
+.kb-sweep.open {
+  display: block;
+  pointer-events: auto; /* bloquea clics durante el barrido */
+}
+
+/* Pista del bloque: al volver se refleja, así el barrido va de derecha a izquierda. */
+.kb-sweep__track {
+  position: absolute;
+  inset: 0;
+}
+.kb-sweep.is-back .kb-sweep__track {
+  transform: scaleX(-1);
+}
+
+.kb-sweep__band {
+  position: absolute;
+  top: -15vh;
+  bottom: -15vh;
+  left: -25vw;
+  width: 150vw;
+  transform: translateX(-118%);
+  background:
+    repeating-linear-gradient(
+      -62deg,
+      transparent 0 38px,
+      color-mix(in oklab, var(--color-bg) 14%, transparent) 38px 44px
+    ),
+    linear-gradient(
+      90deg,
+      color-mix(in oklab, var(--sweep-color) 70%, var(--color-bg)) 0%,
+      var(--sweep-color) 55%,
+      color-mix(in oklab, var(--sweep-color) 75%, white) 100%
+    );
+  clip-path: polygon(8% 0, 100% 0, 92% 100%, 0 100%);
+  will-change: transform;
+}
+/* Franja brillante en el borde de avance. */
+.kb-sweep__band::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 5%;
+  width: 3%;
+  background: color-mix(in oklab, var(--sweep-color) 40%, white);
+  transform: skewX(-9deg);
+  opacity: 0.85;
+}
+
+.kb-sweep__badge {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  opacity: 0;
+  transform: translate(-50%, -50%);
+  will-change: transform, opacity;
+}
+.kb-sweep__icon-wrap {
+  display: grid;
+  place-items: center;
+  width: 132px;
+  height: 132px;
+  border-radius: 50%;
+  background: color-mix(in oklab, var(--color-bg) 78%, transparent);
+  border: 4px solid color-mix(in oklab, var(--sweep-color) 45%, white);
+  box-shadow:
+    0 0 0 8px color-mix(in oklab, var(--color-bg) 25%, transparent),
+    0 0 48px color-mix(in oklab, var(--sweep-color) 80%, transparent);
+}
+.kb-sweep__icon {
+  width: 72px;
+  height: 72px;
+  fill: none;
+  stroke: var(--color-text);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 0 10px color-mix(in oklab, var(--sweep-color) 90%, transparent));
+}
+.kb-sweep__label {
+  padding: var(--space-1) var(--space-6);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-display);
+  font-size: var(--fs-h2);
+  font-style: italic;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  transform: skewX(-10deg);
+  box-shadow: 6px 6px 0 color-mix(in oklab, var(--sweep-color) 70%, var(--color-bg));
+}

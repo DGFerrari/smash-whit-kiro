@@ -17,6 +17,18 @@ export { createInputState, type InputState } from "../engine/core/inputState.ts"
  * Una instancia por jugador (slot "p1" / "p2"). Varias instancias pueden
  * compartir el mismo `window`: cada una filtra solo sus propias teclas.
  */
+const UI_TARGET = "button, input, select, textarea, a[href], [role=button], [data-kb-focusable]";
+
+/**
+ * ¿El evento va dirigido a un control de un menú ABIERTO (raíz montada en el
+ * Navegador_Menús, marcada con `data-kb-nav-root`)? Un botón de un menú ya
+ * oculto que conserve el foco no cuenta: sus teclas siguen siendo de la partida.
+ */
+function isUiTarget(t: EventTarget | null): boolean {
+  if (typeof Element === "undefined" || !(t instanceof Element)) return false;
+  return t.closest("[data-kb-nav-root]") !== null && t.closest(UI_TARGET) !== null;
+}
+
 export class KeyboardInput {
   private pressed = new Set<string>();
   private jumpConsumed = false;
@@ -45,6 +57,10 @@ export class KeyboardInput {
   }
 
   private onKeyDown = (e: KeyboardEvent): void => {
+    // Teclas dirigidas a un control de menú (p. ej. Enter/Espacio sobre un
+    // botón de la pausa): son del menú. Cancelarlas anularía el clic nativo
+    // del botón, y contarlas haría saltar al jugador al cerrar el menú.
+    if (isUiTarget(e.target)) return;
     const key = e.key.toLowerCase();
     if (this.isGameKey(key)) e.preventDefault();
     this.pressed.add(key);

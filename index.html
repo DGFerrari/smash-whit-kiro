@@ -3,7 +3,11 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>smash-B</title>
+    <title>KiroBrawl</title>
+    <!-- Precarga de las fuentes principales (subconjunto latín). Vite antepone
+         `base` a estas rutas de public/ en la build de GitHub Pages. -->
+    <link rel="preload" href="/fonts/russo-one-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/rajdhani-latin-600-normal.woff2" as="font" type="font/woff2" crossorigin />
   </head>
   <body>
     <!-- Canvas 3D (WebGL / Three.js) para el mundo del juego. -->

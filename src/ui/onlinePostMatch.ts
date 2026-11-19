@@ -1,5 +1,8 @@
 import { CHARACTERS } from "../engine/game/characters.ts";
 import type { OnlineFighterResult } from "../net/onlineProtocol.ts";
+import { characterLore } from "../content/lore.ts";
+import { screenNav } from "./nav/screenNav.ts";
+import "./online.css";
 
 /**
  * Pantalla de FIN DE PARTIDA online: texto de victoria + panel con las stats de
@@ -21,6 +24,7 @@ export interface OnlinePostMatchCallbacks {
 
 export class OnlinePostMatch {
   private readonly root: HTMLDivElement;
+  private readonly nav = screenNav(() => this.root);
   private readonly titleEl: HTMLHeadingElement;
   private readonly podium: HTMLDivElement;
   private readonly rewardEl: HTMLDivElement;
@@ -39,7 +43,7 @@ export class OnlinePostMatch {
   constructor(private readonly cb: OnlinePostMatchCallbacks) {
     this.root = document.createElement("div");
     this.root.id = "online-post";
-    this.root.className = "select-screen";
+    this.root.className = "select-screen kb-online kb-online-post";
 
     const panel = document.createElement("div");
     panel.className = "menu-panel results-panel show";
@@ -120,7 +124,7 @@ export class OnlinePostMatch {
 
     const winner = results.find((r) => r.slot === winnerSlot);
     this.titleEl.textContent = draw ? "¡Empate!" : `¡Gana ${winner?.label ?? "nadie"}!`;
-    this.titleEl.style.color = draw ? "#f1f4fa" : winner?.color ?? "#f1f4fa";
+    this.titleEl.style.color = draw ? "var(--color-text)" : winner?.color ?? "var(--color-text)";
 
     this.buildPodium(results);
 
@@ -139,10 +143,12 @@ export class OnlinePostMatch {
     this.setConfirmed([]);
 
     this.root.classList.add("open");
+    this.nav.mount();
   }
 
   hide(): void {
     this.root.classList.remove("open");
+    this.nav.unmount();
   }
 
   /** Refleja la recompensa de monedas (o un aviso si no puntuó). */
@@ -212,6 +218,7 @@ export class OnlinePostMatch {
     const card = document.createElement("div");
     card.className = "podium-card";
     card.style.borderColor = r.color;
+    card.style.setProperty("--pc", r.color);
     if (r.isWinner) card.classList.add("winner");
 
     // Tick de "ha aceptado" (oculto hasta que el jugador confirma).
@@ -229,7 +236,7 @@ export class OnlinePostMatch {
 
     const sub = document.createElement("div");
     sub.className = "podium-grade";
-    sub.textContent = CHARACTERS[r.character]?.name ?? "";
+    sub.textContent = CHARACTERS[r.character] ? characterLore(r.character).name : "";
     card.appendChild(sub);
 
     const rows: Array<[string, string]> = [

@@ -1,0 +1,284 @@
+/*
+ * Ranking (KiroBrawl): pestañas de orden, podio para el top 3 y fila propia
+ * resaltada. Solo consume tokens de design/tokens.css.
+ */
+
+#ranking-screen.kbr {
+  --kbr-gold: var(--color-focus);
+  --kbr-silver: var(--color-text-muted);
+  --kbr-bronze: color-mix(in srgb, var(--color-focus) 55%, var(--color-danger));
+  font-family: var(--font-text);
+  color: var(--color-text);
+}
+
+#ranking-screen .kbr-title {
+  font-family: var(--font-display);
+  font-size: var(--fs-h1);
+  font-weight: var(--fw-h1);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* ── Barra superior ─────────────────────────────────────────── */
+#ranking-screen .kbr-topbar {
+  width: min(92vw, 880px);
+  margin: 0 auto var(--space-4);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+#ranking-screen .kbr-tabs { flex: 1 1 auto; }
+
+#ranking-screen .kbr-order,
+#ranking-screen .kbr-where {
+  font-size: var(--fs-caption);
+  padding: var(--space-2) var(--space-4);
+}
+
+/* ── Podio ──────────────────────────────────────────────────── */
+#ranking-screen .kbr-podium {
+  width: min(92vw, 640px);
+  margin: 0 auto var(--space-4);
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  align-items: end;
+  gap: var(--space-3);
+}
+
+#ranking-screen .kbr-podium:empty { display: none; }
+
+#ranking-screen .kbr-podium__step {
+  --kbr-c: var(--kbr-silver);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  animation: kbr-rise var(--dur-slow) var(--ease-pop) both;
+}
+
+#ranking-screen .kbr-podium__step--1 { --kbr-c: var(--kbr-gold); }
+#ranking-screen .kbr-podium__step--2 { --kbr-c: var(--kbr-silver); animation-delay: 80ms; }
+#ranking-screen .kbr-podium__step--3 { --kbr-c: var(--kbr-bronze); animation-delay: 160ms; }
+
+#ranking-screen .kbr-podium__avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: var(--color-surface-raised);
+  border: 3px solid var(--kbr-c);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--kbr-c) 55%, transparent);
+  font-family: var(--font-display);
+  font-size: var(--fs-body-lg);
+}
+
+#ranking-screen .kbr-podium__step--1 .kbr-podium__avatar {
+  width: 72px;
+  height: 72px;
+}
+
+#ranking-screen .kbr-podium__avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+#ranking-screen .kbr-podium__name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: var(--fw-h2);
+  font-size: var(--fs-body);
+}
+
+#ranking-screen .kbr-podium__value {
+  font-size: var(--fs-caption);
+  color: var(--color-text-muted);
+}
+
+#ranking-screen .kbr-podium__base {
+  width: 100%;
+  display: grid;
+  place-items: center;
+  font-size: var(--fs-h2);
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--kbr-c) 45%, var(--color-surface-raised)), var(--color-surface));
+  border-top: 3px solid var(--kbr-c);
+  box-shadow: var(--shadow-1);
+  transform: skewX(-6deg);
+}
+
+#ranking-screen .kbr-podium__step--1 .kbr-podium__base { height: 96px; }
+#ranking-screen .kbr-podium__step--2 .kbr-podium__base { height: 68px; }
+#ranking-screen .kbr-podium__step--3 .kbr-podium__base { height: 48px; }
+
+#ranking-screen .kbr-podium__step.me .kbr-podium__name { color: var(--color-primary); }
+
+/* ── Tabla ──────────────────────────────────────────────────── */
+#ranking-screen .kbr-panel {
+  width: min(92vw, 880px);
+  margin: 0 auto;
+}
+
+#ranking-screen .kbr-table-wrap {
+  max-height: 44vh;
+  overflow-y: auto;
+}
+
+#ranking-screen .kbr-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0 var(--space-1);
+  font-size: var(--fs-body);
+}
+
+#ranking-screen .kbr-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-caption);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  text-align: right;
+}
+
+#ranking-screen .kbr-table thead th:nth-child(1),
+#ranking-screen .kbr-table thead th:nth-child(2) { text-align: left; }
+
+#ranking-screen .kbr-table th.sortable { cursor: pointer; }
+#ranking-screen .kbr-table th.sortable:hover { color: var(--color-text); }
+#ranking-screen .kbr-table th.active { color: var(--color-primary); }
+
+#ranking-screen .kbr-table tbody td {
+  padding: var(--space-2) var(--space-3);
+  text-align: right;
+  background: var(--color-surface-raised);
+}
+
+#ranking-screen .kbr-table tbody td:first-child { border-radius: var(--radius-sm) 0 0 var(--radius-sm); }
+#ranking-screen .kbr-table tbody td:last-child { border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
+
+#ranking-screen .kbr-rank {
+  text-align: left !important;
+  font-family: var(--font-display);
+  width: 48px;
+}
+
+#ranking-screen tr.top-1 .kbr-rank { color: var(--kbr-gold); }
+#ranking-screen tr.top-2 .kbr-rank { color: var(--kbr-silver); }
+#ranking-screen tr.top-3 .kbr-rank { color: var(--kbr-bronze); }
+
+#ranking-screen .kbr-player {
+  text-align: left !important;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+#ranking-screen .kbr-avatar {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-h2);
+}
+
+#ranking-screen .kbr-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+#ranking-screen .kbr-name { font-weight: var(--fw-body-lg); }
+
+#ranking-screen .kbr-num { font-variant-numeric: tabular-nums; }
+#ranking-screen .kbr-num.active {
+  color: var(--color-primary);
+  font-weight: var(--fw-h2);
+}
+
+/* Fila propia: resaltada con borde y brillo de acento. */
+#ranking-screen .kbr-table tbody tr.me td {
+  background: color-mix(in srgb, var(--color-primary) 28%, var(--color-surface-raised));
+  box-shadow: inset 0 2px 0 var(--color-primary), inset 0 -2px 0 var(--color-primary);
+}
+
+#ranking-screen .kbr-table tbody tr.me td:first-child {
+  box-shadow: inset 4px 0 0 var(--color-focus), inset 0 2px 0 var(--color-primary), inset 0 -2px 0 var(--color-primary);
+}
+
+#ranking-screen .kbr-table tbody tr.me .kbr-name { color: var(--color-text); }
+
+#ranking-screen .kbr-you {
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--color-focus);
+  color: var(--color-on-accent);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-caption);
+  text-transform: uppercase;
+}
+
+#ranking-screen .kbr-table tbody tr.flash td { animation: kbr-flash 1s var(--ease-out); }
+
+/* ── Estado ─────────────────────────────────────────────────── */
+#ranking-screen .kbr-status {
+  width: min(92vw, 880px);
+  margin: var(--space-4) auto 0;
+  text-align: center;
+  color: var(--color-text-muted);
+}
+
+#ranking-screen .kbr-status.loading::after {
+  content: "";
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin-left: var(--space-2);
+  vertical-align: middle;
+  border: 2px solid var(--color-border);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: kbr-spin 0.8s linear infinite;
+}
+
+/* ── Animaciones ────────────────────────────────────────────── */
+@keyframes kbr-rise {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes kbr-flash {
+  0%, 100% { filter: none; }
+  30% { filter: brightness(1.8); }
+}
+
+@keyframes kbr-spin {
+  to { rotate: 360deg; }
+}
+
+html[data-reduced-motion] #ranking-screen .kbr-podium__step,
+html[data-reduced-motion] #ranking-screen .kbr-status.loading::after {
+  animation: none;
+}
+
+/* Con movimiento reducido el "flash" se queda como resaltado estático breve. */
+html[data-reduced-motion] #ranking-screen .kbr-table tbody tr.flash td {
+  animation: none;
+  outline: 2px solid var(--color-focus);
+}

@@ -1,0 +1,590 @@
+/*
+ * Gacha (KiroBrawl): cofre animado, cartas que se giran y resumen.
+ * Estados de la escena en `.kbg-arena[data-state]`: idle · charging · burst ·
+ * reveal · done. `data-best` = mejor rareza de la tirada (color del cofre).
+ * Solo consume tokens de design/tokens.css.
+ */
+
+#gacha-screen.kbg {
+  --kbg-rarity: var(--color-text-muted);
+  gap: var(--space-3);
+  font-family: var(--font-text);
+  color: var(--color-text);
+  background:
+    radial-gradient(ellipse 60% 55% at 50% 48%, color-mix(in oklab, var(--color-danger) 22%, transparent), transparent 70%),
+    radial-gradient(ellipse 90% 80% at 50% 100%, color-mix(in oklab, var(--color-primary) 20%, transparent), transparent 70%),
+    var(--color-bg);
+}
+
+#gacha-screen .rarity-common { --kbg-rarity: #9fb3d9; }
+#gacha-screen .rarity-epic { --kbg-rarity: var(--color-secondary); }
+#gacha-screen .rarity-legendary { --kbg-rarity: var(--color-focus); }
+
+/* ── Cabecera ─────────────────────────────────────────────── */
+#gacha-screen .kbg-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-6);
+  flex-wrap: wrap;
+}
+
+#gacha-screen .kbg-title {
+  font-family: var(--font-display);
+  font-size: var(--fs-h1);
+  font-weight: var(--fw-h1);
+  font-style: italic;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  text-shadow: 0 0 24px color-mix(in oklab, var(--color-danger) 60%, transparent);
+}
+
+#gacha-screen .kbg-coins {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-pill);
+  background: linear-gradient(90deg, var(--color-surface-raised), var(--color-surface));
+  border: 2px solid var(--color-focus);
+  box-shadow: 0 0 16px color-mix(in oklab, var(--color-focus) 40%, transparent), var(--shadow-1);
+}
+#gacha-screen .kbg-coins.is-spent {
+  animation: kbg-spent 0.6s var(--ease-out);
+}
+#gacha-screen .kbg-coins__icon { font-size: var(--fs-body-lg); align-self: center; }
+#gacha-screen .kbg-coins__value {
+  font-family: var(--font-display);
+  font-size: var(--fs-h2);
+  color: var(--color-focus);
+  font-variant-numeric: tabular-nums;
+}
+#gacha-screen .kbg-coins__label {
+  font-size: var(--fs-caption);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+#gacha-screen .kbg-inv-btn {
+  transform: skewX(-10deg);
+}
+#gacha-screen .kbg-inv-btn .kb-btn__label {
+  display: inline-block;
+  transform: skewX(10deg);
+}
+
+/* ── Escena ───────────────────────────────────────────────── */
+#gacha-screen .kbg-arena {
+  --best: var(--color-danger);
+  position: relative;
+  width: min(94vw, 980px);
+  height: clamp(300px, 48vh, 460px);
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  isolation: isolate;
+}
+#gacha-screen .kbg-arena[data-best="common"] { --best: #9fb3d9; }
+#gacha-screen .kbg-arena[data-best="epic"] { --best: var(--color-secondary); }
+#gacha-screen .kbg-arena[data-best="legendary"] { --best: var(--color-focus); }
+
+/* Cofre */
+#gacha-screen .kbg-chest {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 260px;
+  height: 234px;
+  translate: -50% -50%;
+  display: grid;
+  place-items: center;
+  transition:
+    opacity var(--dur-slow) var(--ease-smooth),
+    scale var(--dur-slow) var(--ease-smooth),
+    translate var(--dur-slow) var(--ease-smooth);
+}
+#gacha-screen .kbg-chest__art {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  animation: kbg-float 3.2s ease-in-out infinite;
+}
+#gacha-screen .kbg-chest__shadow { fill: #000; opacity: 0.35; }
+#gacha-screen .kbg-chest__wood { fill: #7a3e1d; stroke: #2a1206; stroke-width: 3; }
+#gacha-screen .kbg-chest__rim { fill: #5a2b12; }
+#gacha-screen .kbg-chest__metal { fill: #e8b93a; stroke: #6b4a08; stroke-width: 2; }
+#gacha-screen .kbg-chest__band { stroke: #e8b93a; stroke-width: 12; fill: none; }
+#gacha-screen .kbg-chest__edge { fill: none; stroke: #e8b93a; stroke-width: 5; }
+#gacha-screen .kbg-chest__lock { fill: #f5cf55; stroke: #6b4a08; stroke-width: 2.5; }
+#gacha-screen .kbg-chest__gem {
+  fill: var(--best);
+  stroke: #0b0e1f;
+  stroke-width: 2;
+  filter: drop-shadow(0 0 6px var(--best));
+  transition: fill var(--dur-base) var(--ease-smooth);
+}
+#gacha-screen .kbg-chest__inner-light {
+  fill: var(--best);
+  opacity: 0;
+  filter: blur(4px);
+  transition: opacity var(--dur-base) var(--ease-smooth);
+}
+#gacha-screen .kbg-chest__lid {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  transition: transform 0.55s var(--ease-pop);
+}
+
+/* Rayos y halo detrás del cofre */
+#gacha-screen .kbg-chest__rays,
+#gacha-screen .kbg-chest__glow {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  translate: -50% -50%;
+  border-radius: 50%;
+  pointer-events: none;
+}
+#gacha-screen .kbg-chest__rays {
+  width: 720px;
+  height: 720px;
+  background: repeating-conic-gradient(
+    color-mix(in oklab, var(--best) 55%, transparent) 0 8deg,
+    transparent 8deg 22deg
+  );
+  mask-image: radial-gradient(circle, #000 0, #000 18%, transparent 62%);
+  -webkit-mask-image: radial-gradient(circle, #000 0, #000 18%, transparent 62%);
+  opacity: 0.18;
+  scale: 0.7;
+  animation: kbg-spin 18s linear infinite;
+  transition:
+    opacity var(--dur-slow) var(--ease-smooth),
+    scale 0.8s var(--ease-smooth);
+}
+#gacha-screen .kbg-chest__glow {
+  width: 320px;
+  height: 320px;
+  background: radial-gradient(circle, color-mix(in oklab, var(--best) 70%, transparent), transparent 65%);
+  opacity: 0.35;
+  transition: opacity var(--dur-slow) var(--ease-smooth), scale var(--dur-slow) var(--ease-smooth);
+}
+
+/* Chispas (salen disparadas al abrir) */
+#gacha-screen .kbg-chest__sparks {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+}
+#gacha-screen .kbg-chest__sparks span {
+  position: absolute;
+  left: 50%;
+  top: 42%;
+  width: 10px;
+  height: 10px;
+  margin: -5px;
+  border-radius: 50%;
+  background: var(--best);
+  box-shadow: 0 0 10px var(--best), 0 0 2px #fff;
+  opacity: 0;
+}
+
+/* Estado: cargando (tiembla y se ilumina) */
+#gacha-screen .kbg-arena[data-state="charging"] .kbg-chest__art {
+  animation: kbg-shake 0.12s linear infinite;
+}
+#gacha-screen .kbg-arena[data-state="charging"] .kbg-chest__glow {
+  opacity: 0.8;
+  scale: 1.25;
+}
+#gacha-screen .kbg-arena[data-state="charging"] .kbg-chest__rays {
+  opacity: 0.35;
+  animation-duration: 3s;
+}
+#gacha-screen .kbg-arena[data-state="charging"] .kbg-chest__inner-light {
+  opacity: 0.7;
+}
+
+/* Estado: estallido (tapa fuera, rayos a tope, chispas) */
+#gacha-screen .kbg-arena[data-state="burst"] .kbg-chest__lid {
+  transform: translateY(-46px) rotate(-24deg);
+}
+#gacha-screen .kbg-arena[data-state="burst"] .kbg-chest__inner-light {
+  opacity: 1;
+}
+#gacha-screen .kbg-arena[data-state="burst"] .kbg-chest__rays {
+  opacity: 0.95;
+  scale: 1.35;
+  animation-duration: 6s;
+}
+#gacha-screen .kbg-arena[data-state="burst"] .kbg-chest__glow {
+  opacity: 1;
+  scale: 1.8;
+}
+#gacha-screen .kbg-arena[data-state="burst"] .kbg-chest__sparks span {
+  animation: kbg-spark 0.9s var(--ease-out) forwards;
+}
+#gacha-screen .kbg-arena[data-state="burst"][data-best="legendary"] .kbg-chest__art {
+  animation: kbg-shake 0.09s linear 6;
+}
+
+/* Al repartir: el cofre baja y se atenúa detrás de las cartas */
+#gacha-screen .kbg-arena:is([data-state="reveal"], [data-state="done"]) .kbg-chest {
+  opacity: 0.22;
+  scale: 0.7;
+  translate: -50% -8%;
+}
+#gacha-screen .kbg-arena:is([data-state="reveal"], [data-state="done"]) .kbg-chest__lid {
+  transform: translateY(-46px) rotate(-24deg);
+}
+#gacha-screen .kbg-arena:is([data-state="reveal"], [data-state="done"]) .kbg-chest__rays {
+  opacity: 0.4;
+  scale: 1.2;
+}
+
+/* Destello de pantalla */
+#gacha-screen .kbg-flash {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+  background: radial-gradient(circle, #fff 0, color-mix(in oklab, var(--best) 70%, transparent) 45%, transparent 75%);
+  opacity: 0;
+}
+#gacha-screen .kbg-arena[data-state="burst"] .kbg-flash {
+  animation: kbg-flash 0.7s var(--ease-out);
+}
+#gacha-screen .kbg-arena.is-flash .kbg-flash {
+  animation: kbg-flash-small 0.5s var(--ease-out);
+}
+
+/* ── Cartas ───────────────────────────────────────────────── */
+#gacha-screen .kbg-cards {
+  position: relative;
+  z-index: 4;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-content: center;
+  gap: var(--space-3);
+  max-width: 100%;
+  padding: var(--space-4);
+  perspective: 900px;
+}
+
+#gacha-screen .kbg-card {
+  --w: 150px;
+  position: relative;
+  width: var(--w);
+  aspect-ratio: 5 / 7;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  animation: kbg-deal 0.6s var(--ease-pop) both;
+  animation-delay: calc(var(--i, 0) * 60ms);
+}
+#gacha-screen .kbg-cards.is-multi .kbg-card {
+  --w: clamp(72px, 8.4vw, 104px);
+}
+#gacha-screen .kbg-card:focus-visible,
+#gacha-screen .kbg-card[data-focused] {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 4px;
+  border-radius: var(--radius-md);
+}
+
+#gacha-screen .kbg-card__inner {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+  transition: transform 0.6s var(--ease-smooth);
+}
+#gacha-screen .kbg-card.is-flipped .kbg-card__inner {
+  transform: rotateY(180deg);
+}
+#gacha-screen .kbg-card:not(.is-flipped):hover .kbg-card__inner {
+  transform: rotateY(12deg) translateY(-4px);
+}
+
+#gacha-screen .kbg-card__face {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  border-radius: var(--radius-md);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  overflow: hidden;
+}
+
+/* Dorso: patrón KiroBrawl con interrogante */
+#gacha-screen .kbg-card__back {
+  border: 3px solid var(--color-border);
+  background:
+    repeating-linear-gradient(-55deg, transparent 0 10px, color-mix(in oklab, var(--color-primary) 22%, transparent) 10px 14px),
+    linear-gradient(160deg, var(--color-surface-raised), var(--color-bg));
+  color: var(--color-text);
+  font-family: var(--font-display);
+  font-size: calc(var(--w) * 0.42);
+  text-shadow: 0 0 14px var(--color-primary);
+  box-shadow: var(--shadow-1);
+}
+
+/* Cara: color de la rareza */
+#gacha-screen .kbg-card__front {
+  transform: rotateY(180deg);
+  border: 3px solid var(--kbg-rarity);
+  background:
+    radial-gradient(circle at 50% 38%, color-mix(in oklab, var(--kbg-rarity) 55%, transparent), transparent 62%),
+    linear-gradient(170deg, var(--color-surface-raised), var(--color-bg));
+  box-shadow:
+    0 0 22px color-mix(in oklab, var(--kbg-rarity) 60%, transparent),
+    var(--shadow-1);
+}
+#gacha-screen .kbg-card__rays {
+  position: absolute;
+  inset: -50%;
+  background: repeating-conic-gradient(color-mix(in oklab, var(--kbg-rarity) 35%, transparent) 0 10deg, transparent 10deg 30deg);
+  opacity: 0.55;
+  animation: kbg-spin 8s linear infinite;
+}
+#gacha-screen .kbg-card.rarity-common .kbg-card__rays { opacity: 0.2; }
+#gacha-screen .kbg-card__gem {
+  position: relative;
+  width: calc(var(--w) * 0.46);
+  height: calc(var(--w) * 0.46);
+  color: var(--kbg-rarity);
+  filter: drop-shadow(0 0 10px var(--kbg-rarity));
+}
+#gacha-screen .kbg-card__amount {
+  position: relative;
+  font-family: var(--font-display);
+  font-size: calc(var(--w) * 0.2);
+  color: var(--color-text);
+  text-shadow: 0 2px 0 var(--color-bg), 0 0 12px var(--kbg-rarity);
+}
+#gacha-screen .kbg-card__label {
+  position: relative;
+  font-family: var(--font-display);
+  font-size: max(10px, calc(var(--w) * 0.09));
+  color: var(--kbg-rarity);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+/* Legendario: brillo que cruza la carta y rebote al girar */
+#gacha-screen .kbg-card.rarity-legendary .kbg-card__front::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(115deg, transparent 35%, rgba(255, 255, 255, 0.6) 50%, transparent 65%);
+  transform: translateX(-120%);
+  animation: kbg-flare 1.8s var(--ease-smooth) 0.6s infinite;
+}
+#gacha-screen .kbg-card.rarity-legendary.is-flipped .kbg-card__inner {
+  animation: kbg-legend-pop 0.6s var(--ease-pop) 0.3s;
+}
+#gacha-screen .kbg-card.rarity-epic.is-flipped .kbg-card__front {
+  animation: kbg-epic-glow 1.6s ease-in-out infinite;
+}
+
+/* ── Resumen ──────────────────────────────────────────────── */
+#gacha-screen .kbg-summary {
+  position: absolute;
+  left: 50%;
+  bottom: var(--space-3);
+  z-index: 5;
+  translate: -50% 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  justify-content: center;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklab, var(--color-bg) 82%, transparent);
+  border: 1px solid var(--color-border);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-slow) var(--ease-smooth), translate var(--dur-slow) var(--ease-smooth);
+}
+#gacha-screen .kbg-arena[data-state="done"] .kbg-summary {
+  opacity: 1;
+  translate: -50% -4px;
+}
+#gacha-screen .kbg-summary__title {
+  font-size: var(--fs-caption);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+#gacha-screen .kbg-summary__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px var(--space-3) 2px var(--space-1);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--kbg-rarity);
+  color: var(--kbg-rarity);
+  font-family: var(--font-display);
+  font-size: var(--fs-caption);
+}
+#gacha-screen .kbg-summary__gem { width: 20px; height: 20px; color: var(--kbg-rarity); }
+
+/* ── Botones ──────────────────────────────────────────────── */
+#gacha-screen .kbg-pulls {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-6);
+  min-height: 72px;
+}
+#gacha-screen .kbg-pull,
+#gacha-screen .kbg-next {
+  min-width: 220px;
+  padding: var(--space-3) var(--space-8);
+  transform: skewX(-10deg);
+  border-radius: var(--radius-sm);
+}
+#gacha-screen .kbg-pull .kb-btn__label,
+#gacha-screen .kbg-next .kb-btn__label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  transform: skewX(10deg);
+}
+#gacha-screen .kbg-next .kb-btn__label {
+  font-family: var(--font-display);
+  font-size: var(--fs-body-lg);
+  text-transform: uppercase;
+}
+#gacha-screen .kbg-pull__text {
+  font-family: var(--font-display);
+  font-size: var(--fs-body-lg);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+#gacha-screen .kbg-pull__cost {
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklab, var(--color-bg) 55%, transparent);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-caption);
+}
+#gacha-screen .kbg-pull--multi:not([aria-disabled="true"]) {
+  animation: kbg-multi-pulse 2s ease-in-out infinite;
+}
+
+/* Probabilidades */
+#gacha-screen .kbg-odds {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-4);
+  font-size: var(--fs-caption);
+  color: var(--color-text-muted);
+}
+#gacha-screen .kbg-odds__item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+#gacha-screen .kbg-odds__gem { width: 16px; height: 16px; color: var(--kbg-rarity); }
+
+/* ── Estado ───────────────────────────────────────────────── */
+#gacha-screen .kbg-status {
+  text-align: center;
+  color: var(--color-text-muted);
+  font-size: var(--fs-body);
+}
+#gacha-screen .kbg-status.loading::after {
+  content: "";
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin-left: var(--space-2);
+  vertical-align: middle;
+  border: 2px solid var(--color-border);
+  border-top-color: var(--color-focus);
+  border-radius: 50%;
+  animation: kbg-spin 0.8s linear infinite;
+}
+
+/* ── Animaciones ──────────────────────────────────────────── */
+@keyframes kbg-float {
+  0%, 100% { translate: 0 0; }
+  50% { translate: 0 -8px; }
+}
+@keyframes kbg-shake {
+  0% { translate: 2px 0; rotate: 1deg; }
+  25% { translate: -2px 1px; rotate: -1.5deg; }
+  50% { translate: 3px -1px; rotate: 1.5deg; }
+  75% { translate: -3px 0; rotate: -1deg; }
+  100% { translate: 2px 0; rotate: 1deg; }
+}
+@keyframes kbg-spark {
+  0% { opacity: 1; transform: rotate(var(--a)) translateX(0) scale(1); }
+  100% { opacity: 0; transform: rotate(var(--a)) translateX(var(--d)) scale(0.3); }
+}
+@keyframes kbg-flash {
+  0% { opacity: 0; }
+  20% { opacity: 0.95; }
+  100% { opacity: 0; }
+}
+@keyframes kbg-flash-small {
+  0% { opacity: 0; }
+  30% { opacity: 0.45; }
+  100% { opacity: 0; }
+}
+@keyframes kbg-deal {
+  from { opacity: 0; transform: translateY(80px) scale(0.3) rotate(-12deg); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes kbg-legend-pop {
+  0% { scale: 1; }
+  40% { scale: 1.14; }
+  100% { scale: 1; }
+}
+@keyframes kbg-epic-glow {
+  0%, 100% { box-shadow: 0 0 14px color-mix(in oklab, var(--kbg-rarity) 50%, transparent), var(--shadow-1); }
+  50% { box-shadow: 0 0 30px color-mix(in oklab, var(--kbg-rarity) 80%, transparent), var(--shadow-1); }
+}
+@keyframes kbg-spin {
+  to { rotate: 360deg; }
+}
+@keyframes kbg-flare {
+  0% { transform: translateX(-120%); }
+  60%, 100% { transform: translateX(120%); }
+}
+@keyframes kbg-spent {
+  0% { scale: 1; }
+  30% { scale: 0.92; border-color: var(--color-danger); }
+  100% { scale: 1; }
+}
+@keyframes kbg-multi-pulse {
+  0%, 100% { box-shadow: 0 0 10px color-mix(in oklab, var(--color-secondary) 40%, transparent), var(--shadow-2); }
+  50% { box-shadow: 0 0 26px color-mix(in oklab, var(--color-secondary) 75%, transparent), var(--shadow-2); }
+}
+
+/* Movimiento reducido: estados finales sin movimiento. */
+html[data-reduced-motion] #gacha-screen .kbg-chest__art,
+html[data-reduced-motion] #gacha-screen .kbg-chest__rays,
+html[data-reduced-motion] #gacha-screen .kbg-chest__sparks span,
+html[data-reduced-motion] #gacha-screen .kbg-card,
+html[data-reduced-motion] #gacha-screen .kbg-card__rays,
+html[data-reduced-motion] #gacha-screen .kbg-card__front,
+html[data-reduced-motion] #gacha-screen .kbg-card__front::after,
+html[data-reduced-motion] #gacha-screen .kbg-flash,
+html[data-reduced-motion] #gacha-screen .kbg-pull--multi,
+html[data-reduced-motion] #gacha-screen .kbg-coins {
+  animation: none !important;
+}
+html[data-reduced-motion] #gacha-screen .kbg-card__inner {
+  transition: none;
+}
